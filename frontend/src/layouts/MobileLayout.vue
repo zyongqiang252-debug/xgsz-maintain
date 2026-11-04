@@ -22,6 +22,10 @@
         <span class="tab-icon">#</span>
         <span class="tab-label">我的工单</span>
       </div>
+      <div class="tab-item" :class="{ active: route.path.startsWith('/m/leave') }" @click="$router.push('/m/leave')">
+        <span class="tab-icon">✓</span>
+        <span class="tab-label">请假</span>
+      </div>
     </div>
   </div>
 </template>
@@ -31,8 +35,8 @@ import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 const route = useRoute()
-const showBack = computed(() => !['/m/report', '/m/queue'].includes(route.path))
-const showTabs = computed(() => ['/m/report', '/m/queue'].includes(route.path))
+const showBack = computed(() => !['/m/report', '/m/queue', '/m/leave'].includes(route.path))
+const showTabs = computed(() => ['/m/report', '/m/queue', '/m/leave'].includes(route.path))
 const title = computed(() => route.meta?.title || '维修助手')
 
 const user = { name: '张工' } // 后续从钉钉免登获取

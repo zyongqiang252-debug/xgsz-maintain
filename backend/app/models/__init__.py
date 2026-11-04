@@ -16,6 +16,7 @@ from app.models.leave_request import (
 from app.models.sys_config import SysConfig
 from app.models.notification import Notification
 from app.models.manual_code import ManualCodeEntry
+from app.models.work_order_import import WorkOrderImportBatch, WorkOrderImportItem
 
 __all__ = [
     "Device", "WorkOrder", "WorkOrderStatus",
@@ -33,4 +34,5 @@ __all__ = [
     "SysConfig",
     "Notification",
     "ManualCodeEntry",
+    "WorkOrderImportBatch", "WorkOrderImportItem",
 ]

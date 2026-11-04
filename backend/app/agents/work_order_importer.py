@@ -181,42 +181,14 @@ def extract_node(state: ImportState) -> dict:
 # 校验（工单号唯一 / 设备 / 用户匹配）
 # ============================================================
 def validate_node(state: ImportState) -> dict:
-    extracted = dict(state.get("extracted") or {})
-    warnings: List[str] = []
+    from app.services.import_validate import validate_extracted
+
     db = SessionLocal()
     try:
-        # 1. 工单号唯一性
-        wo_no = (extracted.get("work_order_no") or "").strip()
-        if wo_no:
-            exists = db.query(WorkOrder).filter(WorkOrder.work_order_no == wo_no).first()
-            if exists:
-                warnings.append(f"工单号 {wo_no} 已存在")
-        else:
-            warnings.append("未识别到工单号，确认时将自动生成")
-
-        # 2. 设备匹配
-        device_code = (extracted.get("device_code") or "").strip()
-        if device_code:
-            dev = db.query(Device).filter(Device.device_code == device_code).first()
-            if dev:
-                extracted["device_id"] = dev.id
-            else:
-                warnings.append(f"设备编码 {device_code} 未在设备库找到")
-        else:
-            warnings.append("未识别到设备编码")
-
-        # 3. 维修员 / 报修人匹配
-        for key, label in (("technician_name", "维修员"), ("reporter_name", "报修人")):
-            name = (extracted.get(key) or "").strip()
-            if name:
-                u = db.query(User).filter(User.real_name == name).first()
-                if u:
-                    extracted[f"{key.replace('_name', '')}_id"] = u.id  # technician_id / reporter_id
-                else:
-                    warnings.append(f"{label}「{name}」未匹配到系统用户")
+        data, warnings = validate_extracted(db, state.get("extracted") or {})
     finally:
         db.close()
-    return {"extracted": extracted, "warnings": warnings}
+    return {"extracted": data, "warnings": warnings}
 
 
 # ============================================================

@@ -15,6 +15,8 @@ class WorkOrderImportBatch(BaseModel):
     __tablename__ = "work_order_import_batches"
 
     batch_no = Column(String(50), unique=True, nullable=False, index=True)
+    source = Column(String(20), nullable=False, default="PDF", server_default="PDF",
+                    comment="导入来源：PDF / EXCEL / IMAGE")
     status = Column(String(20), nullable=False, default="PROCESSING",
                     comment="PROCESSING / DONE / PARTIAL")
     file_count = Column(Integer, nullable=False, default=0)
@@ -35,6 +37,7 @@ class WorkOrderImportItem(BaseModel):
                       nullable=False, index=True)
     file_name = Column(String(255), nullable=False)
     file_path = Column(String(500), nullable=True)
+    row_no = Column(Integer, nullable=True, comment="Excel/CSV 数据行号（不含表头），PDF 为空")
     status = Column(String(20), nullable=False, default="PENDING",
                     comment="PENDING(待确认) / CONFIRMED(已入库) / REJECTED(已拒绝) / ERROR(解析失败)")
     error_message = Column(Text, nullable=True, comment="解析/抽取失败原因")

@@ -9,6 +9,8 @@
 """
 from typing import List, Optional
 
+import time
+
 import httpx
 from loguru import logger
 
@@ -19,18 +21,41 @@ _TIMEOUT = 30.0          # 单次编码请求超时（CPU 批量编码可能较�
 _RETRIES = 2             # 失败重试次数
 _HTTP = httpx.Client(timeout=_TIMEOUT)
 
+_AVAIL_CACHE = {"ok": False, "checked_at": 0.0}
+_AVAIL_TTL_OK = 30.0     # 可用时 30 秒复检一次
+_AVAIL_TTL_FAIL = 120.0  # 不可用时 120 秒内不重复探测
+
 
 def is_server_available() -> bool:
-    """快速探测推理服务是否可用（短超时，用于降级判断）"""
+    """快速探测推理服务是否可用（短超时，用于降级判断）
+
+    带进程级缓存：服务不可用时 120 秒内不再重复探测，
+    避免每次检索都空等超时（无推理服务环境下单次检索会卡 6 秒以上）。
+    """
+    now = time.time()
+    ttl = _AVAIL_TTL_OK if _AVAIL_CACHE["ok"] else _AVAIL_TTL_FAIL
+    if now - _AVAIL_CACHE["checked_at"] < ttl:
+        return _AVAIL_CACHE["ok"]
+    ok = False
     try:
         r = _HTTP.get(f"{_SERVER_URL}/health", timeout=2.0)
-        return r.status_code == 200
+        ok = r.status_code == 200
     except Exception:
-        return False
+        ok = False
+    _AVAIL_CACHE["ok"] = ok
+    _AVAIL_CACHE["checked_at"] = now
+    if not ok:
+        logger.warning(f"Embedding 推理服务不可用（{_SERVER_URL}），"
+                       f"{int(_AVAIL_TTL_FAIL)}s 内跳过向量编码，检索降级为 BM25")
+    return ok
 
 
 def _call_embeddings(texts: List[str], max_length: int) -> List[List[float]]:
     """调用 /v1/embeddings，带重试；失败抛 RuntimeError"""
+    if not is_server_available():
+        raise RuntimeError(
+            f"Embedding 服务不可用（{_SERVER_URL}）。请先启动推理服务："
+            "start_all.ps1 或 python -m app.core.embedding_server")
     last_err: Optional[Exception] = None
     for attempt in range(_RETRIES + 1):
         try:

@@ -2,33 +2,146 @@
   <div class="import-page">
     <div class="page-header">
       <h2>历史工单导入</h2>
-      <span class="sub-title">上传历史工单 PDF，AI 自动解析抽取为系统工单格式，人工确认后入库并收录知识库</span>
+      <span class="sub-title">支持 Excel/CSV 台账、PDF 工单、纸质工单拍照三种来源，解析后人工确认入库并收录知识库</span>
     </div>
 
-    <!-- 上传区 -->
+    <!-- 上传区：三种导入方式 -->
     <el-card shadow="never" class="upload-card">
-      <el-upload
-        drag
-        multiple
-        :auto-upload="false"
-        :limit="50"
-        accept=".pdf"
-        :on-change="handleFileChange"
-        :on-remove="handleFileRemove"
-        :file-list="fileList"
-      >
-        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-        <div class="el-upload__text">拖拽 PDF 到此处，或<em>点击选择文件</em>（支持多选）</div>
-        <template #tip>
-          <div class="el-upload__tip">仅支持 .pdf 文件，单次最多 50 份；电子版自动提取文字，扫描件自动 OCR</div>
-        </template>
-      </el-upload>
-      <div class="upload-actions">
-        <el-button type="primary" :loading="uploading" :disabled="fileList.length === 0" @click="handleUpload">
-          {{ uploading ? 'AI 解析抽取中…' : `开始导入（${fileList.length} 份）` }}
-        </el-button>
-        <el-button v-if="fileList.length" @click="fileList = []">清空</el-button>
-      </div>
+      <el-tabs v-model="importMode">
+        <!-- Excel / CSV 台账 -->
+        <el-tab-pane label="Excel 台账导入" name="EXCEL">
+          <div class="excel-toolbar">
+            <el-upload
+              :auto-upload="false"
+              :show-file-list="false"
+              accept=".xlsx,.xlsm,.csv"
+              :on-change="handleExcelChange"
+            >
+              <el-button type="primary" plain :loading="excelInspecting">选择台账文件</el-button>
+            </el-upload>
+            <el-button link type="primary" @click="downloadTemplate">下载导入模板</el-button>
+            <span v-if="excelFile" class="file-name">已选：{{ excelFile.name }}（{{ excelRowCount }} 行数据）</span>
+          </div>
+
+          <div v-if="excelHeaders.length" class="mapping-block">
+            <div class="mapping-title">
+              字段映射
+              <span class="mapping-tip">系统已自动匹配 {{ mappedCount }} / {{ excelFields.length }} 个字段，可手动调整</span>
+            </div>
+            <el-table :data="excelFields" size="small" border max-height="300" class="mapping-table">
+              <el-table-column label="系统字段" width="150">
+                <template #default="{ row }">
+                  {{ row.label }}
+                  <el-tag v-if="row.required" type="danger" size="small" effect="plain">必填</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="对应台账列">
+                <template #default="{ row }">
+                  <el-select v-model="excelMapping[row.key]" clearable filterable size="small"
+                             placeholder="不导入" style="width: 100%">
+                    <el-option v-for="h in excelHeaders" :key="h" :label="h" :value="h" />
+                  </el-select>
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <div class="preview-title">前 5 行预览</div>
+            <el-table :data="excelPreview" size="small" border max-height="220">
+              <el-table-column v-for="h in excelHeaders" :key="h" :label="h" min-width="130" show-overflow-tooltip>
+                <template #default="{ row }">{{ row[h] }}</template>
+              </el-table-column>
+            </el-table>
+
+            <div class="upload-actions">
+              <el-button type="primary" :loading="excelUploading" @click="handleExcelUpload">
+                {{ excelUploading ? '导入中…' : `确认导入（${excelRowCount} 行）` }}
+              </el-button>
+              <el-button @click="resetExcel">取消</el-button>
+            </div>
+          </div>
+          <el-empty v-else-if="!excelInspecting" description="选择 Excel/CSV 台账文件后自动识别表头，可手动调整字段映射"
+                    :image-size="70" />
+        </el-tab-pane>
+
+        <!-- PDF 工单 -->
+        <el-tab-pane label="PDF 工单导入" name="PDF">
+          <el-upload
+            drag
+            multiple
+            :auto-upload="false"
+            :limit="50"
+            accept=".pdf"
+            :on-change="handleFileChange"
+            :on-remove="handleFileRemove"
+            :file-list="fileList"
+          >
+            <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+            <div class="el-upload__text">拖拽 PDF 到此处，或<em>点击选择文件</em>（支持多选）</div>
+            <template #tip>
+              <div class="el-upload__tip">仅支持 .pdf，单次最多 50 份；电子版自动提取文字，扫描件自动 OCR</div>
+            </template>
+          </el-upload>
+          <div class="upload-actions">
+            <el-button type="primary" :loading="uploading" :disabled="fileList.length === 0" @click="handleUpload">
+              {{ uploading ? 'AI 解析抽取中…' : `开始导入（${fileList.length} 份）` }}
+            </el-button>
+            <el-button v-if="fileList.length" @click="fileList = []">清空</el-button>
+          </div>
+        </el-tab-pane>
+
+        <!-- 图片 OCR -->
+        <el-tab-pane label="图片 OCR 导入" name="IMAGE">
+          <el-upload
+            drag
+            multiple
+            :auto-upload="false"
+            :limit="30"
+            accept=".jpg,.jpeg,.png,.bmp,.webp"
+            :on-change="handleImageChange"
+            :on-remove="handleImageRemove"
+            :file-list="imageList"
+          >
+            <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+            <div class="el-upload__text">拖拽工单照片/扫描件到此处，或<em>点击选择图片</em></div>
+            <template #tip>
+              <div class="el-upload__tip">
+                支持 jpg/png/bmp/webp，单次最多 30 张；本地 OCR 识别（不需要联网），识别结果需人工核对
+              </div>
+            </template>
+          </el-upload>
+          <div class="upload-actions">
+            <el-button type="primary" :loading="imageUploading" :disabled="imageList.length === 0" @click="handleImageUpload">
+              {{ imageUploading ? 'OCR 识别中…' : `开始识别（${imageList.length} 张）` }}
+            </el-button>
+            <el-button v-if="imageList.length" @click="imageList = []">清空</el-button>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </el-card>
+
+    <!-- Excel 逐行结果 -->
+    <el-card v-if="excelResult" shadow="never" class="result-card">
+      <template #header>
+        <div class="card-header">
+          <span>台账导入结果：{{ excelResult.batch_no }}</span>
+          <el-tag :type="excelResult.failed ? 'warning' : 'success'" size="small">
+            待确认 {{ excelResult.pending }} 行 / 失败 {{ excelResult.failed }} 行
+          </el-tag>
+        </div>
+      </template>
+      <el-table :data="excelResult.results" size="small" max-height="260">
+        <el-table-column prop="row_no" label="行号" width="80" />
+        <el-table-column prop="work_order_no" label="工单号" width="160" />
+        <el-table-column prop="fault_description" label="故障描述" min-width="220" show-overflow-tooltip />
+        <el-table-column label="结果" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 'PENDING' ? 'success' : 'danger'" size="small">
+              {{ row.status === 'PENDING' ? '待确认' : '失败' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="message" label="说明" min-width="200" show-overflow-tooltip />
+      </el-table>
     </el-card>
 
     <!-- 上传批次结果 -->
@@ -74,6 +187,21 @@
           <template #default="{ row }">
             <div class="cell-main">{{ row.file_name }}</div>
             <div class="cell-sub">{{ row.extracted_data?.work_order_no || '—' }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="来源" width="90">
+          <template #default="{ row }">
+            <el-tag size="small" effect="plain"
+                    :type="row.source === 'EXCEL' ? 'success' : row.source === 'IMAGE' ? 'warning' : 'info'">
+              {{ row.source === 'EXCEL' ? 'Excel' : row.source === 'IMAGE' ? '图片' : 'PDF' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="原图" width="70">
+          <template #default="{ row }">
+            <img v-if="row.image_url" :src="row.image_url" class="thumb"
+                 title="点击查看大图" @click="openPreview(row.image_url)" />
+            <span v-else style="color: #C9CDD4">—</span>
           </template>
         </el-table-column>
         <el-table-column label="设备" width="120">
@@ -128,6 +256,17 @@
         />
       </div>
     </el-card>
+
+    <!-- 原图预览 -->
+    <el-dialog v-model="previewVisible" title="原图查看" width="900px" append-to-body destroy-on-close>
+      <div class="preview-wrap">
+        <img v-if="previewUrl" :src="previewUrl" class="preview-img" />
+      </div>
+      <template #footer>
+        <el-button v-if="previewUrl" type="primary" plain @click="openInNewTab(previewUrl)">新窗口打开</el-button>
+        <el-button @click="previewVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 编辑弹窗 -->
     <el-dialog v-model="editVisible" title="编辑抽取结果" width="720px" destroy-on-close>
@@ -204,7 +343,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api'
@@ -225,6 +364,145 @@ const editVisible = ref(false)
 const saving = ref(false)
 const editWarnings = ref([])
 const form = reactive({})
+
+// ---- 原图预览 ----
+const previewVisible = ref(false)
+const previewUrl = ref('')
+function openPreview(url) {
+  previewUrl.value = url
+  previewVisible.value = true
+}
+function openInNewTab(url) {
+  window.open(url, '_blank')
+}
+
+// ---- Excel 台账导入 ----
+const importMode = ref('EXCEL')
+const excelFile = ref(null)
+const excelInspecting = ref(false)
+const excelUploading = ref(false)
+const excelHeaders = ref([])
+const excelPreview = ref([])
+const excelFields = ref([])
+const excelMapping = reactive({})
+const excelRowCount = ref(0)
+const excelResult = ref(null)
+const mappedCount = computed(() => Object.values(excelMapping).filter(Boolean).length)
+
+async function downloadTemplate() {
+  try {
+    const blob = await request.get('/work-order-imports/template', { responseType: 'blob' })
+    const url = URL.createObjectURL(new Blob([blob]))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = '工单导入模板.xlsx'
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    // 拦截器已提示
+  }
+}
+
+async function handleExcelChange(file) {
+  excelFile.value = file.raw
+  excelInspecting.value = true
+  excelResult.value = null
+  try {
+    const fd = new FormData()
+    fd.append('file', file.raw)
+    const res = await request.post('/work-order-imports/excel/inspect', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000
+    })
+    excelHeaders.value = res.headers
+    excelPreview.value = res.preview
+    excelFields.value = res.fields
+    excelRowCount.value = res.row_count
+    Object.keys(excelMapping).forEach((k) => delete excelMapping[k])
+    Object.assign(excelMapping, res.mapping)
+    if (!mappedCount.value) ElMessage.warning('未能自动识别表头，请手动选择对应列')
+  } catch (e) {
+    resetExcel()
+  } finally {
+    excelInspecting.value = false
+  }
+}
+
+function resetExcel() {
+  excelFile.value = null
+  excelHeaders.value = []
+  excelPreview.value = []
+  excelFields.value = []
+  excelRowCount.value = 0
+  Object.keys(excelMapping).forEach((k) => delete excelMapping[k])
+}
+
+async function handleExcelUpload() {
+  if (!excelFile.value) return
+  const mapping = {}
+  Object.entries(excelMapping).forEach(([k, v]) => { if (v) mapping[k] = v })
+  excelUploading.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', excelFile.value)
+    fd.append('mapping', JSON.stringify(mapping))
+    const res = await request.post('/work-order-imports/upload-excel', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 300000
+    })
+    excelResult.value = res
+    ElMessage.success(`导入完成：${res.pending} 行待确认${res.failed ? `，${res.failed} 行失败` : ''}`)
+    resetExcel()
+    loadItems()
+  } catch (e) {
+    // 拦截器已提示
+  } finally {
+    excelUploading.value = false
+  }
+}
+
+// ---- 图片 OCR 导入 ----
+const imageList = ref([])
+const imageUploading = ref(false)
+
+function handleImageChange(file) {
+  imageList.value = [...imageList.value, file]
+}
+function handleImageRemove(file) {
+  imageList.value = imageList.value.filter((f) => f.uid !== file.uid)
+}
+
+async function handleImageUpload() {
+  if (!imageList.value.length) return
+  const fd = new FormData()
+  for (const f of imageList.value) fd.append('files', f.raw)
+  imageUploading.value = true
+  try {
+    const res = await request.post('/work-order-imports/upload-images', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 600000
+    })
+    lastBatch.value = {
+      batch_no: res.batch_no,
+      status: res.failed ? 'PARTIAL' : 'DONE',
+      results: res.results.map((r) => ({
+        file_name: r.file_name,
+        status: r.status,
+        message: r.message,
+        elapsed: ''
+      })),
+      total_pending: res.pending,
+      failed: res.failed
+    }
+    ElMessage.success(`识别完成：${res.pending} 张待确认${res.failed ? `，${res.failed} 张失败` : ''}`)
+    imageList.value = []
+    loadItems()
+  } catch (e) {
+    // 拦截器已提示
+  } finally {
+    imageUploading.value = false
+  }
+}
 
 function handleFileChange(file) {
   if (file.raw && file.raw.type !== 'application/pdf' && !file.raw.name.toLowerCase().endsWith('.pdf')) {
@@ -367,6 +645,13 @@ onMounted(() => {
 .sub-title { color: #86909C; font-size: 13px; }
 .upload-card { margin-bottom: 16px; }
 .upload-actions { margin-top: 12px; display: flex; gap: 8px; }
+.excel-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.file-name { color: #4E5969; font-size: 13px; }
+.mapping-block { margin-top: 16px; }
+.mapping-title { font-size: 14px; font-weight: 500; color: #1D2129; margin-bottom: 8px; }
+.mapping-tip { font-size: 12px; color: #86909C; font-weight: 400; margin-left: 8px; }
+.mapping-table { margin-bottom: 16px; }
+.preview-title { font-size: 14px; font-weight: 500; color: #1D2129; margin: 4px 0 8px; }
 .result-card { margin-bottom: 16px; }
 .card-header { display: flex; align-items: center; justify-content: space-between; }
 .list-card { margin-bottom: 16px; }
@@ -374,4 +659,7 @@ onMounted(() => {
 .cell-sub { color: #86909C; font-size: 12px; }
 .warn-box { background: #FFF7E6; border: 1px solid #FFD666; color: #D46B08; padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
 .pager { margin-top: 12px; display: flex; justify-content: flex-end; }
+.thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; border: 1px solid #E5E6EB; cursor: zoom-in; }
+.preview-wrap { display: flex; justify-content: center; max-height: 70vh; overflow: auto; }
+.preview-img { max-width: 100%; max-height: 68vh; object-fit: contain; border-radius: 4px; }
 </style>

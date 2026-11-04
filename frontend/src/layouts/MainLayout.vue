@@ -3,11 +3,11 @@
     <!-- 顶栏 (56px) -->
     <header class="topbar">
       <div class="topbar-left">
-        <div class="logo-area">
+        <div class="logo-area logo-clickable" title="返回首页" @click="goHome">
           <div class="logo-icon">
-            <el-icon :size="20" color="#fff"><Setting /></el-icon>
+            <img src="/logo-icon.png" alt="芯光数智" />
           </div>
-          <span class="system-name">维修知识管理</span>
+          <span class="system-name">芯光数智</span>
         </div>
       </div>
       <div class="topbar-right">
@@ -106,6 +106,10 @@
                   <el-icon :size="16"><QuestionFilled /></el-icon>
                   <span>帮助中心</span>
                 </div>
+                <div class="ud-menu-item" @click="openMobile">
+                  <el-icon :size="16"><Iphone /></el-icon>
+                  <span>移动端入口</span>
+                </div>
               </div>
               <div class="ud-divider"></div>
               <div class="ud-menu-list">
@@ -125,9 +129,9 @@
       <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }">
         <template v-if="!sidebarCollapsed">
           <!-- Logo 区 -->
-          <div class="sidebar-logo">
+          <div class="sidebar-logo logo-clickable" title="返回首页" @click="goHome">
             <div class="sidebar-logo-icon">
-              <el-icon :size="18" color="#fff"><Setting /></el-icon>
+              <img src="/logo-icon.png" alt="芯光数智" />
             </div>
             <span class="sidebar-logo-text">管理台</span>
           </div>
@@ -173,6 +177,12 @@
                 <el-icon><Calendar /></el-icon>
                 <template #title>排班管理</template>
               </el-menu-item>
+
+              <div class="menu-group-label">个人</div>
+              <el-menu-item index="/leave">
+                <el-icon><Clock /></el-icon>
+                <template #title>我的请假</template>
+              </el-menu-item>
             </template>
 
             <!-- 管理员 / 维修员：全菜单 -->
@@ -212,6 +222,10 @@
               </el-menu-item>
 
               <div class="menu-group-label">库存管理</div>
+              <el-menu-item index="/spare-parts">
+                <el-icon><Tickets /></el-icon>
+                <template #title>备件台账</template>
+              </el-menu-item>
               <el-menu-item index="/warehouse">
                 <el-icon><Box /></el-icon>
                 <template #title>仓库库存</template>
@@ -243,7 +257,23 @@
                 </el-menu-item>
               </template>
 
+              <template v-if="isAdmin">
+                <div class="menu-group-label">系统管理</div>
+                <el-menu-item index="/users">
+                  <el-icon><User /></el-icon>
+                  <template #title>用户管理</template>
+                </el-menu-item>
+              </template>
+
               <div class="menu-group-label">其他</div>
+              <el-menu-item index="/leave">
+                <el-icon><Clock /></el-icon>
+                <template #title>我的请假</template>
+              </el-menu-item>
+              <el-menu-item index="/notifications">
+                <el-icon><Bell /></el-icon>
+                <template #title>通知中心</template>
+              </el-menu-item>
               <el-menu-item index="/help">
                 <el-icon><QuestionFilled /></el-icon>
                 <template #title>帮助中心</template>
@@ -283,6 +313,9 @@
                 <el-menu-item index="/supervisor/schedule">
                   <el-icon><Calendar /></el-icon>
                 </el-menu-item>
+                <el-menu-item index="/leave">
+                  <el-icon><Clock /></el-icon>
+                </el-menu-item>
               </template>
               <!-- 管理员/维修员完整版 -->
               <template v-else>
@@ -308,6 +341,9 @@
                 <el-menu-item index="/categories">
                   <el-icon><Grid /></el-icon>
                 </el-menu-item>
+                <el-menu-item index="/spare-parts">
+                  <el-icon><Tickets /></el-icon>
+                </el-menu-item>
                 <el-menu-item index="/warehouse">
                   <el-icon><Box /></el-icon>
                 </el-menu-item>
@@ -328,6 +364,20 @@
                     <el-icon><Calendar /></el-icon>
                   </el-menu-item>
                 </template>
+                <template v-if="isAdmin">
+                  <el-menu-item index="/users">
+                    <el-icon><User /></el-icon>
+                  </el-menu-item>
+                </template>
+
+                <el-menu-item index="/notifications">
+                  <el-icon><Bell /></el-icon>
+                </el-menu-item>
+
+                <el-menu-item index="/leave">
+                  <el-icon><Clock /></el-icon>
+                </el-menu-item>
+
                 <el-menu-item index="/help">
                   <el-icon><QuestionFilled /></el-icon>
                 </el-menu-item>
@@ -370,6 +420,11 @@ const route = useRoute()
 const router = useRouter()
 const sidebarCollapsed = ref(false)
 
+// 点击 Logo 回到首页（数据驾驶舱）
+function goHome() {
+  if (route.path !== '/dashboard') router.push('/dashboard')
+}
+
 const activeMenu = computed(() => {
   const path = route.path
   if (path.startsWith('/work-orders')) return '/work-orders'
@@ -394,6 +449,7 @@ const isPureSupervisor = computed(() => currentUser.role === 'SUPERVISOR')
 
 // 维修员（TECHNICIAN）：历史工单导入等负责核对确认的功能
 const isTechnician = computed(() => currentUser.role === 'TECHNICIAN')
+const isAdmin = computed(() => currentUser.role === 'ADMIN')
 
 // ===== 当前用户 =====
 const currentUser = reactive({
@@ -508,6 +564,11 @@ const openHelp = () => {
   router.push('/help')
 }
 
+// 移动端（手机接单/上报）入口：新窗口打开，便于在 PC 上用手机浏览器或直接演示
+const openMobile = () => {
+  window.open(`${window.location.origin}/m/report`, '_blank')
+}
+
 const handleLogout = async () => {
   try {
     await ElMessageBox.confirm('确定要退出登录吗？', '退出确认', {
@@ -562,12 +623,18 @@ watch(() => route.path, () => {
 }
 .topbar-left { display:flex; align-items:center; }
 .logo-area { display:flex; align-items:center; gap:10px; }
+.logo-clickable { cursor: pointer; user-select: none; transition: opacity .2s ease; }
+.logo-clickable:hover { opacity: .78; }
+.logo-clickable:active { opacity: .6; }
 .logo-icon {
   width: 32px; height: 32px;
-  background: var(--color-primary);
+  background: #fff;
+  border: 1px solid var(--color-border, #e5e6eb);
   border-radius: 6px;
   display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
 }
+.logo-icon img { width: 26px; height: 26px; object-fit: contain; }
 .system-name { font-size:16px; font-weight:600; color:var(--color-text-primary); white-space:nowrap; }
 .topbar-right { display:flex; align-items:center; gap:16px; flex-shrink:0; }
 .notice-badge { cursor:pointer; }
@@ -607,10 +674,13 @@ watch(() => route.path, () => {
 }
 .sidebar-logo-icon {
   width: 28px; height: 28px;
-  background: var(--color-primary);
+  background: #fff;
+  border: 1px solid var(--color-border, #e5e6eb);
   border-radius: 6px;
   display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
 }
+.sidebar-logo-icon img { width: 22px; height: 22px; object-fit: contain; }
 .sidebar-logo-text {
   font-size: 14px;
   font-weight: 600;

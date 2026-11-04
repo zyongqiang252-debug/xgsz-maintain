@@ -3,10 +3,10 @@
     <div class="page-header">
       <h2 class="page-title">仓库库存</h2>
       <div class="header-actions">
-        <el-button type="warning" :loading="pushing" @click="handlePushToLogistics">
+        <el-button v-if="canManage" type="warning" :loading="pushing" @click="handlePushToLogistics">
           推送库存预警至后勤
         </el-button>
-        <el-button @click="showPushHistory = true">推送记录</el-button>
+        <el-button v-if="canManage" @click="showPushHistory = true">推送记录</el-button>
       </div>
     </div>
 
@@ -36,7 +36,7 @@
           <el-icon style="color: #FF7D00"><WarningFilled /></el-icon>
           库存预警清单（{{ alerts.alert_count }} 项）
         </h3>
-        <el-button size="small" type="warning" plain @click="handlePushToLogistics" :loading="pushing">
+        <el-button v-if="canManage" size="small" type="warning" plain @click="handlePushToLogistics" :loading="pushing">
           一键推送至后勤
         </el-button>
       </div>
@@ -187,9 +187,17 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import request from '../api'
+
+// 库存预警推送权限：仅管理员/主管
+const canManage = computed(() => {
+  try {
+    const role = JSON.parse(localStorage.getItem('current_user') || '{}').role
+    return role === 'ADMIN' || role === 'SUPERVISOR'
+  } catch { return false }
+})
 
 const list = ref([])
 const loading = ref(false)

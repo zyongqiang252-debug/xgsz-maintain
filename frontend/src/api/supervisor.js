@@ -104,7 +104,7 @@ export const leavePreCheck = (params) => {
 /** 提交请假申请 */
 export const leaveSubmit = (data) => {
   return request({
-    url: '/leave-requests',
+    url: '/leave-requests/',
     method: 'post',
     data
   })
@@ -113,7 +113,7 @@ export const leaveSubmit = (data) => {
 /** 请假列表（主管端分页） */
 export const leaveList = (params) => {
   return request({
-    url: '/leave-requests',
+    url: '/leave-requests/',
     method: 'get',
     params
   })

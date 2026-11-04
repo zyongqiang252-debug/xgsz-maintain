@@ -86,7 +86,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Smart-Repair-System - 以工单收录与知识沉淀为核心",
+    description="芯光数智 - 以工单收录与知识沉淀为核心",
     lifespan=lifespan
 )
 
@@ -194,10 +194,16 @@ async def health_check():
 
 
 if os.path.isdir(_frontend_dist):
+    # 静态资源 + SPA 兜底（单一路由）：命中 public 静态文件则返回文件，否则回落 index.html
     @app.get("/{full_path:path}", tags=["系统"], include_in_schema=False)
-    async def spa_fallback(full_path: str):
-        """SPA 兜底：非 API/docs/mcp 的未匹配路径统一返回 index.html，支持前端 history 路由"""
+    async def frontend_static_or_spa(full_path: str):
         from fastapi.responses import FileResponse
+        ext = os.path.splitext(full_path)[1].lower()
+        if ext in {".png", ".jpg", ".jpeg", ".svg", ".ico", ".webp", ".txt", ".json"}:
+            file_path = os.path.normpath(os.path.join(_frontend_dist, full_path))
+            if file_path.startswith(os.path.normpath(_frontend_dist)) and os.path.isfile(file_path):
+                return FileResponse(file_path)
+            raise __import__("fastapi").HTTPException(status_code=404)
         return FileResponse(os.path.join(_frontend_dist, "index.html"))
 
 

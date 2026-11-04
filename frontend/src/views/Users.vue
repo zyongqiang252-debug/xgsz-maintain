@@ -16,6 +16,9 @@
           </template>
         </el-table-column>
         <el-table-column prop="username" label="用户名" width="120" />
+        <el-table-column prop="employee_id" label="工号" width="110">
+          <template #default="{ row }">{{ row.employee_id || '—' }}</template>
+        </el-table-column>
         <el-table-column label="角色" width="120">
           <template #default="{ row }">
             <span class="role-tag" :class="'role-' + row.role">{{ roleLabel(row.role) }}</span>
@@ -74,6 +77,9 @@
         <el-form-item label="姓名" required>
           <el-input v-model="form.real_name" placeholder="真实姓名" />
         </el-form-item>
+        <el-form-item label="工号">
+          <el-input v-model="form.employee_id" placeholder="选填，用于报表和考勤对应" />
+        </el-form-item>
         <el-form-item label="邮箱">
           <el-input v-model="form.email" placeholder="邮箱地址" />
         </el-form-item>
@@ -82,10 +88,11 @@
         </el-form-item>
         <el-form-item label="角色">
           <el-select v-model="form.role" style="width: 100%">
-            <el-option label="管理员" value="ADMIN" />
-            <el-option label="技术员" value="TECHNICIAN" />
+            <el-option label="维修员（技术员）" value="TECHNICIAN" />
             <el-option label="主管" value="SUPERVISOR" />
+            <el-option label="管理员" value="ADMIN" />
           </el-select>
+          <div class="role-tip">维修员会被列入派工候选名单，可在移动端接单和填报</div>
         </el-form-item>
         <el-form-item label="状态">
           <el-switch v-model="form.is_active" active-text="启用" inactive-text="禁用" />
@@ -157,11 +164,11 @@ const editingId = ref(null)
 const saving = ref(false)
 
 const form = ref({
-  username: '', password: '', real_name: '', email: '', phone: '',
+  username: '', password: '', real_name: '', employee_id: '', email: '', phone: '',
   role: 'TECHNICIAN', is_active: true
 })
 
-const roleMap = { ADMIN: '管理员', TECHNICIAN: '技术员', SUPERVISOR: '主管' }
+const roleMap = { ADMIN: '管理员', TECHNICIAN: '维修员', SUPERVISOR: '主管' }
 const roleLabel = (r) => roleMap[r] || r
 const formatTime = (t) => t ? dayjs(t).format('YYYY-MM-DD HH:mm') : '-'
 
@@ -177,7 +184,7 @@ const fetchData = async () => {
 
 const resetForm = () => {
   editingId.value = null
-  form.value = { username: '', password: '', real_name: '', email: '', phone: '', role: 'TECHNICIAN', is_active: true }
+  form.value = { username: '', password: '', real_name: '', employee_id: '', email: '', phone: '', role: 'TECHNICIAN', is_active: true }
 }
 
 const handleEdit = (row) => {
@@ -356,6 +363,7 @@ onMounted(fetchData)
 .role-ADMIN { background: #FFECEC; color: #F53F3F; }
 .role-SUPERVISOR { background: #FFF3E8; color: #FF7D00; }
 .role-TECHNICIAN { background: #E8F9F9; color: #0FC6C2; }
+.role-tip { font-size: 12px; color: #86909C; line-height: 1.6; margin-top: 2px; }
 
 .status-dot { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
 .status-dot::before { content: ''; width: 6px; height: 6px; border-radius: 50%; }

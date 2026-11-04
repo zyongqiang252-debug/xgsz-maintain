@@ -378,7 +378,7 @@ def my_leave_requests(
         q = q.filter(LeaveRequest.status == status)
     total = q.count()
     items = q.order_by(LeaveRequest.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return {"total": total, "items": [_build_response(x) for x in items], "page": page, "page_size": page_size}
+    return {"total": total, "items": [_build_response(x, db) for x in items], "page": page, "page_size": page_size}
 
 
 @router.get("/{lr_id}", response_model=LeaveRequestResponse, summary="请假详情")
@@ -569,7 +569,7 @@ def approve_leave_request(
         logger.exception(f"[Leave] 批准事务失败: {e}")
         raise HTTPException(status_code=500, detail=f"审批事务失败: {e}")
 
-    return _build_response(lr)
+    return _build_response(lr, db)
 
 
 # ============================================================
@@ -595,7 +595,7 @@ def reject_leave_request(
     db.commit()
     db.refresh(lr)
     logger.info(f"[Leave] 拒绝成功 lr_id={lr.id} 审批人={current_user.id}")
-    return _build_response(lr)
+    return _build_response(lr, db)
 
 
 # ============================================================
@@ -619,4 +619,4 @@ def cancel_leave_request(
     db.commit()
     db.refresh(lr)
     logger.info(f"[Leave] 撤销成功 lr_id={lr.id} 申请人={current_user.id}")
-    return _build_response(lr)
+    return _build_response(lr, db)

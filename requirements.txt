@@ -68,3 +68,7 @@ alibabacloud_dysmsapi20170525>=3.1.0  # 阿里云短信 SDK：验证码/通知�
 pytest==9.1.1                  # Python 测试框架
 pytest-asyncio==1.4.0          # pytest 异步测试支持
 pytest-cov==7.1.0              # 测试覆盖率统计
+pdfplumber>=0.11.0
+
+openpyxl>=3.1.0
+rapidocr_onnxruntime>=1.3.0

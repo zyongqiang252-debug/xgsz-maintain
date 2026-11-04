@@ -5,7 +5,7 @@ from typing import Optional, List
 from loguru import logger
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_supervisor
 from app.core.notification import notification_service
 from app.core.cache_service import cache_service
 from app.models.spare_part import SparePart
@@ -107,8 +107,8 @@ def get_stock_alerts(db: Session = Depends(get_db), current_user: User = Depends
     return result
 
 
-@router.post("/check-alerts", summary="手动触发库存预警检查")
-def check_stock_alerts(db: Session = Depends(get_db)):
+@router.post("/check-alerts", summary="手动触发库存预警检查（管理员/主管）")
+def check_stock_alerts(db: Session = Depends(get_db), current_user: User = Depends(require_supervisor)):
     """
     手动触发库存预警检查，发送钉钉通知
     返回预警结果
@@ -119,7 +119,7 @@ def check_stock_alerts(db: Session = Depends(get_db)):
 
 
 @router.get("/{part_id}", response_model=SparePartResponse, summary="获取备件详情（带缓存）")
-def get_spare_part(part_id: int, db: Session = Depends(get_db)):
+def get_spare_part(part_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     cache_key = f"spare_part:{part_id}"
     cached = cache_service.get(cache_key)
     if cached:
@@ -134,8 +134,8 @@ def get_spare_part(part_id: int, db: Session = Depends(get_db)):
     return result
 
 
-@router.post("/", response_model=SparePartResponse, summary="创建备件")
-def create_spare_part(data: SparePartCreate, db: Session = Depends(get_db)):
+@router.post("/", response_model=SparePartResponse, summary="创建备件（管理员/主管）")
+def create_spare_part(data: SparePartCreate, db: Session = Depends(get_db), current_user: User = Depends(require_supervisor)):
     existing = db.query(SparePart).filter(SparePart.part_code == data.part_code).first()
     if existing:
         raise HTTPException(status_code=400, detail="备件编码已存在")
@@ -147,8 +147,8 @@ def create_spare_part(data: SparePartCreate, db: Session = Depends(get_db)):
     return part
 
 
-@router.put("/{part_id}", response_model=SparePartResponse, summary="更新备件")
-def update_spare_part(part_id: int, data: SparePartUpdate, db: Session = Depends(get_db)):
+@router.put("/{part_id}", response_model=SparePartResponse, summary="更新备件（管理员/主管）")
+def update_spare_part(part_id: int, data: SparePartUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_supervisor)):
     part = db.query(SparePart).filter(SparePart.id == part_id).first()
     if not part:
         raise HTTPException(status_code=404, detail="备件不存在")
@@ -161,8 +161,8 @@ def update_spare_part(part_id: int, data: SparePartUpdate, db: Session = Depends
     return part
 
 
-@router.delete("/{part_id}", summary="删除备件")
-def delete_spare_part(part_id: int, db: Session = Depends(get_db)):
+@router.delete("/{part_id}", summary="删除备件（管理员/主管）")
+def delete_spare_part(part_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_supervisor)):
     part = db.query(SparePart).filter(SparePart.id == part_id).first()
     if not part:
         raise HTTPException(status_code=404, detail="备件不存在")
@@ -175,8 +175,8 @@ def delete_spare_part(part_id: int, db: Session = Depends(get_db)):
 
 # ==================== 进货单批量导入 ====================
 
-@router.post("/import", response_model=PurchaseImportResult, summary="进货单批量导入")
-def import_purchase_orders(req: PurchaseImportRequest, db: Session = Depends(get_db)):
+@router.post("/import", response_model=PurchaseImportResult, summary="进货单批量导入（管理员/主管）")
+def import_purchase_orders(req: PurchaseImportRequest, db: Session = Depends(get_db), current_user: User = Depends(require_supervisor)):
     """
     批量导入备件：
     - 新备件（编码不存在）→ 自动创建

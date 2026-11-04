@@ -143,7 +143,7 @@
             <el-icon :size="20" color="#0FC6C2"><Message /></el-icon>
             <div>
               <div class="contact-label">企业微信群</div>
-              <div class="contact-value">维修知识管理-技术支持群</div>
+              <div class="contact-value">芯光数智技术支持群</div>
             </div>
           </div>
           <div class="contact-item">

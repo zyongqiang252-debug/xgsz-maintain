@@ -1,16 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional
-from passlib.context import CryptContext
 from loguru import logger
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_admin, _role_value
 from app.core.cache_service import cache_service
+from app.core.password import hash_password
 from app.models.user import User, UserRole
 from app.schemas import UserCreate, UserUpdate, UserResponse, PaginatedResponse
 
 router = APIRouter()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def _u_to_dict(u: User) -> dict:
@@ -46,7 +45,7 @@ def list_users(
 
 
 @router.get("/{user_id}", response_model=UserResponse, summary="获取用户详情（带缓存）")
-def get_user(user_id: int, db: Session = Depends(get_db)):
+def get_user(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     cache_key = f"user:{user_id}"
     cached = cache_service.get(cache_key)
     if cached:
@@ -61,13 +60,17 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
     return result
 
 
-@router.post("/", response_model=UserResponse, summary="创建用户")
-def create_user(data: UserCreate, db: Session = Depends(get_db)):
+@router.post("/", response_model=UserResponse, summary="创建用户（仅管理员）")
+def create_user(data: UserCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     existing = db.query(User).filter(User.username == data.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="用户名已存在")
+    if data.employee_id and db.query(User).filter(User.employee_id == data.employee_id).first():
+        raise HTTPException(status_code=400, detail="工号已存在")
+    if data.role and data.role not in {r.value for r in UserRole}:
+        raise HTTPException(status_code=400, detail=f"角色不合法：{data.role}")
     data_dict = data.model_dump()
-    data_dict["password_hash"] = pwd_context.hash(data_dict.pop("password"))
+    data_dict["password_hash"] = hash_password(data_dict.pop("password"))
     user = User(**data_dict)
     db.add(user)
     db.commit()
@@ -75,24 +78,45 @@ def create_user(data: UserCreate, db: Session = Depends(get_db)):
     return user
 
 
-@router.put("/{user_id}", response_model=UserResponse, summary="更新用户")
-def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db)):
+@router.put("/{user_id}", response_model=UserResponse, summary="更新用户（管理员，或本人改自己资料）")
+def update_user(
+    user_id: int,
+    data: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    is_admin = _role_value(current_user).upper() == "ADMIN"
+    if not is_admin and current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="只能修改自己的资料")
+
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-    for key, val in data.model_dump(exclude_unset=True).items():
+    payload = data.model_dump(exclude_unset=True)
+    # 非管理员只能改基础资料与密码，不能改角色/状态/工号
+    if not is_admin:
+        for k in ("role", "is_active", "employee_id"):
+            payload.pop(k, None)
+    new_password = payload.pop("password", None)
+    for key, val in payload.items():
+        if key in ("id", "username", "password_hash"):
+            continue
         setattr(user, key, val)
+    if new_password:
+        user.password_hash = hash_password(new_password)
     db.commit()
     db.refresh(user)
     cache_service.delete(f"user:{user_id}")
     return user
 
 
-@router.delete("/{user_id}", summary="删除用户")
-def delete_user(user_id: int, db: Session = Depends(get_db)):
+@router.delete("/{user_id}", summary="删除用户（仅管理员）")
+def delete_user(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="不能删除当前登录账号")
     db.delete(user)
     db.commit()
     cache_service.delete(f"user:{user_id}")

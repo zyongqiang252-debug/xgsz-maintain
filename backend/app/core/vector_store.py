@@ -5,6 +5,7 @@ from pymilvus import (
 from typing import List, Dict, Optional
 from app.core.config import settings
 import uuid
+import time
 from loguru import logger
 
 
@@ -95,13 +96,24 @@ class VectorStore:
         self._output_fields = self._KNOWLEDGE_OUTPUT_FIELDS
         self._collection = None
         self._connected = False
+        self._retry_after = 0.0
 
     def _lazy_init(self):
-        """首次使用时初始化连接和集合"""
-        if not self._connected:
+        """首次使用时初始化连接和集合（失败后进入冷却期，避免每次请求都空等超时）"""
+        if self._connected:
+            return
+        now = time.time()
+        if now < self._retry_after:
+            raise ConnectionError(
+                f"Milvus 不可用，{int(self._retry_after - now)}s 后重试")
+        try:
             self._connect()
             self._ensure_collection()
             self._connected = True
+            self._retry_after = 0.0
+        except Exception:
+            self._retry_after = time.time() + 300
+            raise
 
     def _connect(self):
         """连接 Milvus"""

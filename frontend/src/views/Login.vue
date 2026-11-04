@@ -12,10 +12,10 @@
         <div class="brand-content">
           <div class="brand-logo">
             <div class="logo-icon">
-              <el-icon :size="28" color="#fff"><Setting /></el-icon>
+              <img src="/logo-icon.png" alt="芯光数智" />
             </div>
           </div>
-          <h1 class="brand-title">维修知识管理</h1>
+          <h1 class="brand-title">芯光数智</h1>
           <p class="brand-slogan">设备维修 · 知识沉淀 · 智能协同</p>
 
           <div class="brand-features">
@@ -43,7 +43,7 @@
           </div>
 
           <div class="brand-footer">
-            <span>© 2026 维修知识管理平台</span>
+            <span>© 2026 芯光数智</span>
           </div>
         </div>
       </div>
@@ -55,7 +55,7 @@
           <div class="auth-header">
             <h2 class="auth-title">{{ isRegister ? '创建账号' : '欢迎回来' }}</h2>
             <p class="auth-subtitle">
-              {{ isRegister ? '仅需几步即可开启维修知识管理之旅' : '请登录您的账号继续使用' }}
+              {{ isRegister ? '仅需几步即可开启芯光数智之旅' : '请登录您的账号继续使用' }}
             </p>
           </div>
 
@@ -561,7 +561,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Iphone, Lock, User, Loading, CircleCheckFilled, Setting, RefreshRight, Clock } from '@element-plus/icons-vue'
+import { Iphone, Lock, User, Loading, CircleCheckFilled, RefreshRight, Clock } from '@element-plus/icons-vue'
 import QrcodeVue from 'qrcode.vue'
 import request from '../api'
 
@@ -1054,14 +1054,16 @@ onUnmounted(() => {
   margin-bottom: 20px;
 }
 .logo-icon {
-  width: 56px; height: 56px;
-  background: linear-gradient(135deg, #0FC6C2 0%, #3370FF 100%);
+  width: 64px; height: 64px;
+  background: #fff;
+  border: 1px solid #e5e6eb;
   border-radius: 14px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 24px rgba(15, 198, 194, 0.3);
+  box-shadow: 0 8px 24px rgba(51, 112, 255, 0.18);
 }
+.logo-icon img { width: 50px; height: 50px; object-fit: contain; }
 .brand-title {
   font-size: 32px;
   font-weight: 700;

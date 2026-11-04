@@ -77,3 +77,29 @@ def get_optional_user(
     if user_id is None:
         return None
     return db.query(User).filter(User.id == int(user_id)).first()
+
+
+def _role_value(user: User) -> str:
+    """兼容 Enum 与字符串两种存储形式，统一取角色字符串值"""
+    role = user.role
+    return getattr(role, "value", role) or ""
+
+
+def require_roles(*roles: str):
+    """角色校验依赖工厂：用法 Depends(require_roles("ADMIN"))"""
+    allowed = {r.upper() for r in roles}
+
+    def _dependency(current_user: User = Depends(get_current_user)) -> User:
+        if _role_value(current_user).upper() not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="当前账号无权执行该操作",
+            )
+        return current_user
+
+    return _dependency
+
+
+# 常用快捷依赖
+require_admin = require_roles("ADMIN")
+require_supervisor = require_roles("ADMIN", "SUPERVISOR")

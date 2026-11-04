@@ -1,7 +1,7 @@
 <template>
   <div class="page">
     <div class="page-header">
-      <h2 class="page-title">{{ isNew ? '新增备件' : '编辑备件' }}</h2>
+      <h2 class="page-title">{{ isNew ? '新增备件' : (canManage ? '编辑备件' : '备件详情') }}</h2>
     </div>
 
     <el-card shadow="never">
@@ -63,8 +63,9 @@
           <el-input v-model="form.supplier" placeholder="供应商名称" />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="handleSave" :loading="saving">保存</el-button>
+          <el-button v-if="canManage" type="primary" @click="handleSave" :loading="saving">保存</el-button>
           <el-button @click="$router.push('/spare-parts')">返回列表</el-button>
+          <span v-if="!canManage" class="readonly-tip">备件台账由管理员/主管维护，当前为只读视图</span>
         </el-form-item>
       </el-form>
     </el-card>
@@ -81,6 +82,14 @@ const route = useRoute()
 const router = useRouter()
 const isNew = computed(() => !route.params.id || route.params.id === 'new')
 const saving = ref(false)
+
+// 备件台账维护权限：仅管理员/主管
+const canManage = computed(() => {
+  try {
+    const role = JSON.parse(localStorage.getItem('current_user') || '{}').role
+    return role === 'ADMIN' || role === 'SUPERVISOR'
+  } catch { return false }
+})
 
 const form = ref({
   part_code: '', part_name: '', specification: '', unit: '个',
@@ -109,5 +118,16 @@ const handleSave = async () => {
   } finally { saving.value = false }
 }
 
-onMounted(loadData)
+onMounted(() => {
+  if (isNew.value && !canManage.value) {
+    ElMessage.warning('仅管理员/主管可新增备件')
+    router.push('/spare-parts')
+    return
+  }
+  loadData()
+})
 </script>
+
+<style scoped>
+.readonly-tip { margin-left: 12px; font-size: 12px; color: #86909C; }
+</style>

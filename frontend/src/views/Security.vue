@@ -206,6 +206,10 @@
             二维码 {{ dtBindCountdown }} 秒后过期
           </div>
           <div class="dt-scan-tip">请使用手机钉钉扫描二维码，在手机端确认授权后完成绑定</div>
+          <div v-if="dtIsMock" class="dt-mock-tip">
+            当前为模拟模式（未配置钉钉应用），手机无法扫码；
+            <el-link type="primary" :underline="false" @click="openMockAuth">在本机模拟扫码</el-link>
+          </div>
           <div class="dt-scan-actions">
             <el-button type="primary" size="large" :disabled="dtBindStatus !== 'scanned'" :loading="dtBindConfirming" @click="confirmBindDingTalk">
               {{ dtBindStatus === 'scanned' ? '确认绑定' : '等待扫码...' }}
@@ -519,6 +523,18 @@ const dtBindUser = ref(null)
 const dtBindLoading = ref(false)
 const dtBindConfirming = ref(false)
 const dtBindCountdown = ref(120)
+const dtIsMock = ref(false)
+
+// 模拟模式：手机扫不到内网地址，直接在本机打开模拟授权页完成绑定测试
+function openMockAuth() {
+  if (!dtBindUrl.value) return
+  try {
+    const u = new URL(dtBindUrl.value)
+    window.open(u.pathname + u.search, '_blank')
+  } catch (e) {
+    window.open(dtBindUrl.value, '_blank')
+  }
+}
 let dtBindPollTimer = null
 let dtBindRefreshTimer = null
 
@@ -570,6 +586,7 @@ const initBindScan = () => {
     .then(res => {
       dtBindUrl.value = res.url
       dtBindState.value = res.state
+      dtIsMock.value = !!res.mock_mode
       dtBindPollTimer = setInterval(() => pollBindStatus(), 2000)
       // 如后端返回的 expire_seconds 与本地 120 差异超过 10s，以后端为准
       if (res.expire_seconds && Math.abs(res.expire_seconds - 120) > 10) {
@@ -860,6 +877,17 @@ onMounted(() => {
   color: #4E5969;
   text-align: center;
   margin-bottom: 16px;
+}
+.dt-mock-tip {
+  font-size: 12px;
+  color: #D46B08;
+  background: #FFF7E6;
+  border: 1px solid #FFD666;
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin: -6px 0 12px;
+  text-align: center;
+  line-height: 1.6;
 }
 .dt-scan-actions {
   margin-bottom: 8px;

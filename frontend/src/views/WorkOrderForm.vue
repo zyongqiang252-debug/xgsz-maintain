@@ -35,7 +35,8 @@
             <div v-if="!attachments.length">-</div>
             <div v-if="attachments.length" class="attach-gallery">
               <div v-for="(f, i) in attachments" :key="i" class="attach-item">
-                <img v-if="f.type === 'image'" :src="f.url" class="attach-thumb" />
+                <img v-if="f.type === 'image'" :src="f.url" class="attach-thumb attach-clickable"
+                     title="点击查看大图" @click="openPreview(f.url)" />
                 <video v-if="f.type !== 'image'" :src="f.url" class="attach-thumb" controls />
                 <span class="attach-name">{{ f.name }}</span>
               </div>
@@ -70,6 +71,17 @@
         </div>
       </el-card>
     </template>
+
+    <!-- 附件原图预览 -->
+    <el-dialog v-model="previewVisible" title="附件查看" width="900px" append-to-body destroy-on-close>
+      <div class="preview-wrap">
+        <img v-if="previewUrl" :src="previewUrl" class="preview-img" />
+      </div>
+      <template #footer>
+        <el-button v-if="previewUrl" type="primary" plain @click="openInNewTab(previewUrl)">新窗口打开</el-button>
+        <el-button @click="previewVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 编辑模式 -->
     <template v-if="!isViewMode">
@@ -719,6 +731,16 @@ const faultPhenomenaOptions = ref([])
 const rootCauseCascader = ref([])
 const rootCauseOptions = ref([])
 const attachments = ref([])
+const previewVisible = ref(false)
+const previewUrl = ref('')
+
+function openPreview(url) {
+  previewUrl.value = url
+  previewVisible.value = true
+}
+function openInNewTab(url) {
+  window.open(url, '_blank')
+}
 const uploadFileList = ref([])
 const devices = ref([])
 const deviceFiltered = ref([])
@@ -1696,6 +1718,9 @@ onMounted(async () => {
 .attach-gallery { display: flex; gap: 8px; flex-wrap: wrap; }
 .attach-item { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .attach-thumb { width: 80px; height: 80px; object-fit: cover; border-radius: 4px; border: 1px solid #E5E6EB; }
+.attach-clickable { cursor: zoom-in; }
+.preview-wrap { display: flex; justify-content: center; max-height: 70vh; overflow: auto; }
+.preview-img { max-width: 100%; max-height: 68vh; object-fit: contain; border-radius: 4px; }
 .attach-name { font-size: 11px; color: #86909C; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ai-dialog-body { display: flex; flex-direction: column; gap: 12px; }
 .ai-dialog-msgs { max-height: 560px; min-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 8px; }

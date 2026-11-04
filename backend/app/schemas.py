@@ -389,6 +389,7 @@ class UserCreate(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     role: Optional[str] = "TECHNICIAN"
+    is_active: Optional[bool] = True
 
 
 class UserUpdate(BaseModel):
@@ -400,6 +401,7 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     department: Optional[str] = None
     title: Optional[str] = None
+    password: Optional[str] = Field(None, min_length=6, max_length=100, description="传值则重置密码")
 
 
 class UserResponse(BaseModel):

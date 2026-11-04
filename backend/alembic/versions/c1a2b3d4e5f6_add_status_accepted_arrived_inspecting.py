@@ -19,13 +19,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     conn = op.get_bind()
-    # 新增 3 个状态值（幂等：if not exists 风格）
+    # 幂等写法：不能用 try/except 吞异常，
+    # PostgreSQL 中语句失败会让事务进入 aborted 状态，后续全部失败并整体回滚
     new_values = ['ACCEPTED', 'ARRIVED', 'INSPECTING']
     for val in new_values:
-        try:
-            conn.execute(sa.text(f"ALTER TYPE workorderstatus ADD VALUE '{val}'"))
-        except Exception:
-            pass
+        conn.execute(sa.text(f"ALTER TYPE workorderstatus ADD VALUE IF NOT EXISTS '{val}'"))
 
 
 def downgrade() -> None:

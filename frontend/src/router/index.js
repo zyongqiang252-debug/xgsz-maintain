@@ -38,6 +38,8 @@ const router = createRouter({
         { path: 'fault-codes', name: 'FaultCodes', component: () => import('../views/FaultCodes.vue'), meta: { title: '故障码管理' } },
         { path: 'work-order-imports', name: 'WorkOrderImports', component: () => import('../views/ImportWorkOrders.vue'), meta: { title: '历史工单导入', roles: ['ADMIN', 'TECHNICIAN'] } },
         { path: 'profile', name: 'Profile', component: () => import('../views/Profile.vue'), meta: { title: '个人设置' } },
+        { path: 'notifications', name: 'Notifications', component: () => import('../views/Notifications.vue'), meta: { title: '通知中心' } },
+        { path: 'leave', name: 'LeaveRequests', component: () => import('../views/LeaveRequests.vue'), meta: { title: '我的请假' } },
         { path: 'security', name: 'Security', component: () => import('../views/Security.vue'), meta: { title: '账号安全' } },
         { path: 'help', name: 'Help', component: () => import('../views/Help.vue'), meta: { title: '帮助中心' } },
         { path: 'supervisor/dispatch', name: 'SupervisorDispatch', component: () => import('../views/SupervisorDispatch.vue'), meta: { title: '派工中心', roles: ['SUPERVISOR', 'ADMIN'] } },
@@ -61,6 +63,7 @@ const router = createRouter({
         { path: 'report', name: 'MobileReport', component: () => import('../views/mobile/WorkerSubmit.vue'), meta: { title: '故障上报' } },
         { path: 'queue', name: 'TechQueue', component: () => import('../views/mobile/TechQueue.vue'), meta: { title: '我的工单' } },
         { path: 'detail/:id', name: 'TechDetail', component: () => import('../views/mobile/TechDetail.vue'), meta: { title: '工单详情' } },
+        { path: 'leave', name: 'MobileLeave', component: () => import('../views/mobile/MobileLeave.vue'), meta: { title: '请假申请' } },
       ]
     }
   ]

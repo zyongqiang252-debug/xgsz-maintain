@@ -3,8 +3,8 @@
     <div class="page-header">
       <h2 class="page-title">库存管理</h2>
       <div class="header-actions">
-        <el-button @click="importDialog.visible = true">进货单导入</el-button>
-        <el-button type="primary" @click="$router.push('/spare-parts/new')">新增备件</el-button>
+        <el-button v-if="canManage" @click="importDialog.visible = true">进货单导入</el-button>
+        <el-button v-if="canManage" type="primary" @click="$router.push('/spare-parts/new')">新增备件</el-button>
       </div>
     </div>
 
@@ -58,8 +58,8 @@
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <div class="action-group">
-              <el-button size="small" type="primary" @click="$router.push(`/spare-parts/${row.id}`)">编辑</el-button>
-              <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
+              <el-button size="small" type="primary" @click="$router.push(`/spare-parts/${row.id}`)">{{ canManage ? '编辑' : '查看' }}</el-button>
+              <el-button v-if="canManage" size="small" type="danger" @click="handleDelete(row)">删除</el-button>
             </div>
           </template>
         </el-table-column>
@@ -188,9 +188,17 @@
 </template>
 
 <script setup>
-import { ref, onMounted, reactive } from 'vue'
+import { ref, onMounted, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api'
+
+// 备件台账维护权限：仅管理员/主管可增删改，维修员只读
+const canManage = computed(() => {
+  try {
+    const role = JSON.parse(localStorage.getItem('current_user') || '{}').role
+    return role === 'ADMIN' || role === 'SUPERVISOR'
+  } catch { return false }
+})
 
 const list = ref([])
 const loading = ref(false)
