@@ -593,10 +593,14 @@ def dingtalk_scan_callback(req: DingTalkScanCallbackRequest, request: Request):
             detail="真实模式不接受前端提交的用户信息，请使用钉钉 OAuth code 换取身份",
         )
 
-    # Mock 模式：只允许发起扫码的那个 IP 回写，避免他人截获 state 后冒充
+    # Mock 模式：身份本身不可信，真正的防线是"只允许登录 mock_ 账号"（见 confirm）。
+    # 这里同 IP 不一致只告警不拒绝，避免手机扫码演示时（手机与电脑不同 IP）被误挡。
     if user_info:
         if session.get("ip") and _client_ip(request) and _client_ip(request) != session["ip"]:
-            raise HTTPException(status_code=403, detail="扫码会话与当前请求来源不一致")
+            logger.warning(
+                f"[Auth][Mock] 扫码会话来源 IP 与生成时不一致（session={session['ip']}, now={_client_ip(request)}），"
+                f"继续但仅允许演示账号"
+            )
 
     if req.code and not user_info:
         # 真实模式：通过 code 换取用户信息
