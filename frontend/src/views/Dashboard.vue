@@ -118,14 +118,14 @@
           </div>
         </template>
         <el-table :data="recentOrders" stripe size="small">
-          <el-table-column prop="work_order_no" label="工单编号" width="160" />
-          <el-table-column prop="fault_description" label="故障描述" min-width="160" show-overflow-tooltip />
-          <el-table-column label="状态" width="90">
+          <el-table-column prop="work_order_no" label="工单编号" width="130" show-overflow-tooltip />
+          <el-table-column prop="fault_description" label="故障描述" min-width="120" show-overflow-tooltip />
+          <el-table-column label="状态" width="72">
             <template #default="{ row }">
               <span class="status-tag" :class="'status-' + row.status">{{ statusLabel(row.status) }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="置信度" width="75">
+          <el-table-column label="置信度" width="56">
             <template #default="{ row }">
               <span v-if="row.confidence != null" style="font-size:12px;font-weight:600"
                 :style="{ color: row.confidence >= 0.8 ? '#00B42A' : '#86909C' }">
@@ -134,7 +134,7 @@
               <span v-else style="color:#C9CDD4;font-size:12px">-</span>
             </template>
           </el-table-column>
-          <el-table-column prop="created_at" label="创建时间" width="140">
+          <el-table-column prop="created_at" label="创建时间" width="112">
             <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
           </el-table-column>
         </el-table>

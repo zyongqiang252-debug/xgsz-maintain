@@ -125,6 +125,10 @@
         <qrcode-vue v-if="qr.url" :value="qr.url" :size="220" level="M" />
         <div class="qr-device">{{ qr.row?.device_name || '' }}（{{ qr.row?.device_code || '' }}）</div>
         <div class="qr-tip">手机扫码 → 自动带出设备信息 → 填故障描述即可报修</div>
+        <el-select v-if="qr.bases.length > 1" v-model="qr.base" size="small" style="width: 100%"
+                   @change="applyQrBase">
+          <el-option v-for="b in qr.bases" :key="b.url" :label="b.label" :value="b.url" />
+        </el-select>
         <div class="qr-url">{{ qr.url }}</div>
         <el-button size="small" type="primary" plain @click="copyQrUrl">复制链接</el-button>
       </div>
@@ -285,12 +289,48 @@ onMounted(async () => {
 onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 
 // ===== 设备二维码 =====
-const qr = reactive({ visible: false, row: null, url: '' })
-const openQr = (row) => {
-  const base = window.location.origin
+const qr = reactive({ visible: false, row: null, url: '', lanHint: '', isLocalhost: false,
+                     bases: [], base: '' })
+
+// 手机扫 127.0.0.1 是打不开的（指向手机自己），必须用局域网 IP 或公网地址
+const resolveBases = async () => {
+  const origin = window.location.origin
+  const host = window.location.hostname
+  const isLoopback = host === '127.0.0.1' || host === 'localhost'
+  const bases = []
+  if (!isLoopback) bases.push({ label: origin, url: origin })
+  try {
+    const info = await request.get('/system-info/network')
+    const port = info.port || 18080
+    const ips = info.lan_ips || []
+    const pub = (info.public_base_url || '').replace(/\/$/, '')
+    // 公网地址不一定等于某个网卡 IP，单独列出
+    if (pub && !bases.some((b) => b.url === pub)) bases.push({ label: pub + '（公网/推荐）', url: pub })
+    ips.forEach((ip) => {
+      const u = `http://${ip}:${port}`
+      if (!bases.some((b) => b.url === u)) bases.push({ label: u, url: u })
+    })
+  } catch { /* 忽略 */ }
+  if (!bases.length) bases.push({ label: origin, url: origin })
+  return { bases, isLoopback: isLoopback && !bases.some((b) => !/127\.0\.0\.1|localhost/.test(b.url)) }
+}
+
+const applyQrBase = (base) => {
+  qr.base = base
+  const code = encodeURIComponent(qr.row?.device_code || '')
+  qr.url = `${base}/m/report?device=${code}`
+}
+
+const openQr = async (row) => {
   qr.row = row
-  qr.url = `${base}/m/report?device=${encodeURIComponent(row.device_code || '')}`
   qr.visible = true
+  qr.url = ''
+  qr.bases = []
+  const info = await resolveBases()
+  qr.bases = info.bases
+  qr.isLocalhost = info.isLoopback
+  qr.lanHint = '手机需与本机连接同一 Wi-Fi；扫不开就换个地址试试'
+  applyQrBase(qr.bases[0].url)
 }
 const copyQrUrl = async () => {
   try {
@@ -346,4 +386,6 @@ const copyQrUrl = async () => {
 .qr-device { font-weight:600; color:#1F2329; }
 .qr-tip { font-size:12px; color:#86909C; }
 .qr-url { font-size:11px; color:#C9CDD4; word-break:break-all; text-align:center; }
+.qr-alert { width: 100%; margin: 4px 0; }
+.qr-hint { font-size: 12px; color: #86909C; }
 </style>

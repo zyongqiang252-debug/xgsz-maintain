@@ -146,6 +146,8 @@ from app.api.maintenance import router as maintenance_router  # noqa: E402
 from app.api.inspections import router as inspections_router  # noqa: E402
 app.include_router(maintenance_router, prefix="/api/v1/maintenance", tags=["保养计划"])
 app.include_router(inspections_router, prefix="/api/v1/inspections", tags=["点检巡检"])
+from app.api.system_info import router as system_info_router  # noqa: E402
+app.include_router(system_info_router, prefix="/api/v1/system-info", tags=["系统信息"])
 
 # ============================================================
 # MCP Server（Streamable HTTP）：仅本机可访问，可配置 API Key

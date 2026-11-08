@@ -26,15 +26,15 @@
         style="margin-top: 16px"
       >
         <el-table-column prop="name" label="分类名称" min-width="200" />
-        <el-table-column prop="code" label="分类编码" width="180" />
+        <el-table-column prop="code" label="分类编码" width="150" />
         <el-table-column prop="sort_order" label="排序" width="80" />
-        <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
-        <el-table-column label="操作" width="200">
+        <el-table-column prop="description" label="描述" min-width="180" show-overflow-tooltip />
+        <el-table-column label="操作" width="180">
           <template #default="{ row }">
             <div class="action-group">
-              <el-button size="small" type="primary" @click="handleAddChild(row)">添加子级</el-button>
-              <el-button size="small" type="primary" @click="handleEdit(row)">编辑</el-button>
-              <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
+              <el-button size="small" type="primary" @click="handleAddChild(row)">加子级</el-button>
+              <el-button link type="primary" @click="handleEdit(row)">编辑</el-button>
+              <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
             </div>
           </template>
         </el-table-column>
@@ -173,4 +173,6 @@ onMounted(fetchData)
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .page-title { font-size: 20px; font-weight: 600; color: var(--color-text-primary); }
 .filter-bar { display: flex; gap: 12px; align-items: center; }
+.cat-op { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.cat-op :deep(.el-button.is-link) { padding: 0 2px; height: auto; }
 </style>
