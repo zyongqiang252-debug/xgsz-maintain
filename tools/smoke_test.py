@@ -176,8 +176,14 @@ def main():
 
     def do_transition(to_status, remark):
         def _fn():
-            r = s.post(API + f"/work-orders/{wo['id']}/transition",
-                       json={"to_status": to_status, "remark": remark, "source": "WEB"}, timeout=60)
+            payload = {"to_status": to_status, "remark": remark, "source": "WEB"}
+            # 派工（ASSIGNED）现在必须指定维修员，否则接口 400
+            if to_status == "ASSIGNED":
+                techs = j(s.get(API + "/dispatch/technicians", timeout=30))
+                tech_list = techs if isinstance(techs, list) else (techs.get("items") or [])
+                if tech_list:
+                    payload["technician_id"] = tech_list[0]["id"]
+            r = s.post(API + f"/work-orders/{wo['id']}/transition", json=payload, timeout=60)
             d = j(r)
             return r.status_code == 200, {"state": d.get("status"), "detail": d.get("detail")}
         return _fn
