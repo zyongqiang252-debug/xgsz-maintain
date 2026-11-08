@@ -71,6 +71,8 @@ cd backend
 - 生命周期 A：`DRAFT→SUBMITTED→ASSIGNED→ACCEPTED→ARRIVED→INSPECTING→IN_PROGRESS→ARCHIVING→ARCHIVED`，归档完成度 100%
 - 检索：无 Milvus 时 BM25 命中 1 条 score 0.97
 - PDF：解析 2.1s 成功，LLM 抽取因无 Key 失败（属预期）
+- 截图存于 `tools/screenshots/`（登录 / 驾驶舱 / 维修报表 / 工单详情 / 历史工单导入 / AI 问答）
+- 验证脚本与结果：`tools/smoke_test.py`，报告落在 `%TEMP%\xgsz-smoke-report.json`
 
 ### 注意到的既有行为（非本次改动）
 
