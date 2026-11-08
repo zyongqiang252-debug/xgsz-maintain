@@ -48,7 +48,9 @@
           <el-alert
             :type="aiTest.ok ? 'success' : 'error'"
             :closable="false"
-            :title="aiTest.ok ? `连通正常 · ${aiTest.latency_ms}ms · 模型 ${aiTest.model}` : aiTest.msg"
+            :title="aiTest.ok
+              ? `连通正常 · ${aiTest.latency_ms}ms · 模型 ${aiTest.model}` + (aiTest.tested_unsaved ? '（用的是输入框里未保存的 Key，记得点保存）' : '')
+              : aiTest.msg"
           />
         </el-form-item>
       </el-form>
@@ -177,7 +179,10 @@ const testAI = async () => {
   testingAI.value = true
   aiTest.value = null
   try {
-    const res = await request.post('/system-settings/ai/test', null, { timeout: 40000 })
+    // 把输入框里当前的值带过去：没保存也能先测
+    const payload = { base_url: form.baseUrl, model: form.model }
+    if (form.apiKey.trim()) payload.api_key = form.apiKey.trim()
+    const res = await request.post('/system-settings/ai/test', payload, { timeout: 40000 })
     aiTest.value = { ok: true, ...res }
   } catch (e) {
     aiTest.value = { ok: false, msg: e?.response?.data?.detail || '测试失败' }

@@ -91,37 +91,49 @@ def save_ai_settings(data: AISettingsIn, db: Session = Depends(get_db),
             "changed": [k for k in changed]}
 
 
-@router.post("/ai/test", summary="测试 AI 连通性（发一条最小请求）")
-def test_ai(current_user: User = Depends(require_admin)):
-    key = (settings.DEEPSEEK_API_KEY or "").strip()
+class AITestIn(BaseModel):
+    """测试连接：可传当前表单里的值，未保存也能先试"""
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    model: Optional[str] = None
+
+
+@router.post("/ai/test", summary="测试 AI 连通性（可用表单里未保存的值）")
+def test_ai(body: Optional[AITestIn] = None, current_user: User = Depends(require_admin)):
+    key = ((body.api_key if body else None) or settings.DEEPSEEK_API_KEY or "").strip()
+    base_url = ((body.base_url if body else None) or settings.DEEPSEEK_BASE_URL or "").strip()
+    model = ((body.model if body else None) or settings.DEEPSEEK_MODEL or "").strip()
     if not key:
-        raise HTTPException(status_code=400, detail="还没配置 API Key")
-    url = settings.DEEPSEEK_BASE_URL.rstrip("/") + "/chat/completions"
-    payload = {
-        "model": settings.DEEPSEEK_MODEL,
+        raise HTTPException(
+            status_code=400,
+            detail="还没填 API Key：把 sk- 开头的密钥贴到上面的输入框，再点「测试连接」或「保存并生效」",
+        )
+    url = base_url.rstrip("/") + "/chat/completions"
+    req_body = {
+        "model": model,
         "messages": [{"role": "user", "content": "回复两个字：收到"}],
         "max_tokens": 16,
         "stream": False,
     }
     t0 = time.time()
     try:
-        r = requests.post(url, json=payload, timeout=20,
-                          headers={"Authorization": f"Bearer {key}",
-                                   "Content-Type": "application/json"})
+        resp = requests.post(url, json=req_body, timeout=20,
+                             headers={"Authorization": f"Bearer {key}",
+                                      "Content-Type": "application/json"})
         cost = int((time.time() - t0) * 1000)
-        if r.status_code != 200:
-            body = r.text[:200]
+        if resp.status_code != 200:
             raise HTTPException(status_code=400,
-                                detail=f"接口返回 {r.status_code}：{body}")
-        data = r.json()
-        reply = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
-        usage = data.get("usage") or {}
+                                detail=f"接口返回 {resp.status_code}：{resp.text[:200]}")
+        resp_json = resp.json()
+        reply = (resp_json.get("choices") or [{}])[0].get("message", {}).get("content", "")
+        usage = resp_json.get("usage") or {}
         return {
             "ok": True,
             "latency_ms": cost,
-            "model": data.get("model") or settings.DEEPSEEK_MODEL,
+            "model": resp_json.get("model") or model,
             "reply": (reply or "").strip()[:50],
             "tokens": usage.get("total_tokens"),
+            "tested_unsaved": bool(body and body.api_key),
         }
     except HTTPException:
         raise
