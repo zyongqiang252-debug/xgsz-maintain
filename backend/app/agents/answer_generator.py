@@ -122,6 +122,23 @@ class AnswerGenerator:
 - **禁止在回答末尾列出参考案例清单**，参考案例由系统界面单独展示
 - 严格基于案例内容，不添加案例中没有的信息"""
 
+    def _system_prompt(self, base: str) -> str:
+        """系统提示包装：可开关「无相关案例时是否允许通用知识回答」
+
+        默认关闭（严格基于案例）；打开后允许模型用通用维修常识兜底，
+        但强制在开头标注「非本厂历史案例，仅供参考」，避免把通用建议当成厂内经验。
+        """
+        if getattr(settings, "AI_ALLOW_GENERAL_ANSWER", False):
+            return base + (
+                "\n\n【补充策略（优先级高于上文「不提供通用建议」）】\n"
+                "若检索到的案例与用户问题无关，或知识库中根本没有相关案例：\n"
+                "1) 允许你基于通用设备维修常识作答；\n"
+                "2) 必须在回答最开头单独一行输出：【以下内容基于通用知识，非本厂历史维修案例，仅供参考】；\n"
+                "3) 仍然不得编造工单号、设备编号、历史维修记录、具体厂家参数；\n"
+                "4) 涉及带电、高温、压力容器等高风险操作时，必须提醒联系厂家或持证专业人员。"
+            )
+        return base
+
     def __init__(self):
         self._llm: Optional[ChatOpenAI] = None
 
@@ -467,7 +484,7 @@ class AnswerGenerator:
             "cases_count": len(cases),
         }) as trace_ctx:
             messages = [
-                SystemMessage(content=self.SYSTEM_PROMPT),
+                SystemMessage(content=self._system_prompt(self.SYSTEM_PROMPT)),
                 HumanMessage(content=user_prompt),
             ]
             response = self.llm.invoke(messages)
@@ -591,7 +608,7 @@ class AnswerGenerator:
                 "cases_count": len(cases),
             }) as trace_ctx:
                 messages = [
-                    SystemMessage(content=self.SYSTEM_PROMPT),
+                    SystemMessage(content=self._system_prompt(self.SYSTEM_PROMPT)),
                     HumanMessage(content=user_prompt),
                 ]
 
@@ -685,7 +702,7 @@ class AnswerGenerator:
                 "faults_count": len(faults),
             }) as trace_ctx:
                 messages = [
-                    SystemMessage(content=self.MULTI_FAULT_PROMPT),
+                    SystemMessage(content=self._system_prompt(self.MULTI_FAULT_PROMPT)),
                     HumanMessage(content=user_prompt),
                 ]
                 for chunk in self.llm.stream(messages):

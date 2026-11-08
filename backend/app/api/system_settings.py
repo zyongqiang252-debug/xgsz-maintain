@@ -30,6 +30,7 @@ class AISettingsIn(BaseModel):
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     model: Optional[str] = None
+    allow_general: Optional[bool] = None
 
 
 class GroupRobotIn(BaseModel):
@@ -44,6 +45,7 @@ def _ai_status() -> dict:
         "api_key_masked": rt.mask_secret(key),
         "base_url": settings.DEEPSEEK_BASE_URL,
         "model": settings.DEEPSEEK_MODEL,
+        "allow_general": bool(settings.AI_ALLOW_GENERAL_ANSWER),
         "callable": bool(key),
     }
 
@@ -85,7 +87,8 @@ def save_ai_settings(data: AISettingsIn, db: Session = Depends(get_db),
                      current_user: User = Depends(require_admin)):
     if data.api_key is not None and data.api_key.strip() and len(data.api_key.strip()) < 10:
         raise HTTPException(status_code=400, detail="API Key 格式不对（长度不足）")
-    changed = rt.save_ai(db, api_key=data.api_key, base_url=data.base_url, model=data.model)
+    changed = rt.save_ai(db, api_key=data.api_key, base_url=data.base_url,
+                        model=data.model, allow_general=data.allow_general)
     logger.info(f"[SystemSettings] {current_user.real_name} 更新 AI 配置: {list(changed.keys())}")
     return {"message": "已保存并生效", "current": _ai_status(),
             "changed": [k for k in changed]}

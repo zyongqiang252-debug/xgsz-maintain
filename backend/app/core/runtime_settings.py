@@ -23,6 +23,7 @@ from app.core.config import settings
 KEY_API_KEY = "ai.deepseek_api_key"        # 敏感：加密存储
 KEY_BASE_URL = "ai.deepseek_base_url"
 KEY_MODEL = "ai.deepseek_model"
+KEY_ALLOW_GENERAL = "ai.allow_general_answer"
 KEY_GROUP_WEBHOOK = "dingtalk.group_webhook"   # 敏感：含 access_token，加密存储
 KEY_GROUP_SECRET = "dingtalk.group_secret"     # 敏感：加密存储
 
@@ -32,6 +33,7 @@ DESCRIPTIONS = {
     KEY_API_KEY: "DeepSeek API Key（加密存储；网页设置优先于 .env）",
     KEY_BASE_URL: "DeepSeek API Base URL",
     KEY_MODEL: "DeepSeek 模型名",
+    KEY_ALLOW_GENERAL: "无相关案例时是否允许通用知识回答（标注非本厂案例）",
     KEY_GROUP_WEBHOOK: "钉钉群机器人 Webhook（加密存储）",
     KEY_GROUP_SECRET: "钉钉群机器人加签密钥（加密存储）",
 }
@@ -86,6 +88,9 @@ def apply_to_settings(values: Dict[str, Optional[str]]) -> None:
         settings.DEEPSEEK_BASE_URL = (values[KEY_BASE_URL] or "").strip() or "https://api.deepseek.com"
     if values.get(KEY_MODEL) is not None:
         settings.DEEPSEEK_MODEL = (values[KEY_MODEL] or "").strip() or "deepseek-chat"
+    if values.get(KEY_ALLOW_GENERAL) is not None:
+        v = values[KEY_ALLOW_GENERAL]
+        settings.AI_ALLOW_GENERAL_ANSWER = str(v).strip().lower() in ("1", "true", "yes", "on")
     if values.get(KEY_GROUP_WEBHOOK) is not None:
         settings.DINGTALK_GROUP_WEBHOOK = (values[KEY_GROUP_WEBHOOK] or "").strip()
     if values.get(KEY_GROUP_SECRET) is not None:
@@ -137,7 +142,8 @@ def _write_value(db: Session, key: str, plain: str) -> None:
 
 
 def save_ai(db: Session, api_key: Optional[str] = None,
-            base_url: Optional[str] = None, model: Optional[str] = None) -> Dict:
+            base_url: Optional[str] = None, model: Optional[str] = None,
+            allow_general: Optional[bool] = None) -> Dict:
     """保存 AI 配置（传 None 表示不修改；传空串表示清空）"""
     changed = {}
     if api_key is not None:
@@ -149,6 +155,9 @@ def save_ai(db: Session, api_key: Optional[str] = None,
     if model is not None:
         _write_value(db, KEY_MODEL, model.strip())
         changed[KEY_MODEL] = model.strip()
+    if allow_general is not None:
+        _write_value(db, KEY_ALLOW_GENERAL, "true" if allow_general else "false")
+        changed[KEY_ALLOW_GENERAL] = "true" if allow_general else "false"
     apply_to_settings(changed)
     return changed
 

@@ -48,6 +48,13 @@
           </el-select>
           <span class="hint">可手动输入其他模型名</span>
         </el-form-item>
+        <el-form-item label="通用回答">
+          <el-switch v-model="form.allowGeneral" />
+          <span class="hint">
+            关闭（默认）：只依据知识库案例回答，没有案例就明说「未检索到」；
+            打开：没有案例时允许用通用维修知识回答，并在开头标注「非本厂案例，仅供参考」
+          </span>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="savingAI" @click="saveAI">保存并生效</el-button>
           <el-button :loading="testingAI" @click="testAI">测试连接</el-button>
@@ -142,7 +149,7 @@ import request from '../api'
 const ai = reactive({ configured: false, api_key_masked: '', base_url: '', model: '' })
 const group = reactive({ enabled: false, webhook_masked: '', signed: false })
 const overview = reactive({})
-const form = reactive({ apiKey: '', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' })
+const form = reactive({ apiKey: '', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', allowGeneral: false })
 const groupForm = reactive({ webhook: '', secret: '' })
 const aiTest = ref(null)
 const savingAI = ref(false)
@@ -161,6 +168,7 @@ const loadAll = async () => {
     Object.assign(ai, aiRes)
     form.baseUrl = aiRes.base_url || 'https://api.deepseek.com'
     form.model = aiRes.model || 'deepseek-chat'
+    form.allowGeneral = !!aiRes.allow_general
     Object.assign(group, gr)
   } catch (e) {
     ElMessage.error('读取配置失败')
@@ -171,7 +179,7 @@ const saveAI = async () => {
   savingAI.value = true
   aiTest.value = null
   try {
-    const payload = { base_url: form.baseUrl, model: form.model }
+    const payload = { base_url: form.baseUrl, model: form.model, allow_general: form.allowGeneral }
     if (form.apiKey.trim()) payload.api_key = form.apiKey.trim()
     const res = await request.put('/system-settings/ai', payload)
     Object.assign(ai, res.current)
@@ -189,7 +197,7 @@ const testAI = async () => {
   aiTest.value = null
   try {
     // 把输入框里当前的值带过去：没保存也能先测
-    const payload = { base_url: form.baseUrl, model: form.model }
+    const payload = { base_url: form.baseUrl, model: form.model, allow_general: form.allowGeneral }
     if (form.apiKey.trim()) payload.api_key = form.apiKey.trim()
     const res = await request.post('/system-settings/ai/test', payload, { timeout: 40000 })
     aiTest.value = { ok: true, ...res }

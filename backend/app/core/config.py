@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     DEEPSEEK_MODEL: str = "deepseek-chat"
+    # 知识库没有相关案例时，是否允许模型用通用维修知识兜底作答（会强制标注“非本厂案例”）
+    AI_ALLOW_GENERAL_ANSWER: bool = False
 
     # 钉钉开放平台配置
     DINGTALK_APP_KEY: str = ""
