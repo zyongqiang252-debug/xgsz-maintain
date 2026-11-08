@@ -338,12 +338,23 @@ def build_row_data(values: List[str], mapping: Dict[str, int]) -> Tuple[Dict[str
         else:
             warnings.append(f"优先级「{pr}」无法识别，按中等处理")
 
-    # 工时
+    # 工时：负数/超范围视为阻断性错误（否则会悄悄丢数据）
     hours, err = normalize_hours(get("work_hours"))
     if err:
-        warnings.append(err)
+        errors.append(err)
     if hours is not None:
         data["work_hours"] = hours
+
+    # 文本长度护栏：库字段是 Text，但超长描述没有业务意义且会拖慢检索
+    desc = data.get("fault_description") or ""
+    if len(desc) > 4000:
+        errors.append(f"故障描述过长（{len(desc)} 字，上限 4000）")
+    elif len(desc) > 1000:
+        warnings.append(f"故障描述较长（{len(desc)} 字），建议精简到 1000 字以内")
+
+    wo_no = data.get("work_order_no") or ""
+    if len(wo_no) > 50:
+        errors.append(f"工单号过长（{len(wo_no)} 字，上限 50）")
 
     # 时间
     for key, label in (("start_time", "报修时间"), ("end_time", "完工时间")):

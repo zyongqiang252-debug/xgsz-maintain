@@ -16,6 +16,7 @@ import re
 from app.core.database import get_db
 from app.core.dingtalk import dingtalk
 from app.core.config import settings
+from app.core.security import get_current_user, require_supervisor
 from app.core.notification import notification_service
 from app.models.work_order import WorkOrder, WorkOrderStatus
 from app.models.user import User, UserRole
@@ -97,6 +98,49 @@ def ensure_oa_services_started(app) -> None:
 
 
 # ==================== 钉钉 OAuth2 扫码回调 ====================
+
+def _check_scheduler_token(token: str) -> bool:
+    """调度 token 校验：必须显式配置 SCHEDULER_TOKEN，且不再提供硬编码默认值"""
+    import hmac
+    expected = getattr(settings, "SCHEDULER_TOKEN", "") or ""
+    if not expected:
+        logger.warning("[DingTalk] 未配置 SCHEDULER_TOKEN，调度接口已拒绝（请在 .env 配置随机串）")
+        return False
+    return hmac.compare_digest(str(token or ""), expected)
+
+
+def _client_ip(request: Request) -> str:
+    xff = request.headers.get("x-forwarded-for") or ""
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else ""
+
+
+def _verify_robot_callback(request: Request) -> None:
+    """机器人回调来源校验：
+    - Mock 模式：只允许本机（127.0.0.1/::1）调用
+    - 真实模式：校验钉钉签名 sign = base64(HMAC-SHA256(secret, timestamp + "\\n" + secret))
+    """
+    import base64
+    import hashlib
+    import hmac
+
+    if settings.DINGTALK_MOCK_MODE:
+        ip = _client_ip(request)
+        if ip not in ("127.0.0.1", "::1", "localhost"):
+            raise HTTPException(status_code=403, detail="Mock 模式仅允许本机访问机器人回调")
+        return
+
+    ts = request.headers.get("timestamp") or ""
+    sign = request.headers.get("sign") or ""
+    secret = settings.DINGTALK_APP_SECRET or ""
+    if not (ts and sign and secret):
+        raise HTTPException(status_code=403, detail="缺少钉钉签名，拒绝回调")
+    mac = hmac.new(secret.encode(), f"{ts}\n{secret}".encode(), hashlib.sha256).digest()
+    expected = base64.b64encode(mac).decode()
+    if not hmac.compare_digest(sign, expected):
+        raise HTTPException(status_code=403, detail="钉钉签名校验失败")
+
 
 @router.get("/callback", summary="钉钉 OAuth2 扫码登录回调")
 def dingtalk_oauth_callback(
@@ -344,7 +388,8 @@ def _infer_role(dept_name: str, title: str, userid: str) -> str:
 # ==================== 通讯录同步 ====================
 
 @router.post("/sync-contacts", response_model=ContactSyncResponse, summary="同步钉钉通讯录")
-def sync_contacts(db: Session = Depends(get_db)):
+def sync_contacts(db: Session = Depends(get_db),
+                  current_user: User = Depends(require_supervisor)):
     """
     从钉钉拉取部门+用户列表，upsert 到本地 users 表
     - 按 dingtalk_userid 匹配
@@ -407,13 +452,14 @@ def sync_contacts(db: Session = Depends(get_db)):
 
 
 @router.get("/departments", summary="获取部门列表")
-def list_departments():
+def list_departments(current_user: User = Depends(get_current_user)):
     """获取钉钉部门列表（Mock/真实）"""
     return dingtalk.get_department_list()
 
 
 @router.get("/contacts", summary="获取用户列表")
-def list_contacts(dept_id: int = Query(0, description="部门ID，0为全部")):
+def list_contacts(dept_id: int = Query(0, description="部门ID，0为全部"),
+                  current_user: User = Depends(get_current_user)):
     """获取钉钉用户列表"""
     return dingtalk.get_user_list(dept_id)
 
@@ -421,7 +467,8 @@ def list_contacts(dept_id: int = Query(0, description="部门ID，0为全部")):
 # ==================== 移动端极简上报 ====================
 
 @router.post("/report", summary="移动端极简上报")
-def mobile_report(req: MobileReportRequest, db: Session = Depends(get_db)):
+def mobile_report(req: MobileReportRequest, db: Session = Depends(get_db),
+                  current_user: User = Depends(get_current_user)):
     """
     工作人员通过移动端扫码/拍照/语音上报故障
     - 自动生成工单编号
@@ -461,6 +508,7 @@ def mobile_report(req: MobileReportRequest, db: Session = Depends(get_db)):
 @router.get("/tech/queue", summary="维修人员工单队列")
 def tech_queue(
     userid: str = Query(...),
+    current_user: User = Depends(get_current_user),
     page: int = Query(1, ge=1),
     page_size: int = Query(10),
     db: Session = Depends(get_db),
@@ -501,7 +549,8 @@ def tech_queue(
 
 
 @router.get("/tech/detail/{work_order_id}", summary="维修人员工单详情")
-def tech_detail(work_order_id: int, db: Session = Depends(get_db)):
+def tech_detail(work_order_id: int, db: Session = Depends(get_db),
+                current_user: User = Depends(get_current_user)):
     """获取工单完整详情（含分析结果、库存关联）"""
     wo = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
     if not wo:
@@ -540,7 +589,8 @@ def tech_detail(work_order_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/tech/start/{work_order_id}", summary="开始维修")
-def tech_start_work(work_order_id: int, db: Session = Depends(get_db)):
+def tech_start_work(work_order_id: int, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
     """维修人员接单，状态 → IN_PROGRESS"""
     wo = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
     if not wo:
@@ -558,6 +608,7 @@ def tech_complete_work(
     work_order_id: int,
     report: CompletionReportRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """维修完成，提交报告，状态 → COMPLETED"""
     wo = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
@@ -708,8 +759,11 @@ async def robot_callback(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """钉钉机器人 Webhook：收到消息 → 解析指令 → 走对应流程。
+    """钉钉机器人 Webhook：收到消息 → 解析流程。
     为了兼容各种回调形态，直接读 Request body 的 JSON。"""
+    # 安全修复：回调必须校验来源，否则任何人都能伪造消息让机器人建单/查单
+    _verify_robot_callback(request)
+
     try:
         payload = await request.json()
     except Exception:
@@ -1320,7 +1374,7 @@ def leave_daily_9am_task(token: str = Query(..., description="内部调度 token
     """每天 9:00 触发。外部 cron/APScheduler 调此接口即可（需带 settings.SCHEDULER_TOKEN）。"""
     from app.models.user import User, UserRole
     from app.models.leave_request import LeaveRequest, LeaveRequestStatus
-    if token != getattr(settings, "SCHEDULER_TOKEN", "sched_token_2026"):
+    if not _check_scheduler_token(token):
         raise HTTPException(status_code=403, detail="token 不正确")
     items = (
         db.query(LeaveRequest)
@@ -1474,9 +1528,9 @@ def sync_oa_leaves_manually(
       - 你建好模板、填完 .env 的 processCode 后，可以先手动调这个接口把过去 N 天的请假单向系统同步一遍。
       - 未来每天 01:00 APScheduler 会自动跑一次（近 3 天）
     """
-    scheduler_token = getattr(settings, "SCHEDULER_TOKEN", None)
-    if scheduler_token and token and token != scheduler_token:
-        raise HTTPException(status_code=403, detail="token 不正确")
+    # 安全修复：原来"token 为空就放行"，匿名即可触发同步；改为必须持有正确 token
+    if not _check_scheduler_token(token):
+        raise HTTPException(status_code=403, detail="token 不正确或未配置 SCHEDULER_TOKEN")
     return sync_recent_oa_leaves(days=days)
 
 

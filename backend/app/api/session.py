@@ -1,15 +1,14 @@
 """会话管理 API - 摘要压缩"""
 import time
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from loguru import logger
 
 from app.agents.session_summarizer import session_summarizer
+from app.core.security import get_current_user
 
-router = APIRouter()
-
-
+router = APIRouter(dependencies=[Depends(get_current_user)])
 class MessageItem(BaseModel):
     role: str = Field(..., pattern="^(user|assistant)$")
     content: str = Field(..., min_length=1)

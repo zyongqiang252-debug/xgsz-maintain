@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = True
     BACKEND_PORT: int = 18080
+    # 上传单文件上限（MB）
+    MAX_UPLOAD_MB: int = 20
+    # 是否对外暴露 /docs 与 /openapi.json（生产建议关闭）
+    DOCS_ENABLED: bool = True
+    # CORS 允许来源，逗号分隔；生产环境务必写具体域名，不要留 *
+    CORS_ORIGINS: str = "*"
 
     # 数据库配置
     DB_USER: str = "admin"
@@ -63,6 +69,9 @@ class Settings(BaseSettings):
     SMS_SIGN_NAME: str = ""          # 短信签名（需在阿里云短信控制台申请）
     SMS_TEMPLATE_CODE: str = ""      # 验证码短信模板 CODE（需在阿里云短信控制台申请）
     SMS_ENABLED: bool = False        # 是否启用真实短信发送
+    # 本地联调开关：仅 DEBUG=true 且显式打开时，发码接口才把 Mock 验证码回显给前端。
+    # 生产环境必须保持 False，否则等于任何人都能重置任意账号密码。
+    AUTH_MOCK_CODE_ECHO: bool = False
 
     # 服务器公开访问地址（用于生成可扫码的真实 URL）
     SERVER_PUBLIC_URL: str = "http://127.0.0.1:8000"

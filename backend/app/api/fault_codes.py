@@ -11,8 +11,7 @@ from app.core.security import get_current_user
 from app.models.fault_code import FaultCodeMapping
 from app.models.user import User
 
-router = APIRouter(prefix="/fault-codes", tags=["故障码映射"])
-
+router = APIRouter(prefix="/fault-codes", tags=["故障码映射"], dependencies=[Depends(get_current_user)])
 # ==================== 请求/响应模型 ====================
 
 class FaultCodeCreateRequest(BaseModel):

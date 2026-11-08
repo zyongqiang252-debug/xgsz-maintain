@@ -16,6 +16,24 @@ def _u_to_dict(u: User) -> dict:
     return {c.name: getattr(u, c.name) for c in u.__table__.columns if c.name != 'password_hash'}
 
 
+def _mask_phone(phone: Optional[str]) -> Optional[str]:
+    """手机号脱敏：138****0000"""
+    if not phone:
+        return phone
+    p = str(phone)
+    if len(p) < 7:
+        return "***"
+    return f"{p[:3]}****{p[-4:]}"
+
+
+def _mask_email(email: Optional[str]) -> Optional[str]:
+    """邮箱脱敏：a***@example.com"""
+    if not email or "@" not in str(email):
+        return email
+    name, domain = str(email).split("@", 1)
+    return f"{name[:1]}***@{domain}"
+
+
 @router.get("/me", summary="获取当前登录用户信息")
 def get_current_user_me(current_user: User = Depends(get_current_user)):
     """返回当前登录用户的完整信息（含钉钉绑定状态）"""
@@ -41,7 +59,14 @@ def list_users(
         )
     total = query.count()
     items = query.order_by(User.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return {"total": total, "items": [_u_to_dict(u) for u in items], "page": page, "page_size": page_size}
+    # 安全修复：非管理员只能看到脱敏后的手机号/邮箱（派工只需要姓名+角色）
+    is_admin = current_user.role == UserRole.ADMIN.value
+    rows = [_u_to_dict(u) for u in items]
+    if not is_admin:
+        for r in rows:
+            r["phone"] = _mask_phone(r.get("phone"))
+            r["email"] = _mask_email(r.get("email"))
+    return {"total": total, "items": rows, "page": page, "page_size": page_size}
 
 
 @router.get("/{user_id}", response_model=UserResponse, summary="获取用户详情（带缓存）")

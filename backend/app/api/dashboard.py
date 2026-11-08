@@ -13,9 +13,7 @@ from app.models.device import Device
 from app.models.spare_part import SparePart
 from app.models.user import User
 
-router = APIRouter()
-
-
+router = APIRouter(dependencies=[Depends(get_current_user)])
 def _wo_to_dict(w: WorkOrder) -> dict:
     return {c.name: getattr(w, c.name) for c in w.__table__.columns}
 

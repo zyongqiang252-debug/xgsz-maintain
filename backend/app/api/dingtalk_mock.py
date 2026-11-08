@@ -9,7 +9,7 @@ Mock模式简化：
 - 直接在浏览器打开 mock 页面，模拟用户"扫码+授权"
 - 提交后通过 /dingtalk/scan/callback 回写状态
 """
-from fastapi import APIRouter, Request, Form
+from fastapi import APIRouter, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from loguru import logger
 
@@ -28,6 +28,10 @@ MOCK_DINGTALK_USERS = [
 
 @router.get("/dingtalk/mock-auth", response_class=HTMLResponse)
 def mock_dingtalk_auth_page(state: str = ""):
+    # 安全修复：非 Mock 模式下这个页面就是一条免密登录通道，必须直接关掉
+    from app.core.config import settings
+    if not settings.DINGTALK_MOCK_MODE:
+        raise HTTPException(status_code=404, detail="Not Found")
     """模拟钉钉扫码后的授权页面"""
     users_html = ""
     for i, u in enumerate(MOCK_DINGTALK_USERS):

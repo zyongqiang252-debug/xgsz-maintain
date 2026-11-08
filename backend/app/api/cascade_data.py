@@ -6,10 +6,9 @@ from typing import Optional
 from app.core.database import get_db
 from app.models.fault_phenomenon_category import FaultPhenomenonCategory
 from app.models.root_cause_category import RootCauseCategory
+from app.core.security import get_current_user
 
-router = APIRouter(prefix="/categories/data", tags=["分类数据"])
-
-
+router = APIRouter(prefix="/categories/data", tags=["分类数据"], dependencies=[Depends(get_current_user)])
 def _build_tree(items, parent_id=None):
     """将平铺列表转为级联树结构 [{value, label, children}]"""
     tree = []

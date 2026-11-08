@@ -10,9 +10,7 @@ from app.core.security import get_current_user
 from app.models.user import User, UserRole
 from app.models.duty_schedule import DutySchedule, ShiftType
 
-router = APIRouter()
-
-
+router = APIRouter(dependencies=[Depends(get_current_user)])
 # 统一的三倒班班次时间定义（机械/制造行业常见 8 小时三班制）
 # 所有模块（/today 分组、派工校验、机器人查询、请假冲突判断）都必须以此表为准，
 # 严禁再在文件里写散的 if hour < 12 / 18 分支——改一处即可全链路对齐。

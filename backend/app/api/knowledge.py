@@ -16,9 +16,7 @@ from app.schemas import (
 )
 from app.agents.knowledge_extractor import knowledge_extractor
 
-router = APIRouter()
-
-
+router = APIRouter(dependencies=[Depends(get_current_user)])
 def _k_to_dict(k: KnowledgeItem) -> dict:
     return {c.name: getattr(k, c.name) for c in k.__table__.columns}
 

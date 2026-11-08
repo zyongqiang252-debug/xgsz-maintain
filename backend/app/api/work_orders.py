@@ -23,9 +23,7 @@ from app.agents.knowledge_extractor import knowledge_extractor
 from app.agents.tools import extract_error_codes
 from app.models.knowledge import KnowledgeItem, KnowledgeStatus
 
-router = APIRouter()
-
-
+router = APIRouter(dependencies=[Depends(get_current_user)])
 def _wo_to_dict(w: WorkOrder) -> dict:
     return {c.name: getattr(w, c.name) for c in w.__table__.columns}
 

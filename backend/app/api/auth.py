@@ -1,9 +1,10 @@
 """认证相关 API：短信验证码发送/验证、手机号登录、密码重置、钉钉扫码"""
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from fastapi import Depends
 from loguru import logger
+import ipaddress
 import random
 import time
 import hashlib
@@ -25,11 +26,44 @@ _verify_codes: dict[str, dict] = {}
 CODE_EXPIRE_SECONDS = 300  # 5 分钟有效期
 CODE_COOLDOWN_SECONDS = 60  # 60 秒内不可重复发送
 
+# 发码 IP 限流：同一来源 10 分钟内最多 10 次
+_CODE_IP_WINDOW = 600
+_CODE_IP_LIMIT = 10
+_code_ip_hits: dict[str, list] = {}
+
 # 钉钉扫码登录状态管理
 # state -> { status: 'pending'|'scanned'|'confirmed'|'expired', user_info: dict, created_at, }
 _dingtalk_scan_sessions: dict[str, dict] = {}
 SCAN_EXPIRE_SECONDS = 600  # 二维码 600 秒（10 分钟）过期，给足扫码 + 手机授权时间
 _scan_expire_check_running = False
+
+
+def _client_ip(request: Optional[Request]) -> str:
+    """取真实来源 IP（反向代理场景取第一个 X-Forwarded-For）"""
+    if request is None:
+        return ""
+    xff = request.headers.get("x-forwarded-for") or ""
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else ""
+
+
+def _is_loopback(ip: str) -> bool:
+    try:
+        return ipaddress.ip_address(ip).is_loopback
+    except Exception:
+        return False
+
+
+def _rate_limit_code_by_ip(request: Optional[Request]) -> None:
+    """发码接口按 IP 限流（内存实现，单进程足够；多进程部署请换 Redis）"""
+    ip = _client_ip(request) or "unknown"
+    now = time.time()
+    hits = [t for t in _code_ip_hits.get(ip, []) if now - t < _CODE_IP_WINDOW]
+    if len(hits) >= _CODE_IP_LIMIT:
+        raise HTTPException(status_code=429, detail="该网络发码过于频繁，请稍后再试")
+    hits.append(now)
+    _code_ip_hits[ip] = hits
 
 
 class SendCodeRequest(BaseModel):
@@ -82,16 +116,19 @@ class PasswordLoginRequest(BaseModel):
 
 
 @router.post("/send-code", summary="发送短信验证码")
-def send_sms_code(req: SendCodeRequest):
+def send_sms_code(req: SendCodeRequest, request: Request):
     """
     发送短信验证码到手机号。
 
     - SMS_ENABLED=true 时调用阿里云短信服务发送真实验证码
-    - SMS_ENABLED=false 时使用 Mock 模式
+    - SMS_ENABLED=false 时使用 Mock 模式（固定码写日志，不回显）
     scene: login(登录) / bind(绑定手机) / reset_password(重置密码)
     """
     if not req.phone or len(req.phone) < 11:
         raise HTTPException(status_code=400, detail="请输入正确的手机号")
+
+    # 安全修复：按来源 IP 限流，防止脚本批量给不同手机号发码 / 爆破
+    _rate_limit_code_by_ip(request)
 
     # 检查发送频率
     existing = _verify_codes.get(req.phone)
@@ -106,7 +143,8 @@ def send_sms_code(req: SendCodeRequest):
     if is_real_sms:
         code = sms_service.generate_code()
     else:
-        code = "123456"  # 开发环境固定验证码
+        # 安全修复：Mock 模式也用随机码（原来固定 123456，等于人人可猜中）
+        code = f"{random.randint(0, 999999):06d}"
 
     # 存储验证码（Mock 模式使用固定验证码 123456，SMS_ENABLED=false 时）
     _verify_codes[req.phone] = {
@@ -119,6 +157,10 @@ def send_sms_code(req: SendCodeRequest):
     # 发送短信
     sms_service.send_code(req.phone, code, req.scene)
 
+    if not is_real_sms:
+        # Mock 模式：码只写日志，供本机联调查看（绝不进响应体）
+        logger.warning(f"[Auth][Mock] 验证码 {code} 已生成（phone={req.phone}, scene={req.scene}），仅日志可见")
+
     logger.info(f"[Auth] 验证码已发送: phone={req.phone}, scene={req.scene}")
 
     result = {
@@ -128,8 +170,10 @@ def send_sms_code(req: SendCodeRequest):
         "sms_enabled": is_real_sms,
     }
 
-    if not is_real_sms:
-        result["code"] = code  # Mock 模式返回验证码便于调试
+    # 安全修复：验证码默认绝不回显（回显 = 任何人知道手机号就能改任意账号密码）。
+    # 本地联调确实需要时，在 .env 显式设置 AUTH_MOCK_CODE_ECHO=true 且 DEBUG=true 才会带出。
+    if (not is_real_sms) and settings.DEBUG and getattr(settings, "AUTH_MOCK_CODE_ECHO", False):
+        result["code"] = code
 
     return result
 
@@ -447,8 +491,10 @@ class DingTalkScanCallbackRequest(BaseModel):
 
 @router.post("/dingtalk/scan/generate", summary="生成钉钉扫码URL")
 def generate_dingtalk_scan(
+    request: Request,
     bind_user_id: Optional[int] = Query(None, description="管理员代绑：扫码成功后绑定到该用户ID"),
     self_bind: bool = Query(False, description="当前登录用户自助绑定钉钉"),
+    current_user: Optional[User] = Depends(get_optional_user),
 ):
     """
     生成钉钉扫码 URL。
@@ -459,6 +505,14 @@ def generate_dingtalk_scan(
     - 真实模式下 url 指向钉钉 OAuth2 授权页
     - Mock 模式下 url 指向本地模拟授权页
     """
+    # 安全修复：绑定场景必须已登录（代绑还要管理员/主管），否则匿名就能把他人账号绑走
+    if (self_bind or bind_user_id) and not current_user:
+        raise HTTPException(status_code=401, detail="请先登录系统后再扫码绑定钉钉")
+    if bind_user_id:
+        from app.models.user import UserRole
+        if current_user.role not in (UserRole.SUPERVISOR.value, UserRole.ADMIN.value):
+            raise HTTPException(status_code=403, detail="仅主管或管理员可代绑钉钉")
+
     state = uuid.uuid4().hex
     _dingtalk_scan_sessions[state] = {
         "status": "pending",
@@ -466,6 +520,9 @@ def generate_dingtalk_scan(
         "created_at": time.time(),
         "bind_user_id": bind_user_id,
         "self_bind": self_bind,
+        "ip": _client_ip(request),
+        "verified": False,   # 身份是否来自服务端可信来源（真实模式 code 换取）
+        "used": False,       # 一次性：登录态下发后作废
     }
 
     from app.core.dingtalk import dingtalk
@@ -511,11 +568,11 @@ def generate_dingtalk_scan(
 
 
 @router.post("/dingtalk/scan/callback", summary="钉钉扫码回调（前端模拟或服务端接收）")
-def dingtalk_scan_callback(req: DingTalkScanCallbackRequest):
+def dingtalk_scan_callback(req: DingTalkScanCallbackRequest, request: Request):
     """
     处理钉钉扫码后的用户信息回写。
-    - 前端在 mock 扫码页面提交用户信息时调用
-    - 真实模式下由钉钉重定向到 redirect_uri 后再通过 code 换取
+    - Mock 模式：本地模拟授权页提交固定 mock 用户（仅允许同源 IP，且标记为不可信）
+    - 真实模式：只接受 code，由服务端向钉钉换取身份，防止调用方伪造 user_info
     """
     session = _dingtalk_scan_sessions.get(req.state)
     if not session:
@@ -528,6 +585,19 @@ def dingtalk_scan_callback(req: DingTalkScanCallbackRequest):
         raise HTTPException(status_code=400, detail="二维码已过期")
 
     user_info = req.user_info or {}
+
+    # 安全修复：真实模式绝不相信前端提交的身份信息
+    if user_info and not settings.DINGTALK_MOCK_MODE:
+        raise HTTPException(
+            status_code=403,
+            detail="真实模式不接受前端提交的用户信息，请使用钉钉 OAuth code 换取身份",
+        )
+
+    # Mock 模式：只允许发起扫码的那个 IP 回写，避免他人截获 state 后冒充
+    if user_info:
+        if session.get("ip") and _client_ip(request) and _client_ip(request) != session["ip"]:
+            raise HTTPException(status_code=403, detail="扫码会话与当前请求来源不一致")
+
     if req.code and not user_info:
         # 真实模式：通过 code 换取用户信息
         try:
@@ -557,6 +627,11 @@ def dingtalk_scan_callback(req: DingTalkScanCallbackRequest):
 
     session["user_info"] = user_info
     session["status"] = "scanned"
+    # 只有"服务端用 code 换回来的真实身份"才算 verified；Mock 提交一律不可信
+    session["verified"] = bool(
+        req.code and user_info and not str(user_info.get("userid", "")).startswith("mock_")
+        and not settings.DINGTALK_MOCK_MODE
+    )
     logger.info(f"[DingTalk] 扫码已确认: state={req.state}, user={user_info.get('name', '')}")
     return {"status": "scanned", "user_info": user_info}
 
@@ -608,6 +683,7 @@ def _build_login_result(user: User) -> dict:
 @router.post("/dingtalk/scan/confirm/{state}", summary="用户确认扫码")
 def dingtalk_scan_confirm(
     state: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_user),
 ):
@@ -629,6 +705,12 @@ def dingtalk_scan_confirm(
     user_info = session.get("user_info", {})
     if not user_info or not user_info.get("userid"):
         raise HTTPException(status_code=400, detail="请先在钉钉端完成扫码")
+
+    # 安全修复：一次性 + 真实模式必须 verified，防止伪造身份直接换 token
+    if session.get("used"):
+        raise HTTPException(status_code=400, detail="该扫码会话已使用，请重新扫码")
+    if not settings.DINGTALK_MOCK_MODE and not session.get("verified"):
+        raise HTTPException(status_code=403, detail="扫码身份未经服务端校验，拒绝登录")
 
     dt_userid = user_info["userid"]
     dt_mobile = (user_info.get("mobile") or "").strip()
@@ -714,17 +796,27 @@ def dingtalk_scan_confirm(
 
     user = db.query(User).filter(User.dingtalk_userid == dt_userid).first()
 
+    # 安全修复：Mock 模式身份是伪造的，只允许登录演示账号（mock_ 前缀），
+    # 否则任何人伪造 user_info 就能拿到真实账号（含 admin）的 token。
+    if settings.DINGTALK_MOCK_MODE and user and not user.username.startswith("mock_"):
+        raise HTTPException(
+            status_code=403,
+            detail="Mock 模式仅允许登录演示账号；如需登录真实账号，请配置钉钉应用并使用真实扫码",
+        )
+
     if user:
         # 已绑定，直接返回登录态
         session["status"] = "confirmed"
+        session["used"] = True
         user.last_login_at = datetime.now()
         db.commit()
         logger.info(f"[Auth] 钉钉扫码登录成功(已绑定): user={user.id}")
         return _build_login_result(user)
 
     # 未绑定 → 尝试通过手机号自动匹配绑定（免手动操作）
+    # 安全修复：Mock 模式下手机号由调用方伪造，绝不能用来匹配真实账号
     auto_bound = False
-    if dt_mobile:
+    if dt_mobile and not settings.DINGTALK_MOCK_MODE:
         matched_users = (
             db.query(User)
             .filter(User.phone == dt_mobile, User.dingtalk_userid.is_(None))
@@ -744,6 +836,7 @@ def dingtalk_scan_confirm(
             user.last_login_at = datetime.now()
             db.commit()
             session["status"] = "confirmed"
+            session["used"] = True
             auto_bound = True
             logger.info(
                 f"[Auth] 钉钉扫码自动绑定成功: phone={dt_mobile} -> user={user.id}({user.username})"
@@ -865,6 +958,12 @@ def dingtalk_create_new_account(req: DingTalkCreateNewAccountRequest, db: Sessio
     dt_userid = user_info.get("userid")
     if not dt_userid:
         raise HTTPException(status_code=400, detail="钉钉用户信息缺失")
+
+    # 安全修复：Mock 身份是伪造的，只允许用它开演示账号；真实模式必须有服务端校验
+    if settings.DINGTALK_MOCK_MODE and not str(dt_userid).startswith("mock_"):
+        raise HTTPException(status_code=403, detail="Mock 模式仅支持创建演示账号")
+    if not settings.DINGTALK_MOCK_MODE and not session.get("verified"):
+        raise HTTPException(status_code=403, detail="扫码身份未经服务端校验，拒绝创建账号")
 
     # 冲突检测
     existing = db.query(User).filter(User.dingtalk_userid == dt_userid).first()

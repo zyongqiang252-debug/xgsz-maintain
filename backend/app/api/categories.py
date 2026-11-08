@@ -7,9 +7,7 @@ from app.models.category import Category
 from app.models.user import User
 from app.schemas import CategoryCreate, CategoryUpdate, CategoryResponse
 
-router = APIRouter()
-
-
+router = APIRouter(dependencies=[Depends(get_current_user)])
 def build_category_tree(categories: List[Category], parent_id: Optional[int] = None) -> List[dict]:
     """递归构建分类树"""
     result = []

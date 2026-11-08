@@ -477,7 +477,11 @@ async def upload_excel(
     try:
         headers, rows = read_table(path)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.warning(f"[ExcelImport] 解析失败 {file.filename}: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail="无法解析该文件：请确认是有效的 Excel(.xlsx/.xlsm) 或 CSV 文件（另存为 .xlsx 再试）",
+        )
 
     user_mapping = None
     if mapping:
@@ -492,6 +496,10 @@ async def upload_excel(
             detail="未映射「故障描述」列，也没有「故障现象」或「根本原因」列可兜底，无法导入",
         )
 
+    # 只有表头没有数据行时不要建空批次（原来会留下 0 条的空记录）
+    if not rows:
+        raise HTTPException(status_code=400, detail="表格里没有数据行（只有表头），没有可导入的内容")
+
     batch = WorkOrderImportBatch(
         batch_no=f"EXCEL-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4]}",
         source="EXCEL",
@@ -505,6 +513,7 @@ async def upload_excel(
 
     parsed = parse_sheet(headers, rows, col_index)
     seen_numbers: set = set()
+    seen_nos_in_file: set = set()
     results: List[dict] = []
     ok_count = 0
 
@@ -523,6 +532,27 @@ async def upload_excel(
 
         data, warnings = validate_extracted(db, row["data"], seen_numbers)
         warnings = list(row["warnings"]) + warnings
+
+        # 工单号冲突（文件内重复 / 系统内已存在）直接标 ERROR，
+        # 否则用户逐条点"确认入库"时才撞唯一约束，白点一遍
+        wo_no = str(data.get("work_order_no") or "").strip()
+        dup_msg = ""
+        if wo_no:
+            if wo_no in seen_nos_in_file:
+                dup_msg = f"工单号 {wo_no} 在本文件内重复"
+            elif db.query(WorkOrder).filter(WorkOrder.work_order_no == wo_no).first():
+                dup_msg = f"工单号 {wo_no} 已存在于系统"
+            else:
+                seen_nos_in_file.add(wo_no)
+        if dup_msg:
+            db.add(WorkOrderImportItem(
+                batch_id=batch.id, file_name=label, file_path=path, row_no=row_no,
+                status="ERROR", error_message=dup_msg,
+                extracted_data={"_raw_row": dict(zip(headers, row["raw"]))},
+            ))
+            results.append({"row_no": row_no, "status": "ERROR", "message": dup_msg})
+            continue
+
         item = WorkOrderImportItem(
             batch_id=batch.id, file_name=label, file_path=path, row_no=row_no,
             status="PENDING",

@@ -22,9 +22,7 @@ from app.core.security import get_current_user
 from app.models.manual_code import ManualCodeEntry
 from app.models.user import User, UserRole
 
-router = APIRouter()
-
-
+router = APIRouter(dependencies=[Depends(get_current_user)])
 # ==================== Pydantic 模型 ====================
 
 class ManualCondition(BaseModel):

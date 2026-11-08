@@ -11,9 +11,7 @@ from app.models.work_order import WorkOrder
 from app.models.user import User
 from app.schemas import DeviceCreate, DeviceUpdate, DeviceResponse, PaginatedResponse
 
-router = APIRouter()
-
-
+router = APIRouter(dependencies=[Depends(get_current_user)])
 VALID_RUN_STATUS = ("ONLINE", "OFFLINE", "ALARM", "FAULT", "UNKNOWN")
 
 

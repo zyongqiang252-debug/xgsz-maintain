@@ -87,12 +87,20 @@ app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="芯光数智 - 以工单收录与知识沉淀为核心",
-    lifespan=lifespan
+    lifespan=lifespan,
+    # 生产环境可用 DOCS_ENABLED=false 关掉接口文档，避免暴露全部路由
+    docs_url="/docs" if settings.DOCS_ENABLED else None,
+    redoc_url="/redoc" if settings.DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if settings.DOCS_ENABLED else None,
 )
+
+_cors_origins = [o.strip() for o in (settings.CORS_ORIGINS or "").split(",") if o.strip()]
+if not _cors_origins:
+    _cors_origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

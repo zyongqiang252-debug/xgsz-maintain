@@ -26,9 +26,7 @@ from app.agents.fault_decomposer import fault_decomposer
 from app.agents.guided_repair_agent import guided_repair_agent
 from app.agents.expert_repair_agent import expert_repair_agent, ExpertOption, ExpertStepResult
 
-router = APIRouter()
-
-
+router = APIRouter(dependencies=[Depends(get_current_user)])
 def _effective_score(item: dict) -> float:
     """统一有效分：Reranker精排分 > 向量分 > RRF名次分
     修复：BM25/手册路命中 score 可能为0但 rerank_score 很高，展示/排序/过滤都应取重排后的值"""
