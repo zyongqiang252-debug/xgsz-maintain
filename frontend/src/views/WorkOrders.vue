@@ -42,6 +42,19 @@
             <span class="status-tag" :class="'status-' + row.status">{{ statusLabel(row.status) }}</span>
           </template>
         </el-table-column>
+        <el-table-column label="时效(SLA)" width="130">
+          <template #default="{ row }">
+            <el-tooltip :content="slaTooltip(row)" placement="top">
+              <el-tag size="small" :type="slaTagType(row)" effect="light">{{ slaLabel(row) }}</el-tag>
+            </el-tooltip>
+          </template>
+        </el-table-column>
+        <el-table-column label="成本" width="100">
+          <template #default="{ row }">
+            <span v-if="row.total_cost">{{ row.total_cost.toFixed(0) }} 元</span>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="created_at" label="创建时间" width="170">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
@@ -214,6 +227,35 @@ const statusMap = {
 
 const statusLabel = (s) => statusMap[s] || s
 const formatTime = (t) => t ? dayjs(t).format('YYYY-MM-DD HH:mm') : '-'
+
+// ===== SLA 展示 =====
+const slaLabel = (row) => {
+  const st = row.sla_status
+  if (row.status === 'COMPLETED' || row.status === 'ARCHIVED') {
+    return st === 'OVERDUE' ? '超时完成' : '按时完成'
+  }
+  if (st === 'OVERDUE') return '已超时'
+  if (st === 'AT_RISK') return '即将超时'
+  if (row.resolve_due_at) {
+    const left = dayjs(row.resolve_due_at).diff(dayjs(), 'hour', true)
+    return left >= 24 ? `剩 ${Math.floor(left / 24)} 天` : `剩 ${Math.max(0, Math.round(left))} 小时`
+  }
+  return '—'
+}
+const slaTagType = (row) => {
+  const st = row.sla_status
+  if (st === 'OVERDUE') return 'danger'
+  if (st === 'AT_RISK') return 'warning'
+  if (row.status === 'COMPLETED' || row.status === 'ARCHIVED') return st === 'OVERDUE' ? 'danger' : 'success'
+  return 'success'
+}
+const slaTooltip = (row) => {
+  const parts = []
+  if (row.response_due_at) parts.push(`响应截止 ${formatTime(row.response_due_at)}`)
+  if (row.resolve_due_at) parts.push(`修复截止 ${formatTime(row.resolve_due_at)}`)
+  if (row.satisfaction_score) parts.push(`满意度 ${row.satisfaction_score} 分`)
+  return parts.join('　') || '无 SLA 信息'
+}
 
 const STORAGE_KEY = 'workorders_filter'
 

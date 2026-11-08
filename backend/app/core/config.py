@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     BACKEND_PORT: int = 18080
     # 上传单文件上限（MB）
     MAX_UPLOAD_MB: int = 20
+    # 维修人工成本单价（元/小时），用于工单成本核算
+    HOURLY_LABOR_RATE: float = 80.0
     # 是否对外暴露 /docs 与 /openapi.json（生产建议关闭）
     DOCS_ENABLED: bool = True
     # CORS 允许来源，逗号分隔；生产环境务必写具体域名，不要留 *

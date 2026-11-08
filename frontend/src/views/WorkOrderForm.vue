@@ -2,6 +2,26 @@
   <div class="page">
     <!-- 查看模式 -->
     <template v-if="isViewMode && form.work_order_no">
+      <!-- SLA / 成本 / 评价 概览条（查看态也给） -->
+      <div class="sla-bar">
+        <el-tag :type="slaTagType" size="small" effect="light">{{ slaText }}</el-tag>
+        <span class="sla-item" v-if="form.response_due_at">响应截止 {{ fmt(form.response_due_at) }}</span>
+        <span class="sla-item" v-if="form.resolve_due_at">修复截止 {{ fmt(form.resolve_due_at) }}</span>
+        <el-divider direction="vertical" />
+        <span class="sla-item">人工 <b>{{ money(form.labor_cost) }}</b></span>
+        <span class="sla-item">备件 <b>{{ money(form.parts_cost) }}</b></span>
+        <span class="sla-item">合计 <b class="sla-total">{{ money(form.total_cost) }}</b></span>
+        <template v-if="form.satisfaction_score">
+          <el-divider direction="vertical" />
+          <span class="sla-item">满意度 <b>{{ form.satisfaction_score }} 分</b>
+            <span v-if="form.satisfaction_comment" class="sla-comment">「{{ form.satisfaction_comment }}」</span>
+          </span>
+        </template>
+        <el-button
+          v-else-if="['COMPLETED', 'ARCHIVED'].includes(form.status)"
+          size="small" type="primary" plain class="sla-rate-btn" @click="openFeedback"
+        >报修人评价</el-button>
+      </div>
       <el-card shadow="never" class="detail-card">
         <div class="detail-header">
           <h3>{{ form.work_order_no }}</h3>
@@ -72,6 +92,23 @@
       </el-card>
     </template>
 
+    <!-- 报修人评价 -->
+    <el-dialog v-model="feedbackVisible" title="报修人回访评价" width="460px" append-to-body>
+      <el-form label-width="70px">
+        <el-form-item label="满意度">
+          <el-rate v-model="feedbackScore" :max="5" show-score score-template="{value} 分" />
+        </el-form-item>
+        <el-form-item label="意见">
+          <el-input v-model="feedbackComment" type="textarea" :rows="3" maxlength="200" show-word-limit
+                    placeholder="选填，例如：响应快 / 备件等太久" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="feedbackVisible = false">取消</el-button>
+        <el-button type="primary" :loading="feedbackSaving" @click="submitFeedback">提交评价</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 附件原图预览 -->
     <el-dialog v-model="previewVisible" title="附件查看" width="900px" append-to-body destroy-on-close>
       <div class="preview-wrap">
@@ -91,6 +128,27 @@
           <el-button @click="viewDrafts">查看历史草稿</el-button>
           <el-button type="primary" @click="router.push('/work-orders')">返回列表</el-button>
         </div>
+      </div>
+
+      <!-- SLA / 成本 / 评价 概览条 -->
+      <div v-if="!isNew" class="sla-bar">
+        <el-tag :type="slaTagType" size="small" effect="light">{{ slaText }}</el-tag>
+        <span class="sla-item" v-if="form.response_due_at">响应截止 {{ fmt(form.response_due_at) }}</span>
+        <span class="sla-item" v-if="form.resolve_due_at">修复截止 {{ fmt(form.resolve_due_at) }}</span>
+        <el-divider direction="vertical" />
+        <span class="sla-item">人工 <b>{{ money(form.labor_cost) }}</b></span>
+        <span class="sla-item">备件 <b>{{ money(form.parts_cost) }}</b></span>
+        <span class="sla-item">合计 <b class="sla-total">{{ money(form.total_cost) }}</b></span>
+        <template v-if="form.satisfaction_score">
+          <el-divider direction="vertical" />
+          <span class="sla-item">满意度 <b>{{ form.satisfaction_score }} 分</b>
+            <span v-if="form.satisfaction_comment" class="sla-comment">「{{ form.satisfaction_comment }}」</span>
+          </span>
+        </template>
+        <el-button
+          v-else-if="['COMPLETED', 'ARCHIVED'].includes(form.status)"
+          size="small" type="primary" plain class="sla-rate-btn" @click="openFeedback"
+        >报修人评价</el-button>
       </div>
       <div class="form-body">
         <!-- 录入模式切换：标准录入 / 日志录入 -->
@@ -680,6 +738,56 @@ import dayjs from 'dayjs'
 const route = useRoute()
 const router = useRouter()
 const isNew = computed(() => !route.params.id || route.path.endsWith('/new'))
+
+// ===== SLA / 成本 / 回访 =====
+const feedbackVisible = ref(false)
+const feedbackScore = ref(5)
+const feedbackComment = ref('')
+const feedbackSaving = ref(false)
+
+const fmt = (t) => (t ? dayjs(t).format('MM-DD HH:mm') : '-')
+const money = (v) => (v || v === 0 ? `${Number(v).toFixed(0)} 元` : '—')
+
+const slaText = computed(() => {
+  if (isNew.value) return '未建单'
+  const st = form.sla_status
+  const s = form.status
+  if (['COMPLETED', 'ARCHIVED'].includes(s)) return st === 'OVERDUE' ? '超时完成' : '按时完成'
+  if (st === 'OVERDUE') return '已超时'
+  if (st === 'AT_RISK') return '即将超时'
+  return '正常'
+})
+const slaTagType = computed(() => {
+  const st = form.sla_status
+  if (st === 'OVERDUE') return 'danger'
+  if (st === 'AT_RISK') return 'warning'
+  if (['COMPLETED', 'ARCHIVED'].includes(form.status)) return st === 'OVERDUE' ? 'danger' : 'success'
+  return 'success'
+})
+
+const openFeedback = () => {
+  feedbackScore.value = form.satisfaction_score || 5
+  feedbackComment.value = form.satisfaction_comment || ''
+  feedbackVisible.value = true
+}
+
+const submitFeedback = async () => {
+  const id = route.params.id || form.id
+  if (!id) return
+  feedbackSaving.value = true
+  try {
+    const res = await request.post(`/work-orders/${id}/feedback`,
+      { score: feedbackScore.value, comment: feedbackComment.value || null })
+    form.satisfaction_score = res.score
+    form.satisfaction_comment = res.comment
+    feedbackVisible.value = false
+    ElMessage.success('评价已提交，谢谢反馈')
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '提交失败')
+  } finally {
+    feedbackSaving.value = false
+  }
+}
 const isViewMode = computed(() => !isNew.value && !route.query.edit)
 
 // 查看历史草稿：前往维修报表并预选「草稿」筛选（联动 WorkOrders.vue 的 workorders_filter 恢复逻辑）
@@ -1706,6 +1814,16 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.sla-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+  max-width: 860px; margin: 0 auto 12px; padding: 10px 14px;
+  background: #F7F8FA; border: 1px solid #E5E6EB; border-radius: 8px;
+  font-size: 13px; color: #4E5969;
+}
+.sla-item b { color: #1F2329; }
+.sla-total { color: #0FC6C2; }
+.sla-comment { color: #86909C; margin-left: 4px; }
+.sla-rate-btn { margin-left: auto; }
 .form-body { max-width: 860px; margin: 0 auto; }
 .form-card { padding: 16px; }
 .form-section { margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid #E5E6EB; }

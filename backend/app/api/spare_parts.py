@@ -118,6 +118,31 @@ def check_stock_alerts(db: Session = Depends(get_db), current_user: User = Depen
     return result
 
 
+@router.get("/movements", summary="出入库流水（全局，可按备件/工单筛选）")
+def list_movements(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+    part_id: Optional[int] = None,
+    work_order_id: Optional[int] = None,
+    movement_type: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.stock_movement import StockMovement
+    q = db.query(StockMovement)
+    if part_id:
+        q = q.filter(StockMovement.part_id == part_id)
+    if work_order_id:
+        q = q.filter(StockMovement.work_order_id == work_order_id)
+    if movement_type:
+        q = q.filter(StockMovement.movement_type == movement_type.upper())
+    total = q.count()
+    rows = q.order_by(StockMovement.created_at.desc(), StockMovement.id.desc()) \
+            .offset((page - 1) * page_size).limit(page_size).all()
+    return {"total": total, "page": page, "page_size": page_size,
+            "items": [_movement_to_dict(m) for m in rows]}
+
+
 @router.get("/{part_id}", response_model=SparePartResponse, summary="获取备件详情（带缓存）")
 def get_spare_part(part_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     cache_key = f"spare_part:{part_id}"
@@ -171,6 +196,147 @@ def delete_spare_part(part_id: int, db: Session = Depends(get_db), current_user:
     cache_service.delete(f"spare_part:{part_id}")
     cache_service.invalidate_pattern("stock_alerts:*")
     return {"message": "备件已删除"}
+
+
+# ==================== 出入库流水 / 领用消耗 ====================
+
+class ConsumeIn(BaseModel):
+    quantity: float = Field(..., gt=0, description="领用数量")
+    work_order_id: Optional[int] = Field(None, description="关联工单（领料登记）")
+    remark: Optional[str] = None
+
+
+class StockInIn(BaseModel):
+    quantity: float = Field(..., gt=0, description="入库数量")
+    unit_price: Optional[float] = Field(None, description="本次单价，不传则用备件单价")
+    remark: Optional[str] = None
+
+
+def _movement_to_dict(m) -> dict:
+    return {
+        "id": m.id,
+        "part_id": m.part_id,
+        "part_code": m.part_code,
+        "part_name": m.part_name,
+        "movement_type": m.movement_type,
+        "quantity": m.quantity,
+        "before_qty": m.before_qty,
+        "after_qty": m.after_qty,
+        "unit_price": m.unit_price,
+        "amount": m.amount,
+        "work_order_id": m.work_order_id,
+        "operator_name": m.operator_name,
+        "remark": m.remark,
+        "created_at": m.created_at.isoformat() if m.created_at else None,
+    }
+
+
+@router.get("/{part_id}/movements", summary="某个备件的出入库流水")
+def part_movements(
+    part_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.stock_movement import StockMovement
+    q = db.query(StockMovement).filter(StockMovement.part_id == part_id)
+    total = q.count()
+    rows = q.order_by(StockMovement.created_at.desc(), StockMovement.id.desc()) \
+            .offset((page - 1) * page_size).limit(page_size).all()
+    return {"total": total, "page": page, "page_size": page_size,
+            "items": [_movement_to_dict(m) for m in rows]}
+
+
+@router.post("/{part_id}/consume", summary="领用/消耗（维修员可用，自动扣库存并记流水）")
+def consume_part(part_id: int, data: ConsumeIn, db: Session = Depends(get_db),
+                 current_user: User = Depends(get_current_user)):
+    from app.models.stock_movement import StockMovement
+    from app.models.work_order import WorkOrder
+    from app.services import sla as sla_service
+
+    part = db.query(SparePart).filter(SparePart.id == part_id).first()
+    if not part:
+        raise HTTPException(status_code=404, detail="备件不存在")
+
+    before = float(part.stock_quantity or 0)
+    if data.quantity > before:
+        raise HTTPException(status_code=400,
+                            detail=f"库存不足：当前 {before:g} {part.unit or ''}，本次要领 {data.quantity:g}")
+    after = before - data.quantity
+    part.stock_quantity = int(after) if float(after).is_integer() else after
+
+    wo = None
+    if data.work_order_id:
+        wo = db.query(WorkOrder).filter(WorkOrder.id == data.work_order_id).first()
+        if not wo:
+            raise HTTPException(status_code=404, detail="关联工单不存在")
+
+    mv = StockMovement(
+        part_id=part.id, part_code=part.part_code, part_name=part.part_name,
+        movement_type="OUT", quantity=data.quantity,
+        before_qty=before, after_qty=after,
+        unit_price=part.unit_price or 0,
+        amount=round((part.unit_price or 0) * data.quantity, 2),
+        work_order_id=data.work_order_id,
+        operator_id=current_user.id, operator_name=current_user.real_name,
+        remark=data.remark,
+    )
+    db.add(mv)
+
+    # 关联工单：把这次领用追加到 used_parts，并重算成本
+    if wo is not None:
+        parts = list(wo.used_parts or [])
+        parts.append({
+            "name": part.part_name, "code": part.part_code,
+            "count": data.quantity, "unit_price": part.unit_price or 0,
+        })
+        wo.used_parts = parts
+        try:
+            sla_service.recompute_cost(wo, db)
+        except Exception as e:
+            logger.warning(f"[SparePart] 工单成本重算失败: {e}")
+
+    db.commit()
+    db.refresh(mv)
+    cache_service.delete(f"spare_part:{part_id}")
+    cache_service.invalidate_pattern("stock_alerts:*")
+    logger.info(f"[SparePart] 领用 {part.part_code} x{data.quantity}，库存 {before} -> {after}")
+    return {"message": "领用成功", "stock_quantity": float(part.stock_quantity),
+            "movement": _movement_to_dict(mv)}
+
+
+@router.post("/{part_id}/stock-in", summary="入库（管理员/主管）")
+def stock_in_part(part_id: int, data: StockInIn, db: Session = Depends(get_db),
+                  current_user: User = Depends(require_supervisor)):
+    from app.models.stock_movement import StockMovement
+
+    part = db.query(SparePart).filter(SparePart.id == part_id).first()
+    if not part:
+        raise HTTPException(status_code=404, detail="备件不存在")
+
+    before = float(part.stock_quantity or 0)
+    after = before + data.quantity
+    part.stock_quantity = int(after) if float(after).is_integer() else after
+    price = data.unit_price if data.unit_price is not None else (part.unit_price or 0)
+    if data.unit_price is not None:
+        part.unit_price = data.unit_price
+
+    mv = StockMovement(
+        part_id=part.id, part_code=part.part_code, part_name=part.part_name,
+        movement_type="IN", quantity=data.quantity,
+        before_qty=before, after_qty=after,
+        unit_price=price, amount=round(price * data.quantity, 2),
+        operator_id=current_user.id, operator_name=current_user.real_name,
+        remark=data.remark,
+    )
+    db.add(mv)
+    db.commit()
+    db.refresh(mv)
+    cache_service.delete(f"spare_part:{part_id}")
+    cache_service.invalidate_pattern("stock_alerts:*")
+    return {"message": "入库成功", "stock_quantity": float(part.stock_quantity),
+            "movement": _movement_to_dict(mv)}
 
 
 # ==================== 进货单批量导入 ====================

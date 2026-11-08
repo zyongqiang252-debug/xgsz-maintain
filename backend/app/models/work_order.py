@@ -63,6 +63,23 @@ class WorkOrder(BaseModel):
     completion_report = Column(JSONB, nullable=True, comment="维修完成报告（工时/备件/照片）")
     created_by = Column(Integer, ForeignKey("users.id"), comment="创建者 ID，仅创建者可编辑")
 
+    # ===== SLA（响应/修复时限，建单时按优先级计算）=====
+    response_due_at = Column(TIMESTAMP, comment="响应截止（接单）")
+    resolve_due_at = Column(TIMESTAMP, comment="修复截止（完成）")
+    first_response_at = Column(TIMESTAMP, comment="首次接单时间")
+    resolved_at = Column(TIMESTAMP, comment="完成时间")
+    sla_status = Column(String(16), comment="ON_TIME / AT_RISK / OVERDUE")
+
+    # ===== 回访 =====
+    satisfaction_score = Column(Integer, comment="满意度 1-5")
+    satisfaction_comment = Column(Text, comment="评价内容")
+    feedback_at = Column(TIMESTAMP, comment="评价时间")
+
+    # ===== 成本 =====
+    labor_cost = Column(Float, comment="人工成本 = 工时 × 单价")
+    parts_cost = Column(Float, comment="备件成本")
+    total_cost = Column(Float, comment="总成本")
+
     device = relationship("Device", back_populates="work_orders")
     technician = relationship("User", foreign_keys=[technician_id], lazy="joined")
     progress_logs = relationship(

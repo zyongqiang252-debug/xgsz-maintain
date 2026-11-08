@@ -7,6 +7,7 @@ from datetime import date, datetime
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.services import sla as sla_service
 from app.models.work_order import WorkOrder, WorkOrderStatus
 from app.models.device import Device
 from app.models.spare_part import SparePart
@@ -16,7 +17,7 @@ from app.models.duty_schedule import DutySchedule
 from app.schemas import (
     WorkOrderCreate, WorkOrderUpdate, WorkOrderResponse, PaginatedResponse,
     TicketAnalysisResponse, WorkOrderTransition, WorkOrderDispatchCreate,
-    WorkOrderProgressLogResponse,
+    WorkOrderProgressLogResponse, WorkOrderFeedbackIn,
 )
 from app.agents.ticket_agent import ticket_agent
 from app.agents.knowledge_extractor import knowledge_extractor
@@ -48,12 +49,18 @@ def list_work_orders(
     device_type: Optional[str] = Query(None, description="设备类型筛选"),
     date_from: Optional[date] = Query(None, description="创建日期起始"),
     date_to: Optional[date] = Query(None, description="创建日期截止"),
+    sla_status: Optional[str] = Query(None, description="SLA 状态筛：ON_TIME / AT_RISK / OVERDUE"),
+    overdue_only: bool = Query(False, description="只看超时工单"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     query = db.query(WorkOrder)
     if status:
         query = query.filter(WorkOrder.status == status)
+    if sla_status:
+        query = query.filter(WorkOrder.sla_status == sla_status.upper())
+    if overdue_only:
+        query = query.filter(WorkOrder.sla_status == "OVERDUE")
     if keyword:
         query = query.filter(
             WorkOrder.work_order_no.ilike(f"%{keyword}%") |
@@ -267,6 +274,14 @@ def create_work_order(data: WorkOrderCreate, db: Session = Depends(get_db), curr
     work_order.technician_id = current_user.id
     if work_order.status not in (WorkOrderStatus.DRAFT, None):
         work_order.status = WorkOrderStatus.DRAFT
+    # SLA：按优先级算出响应/修复截止时间
+    try:
+        resp_due, resv_due = sla_service.compute_due(work_order.priority or "MEDIUM")
+        work_order.response_due_at = resp_due
+        work_order.resolve_due_at = resv_due
+        work_order.sla_status = "ON_TIME"
+    except Exception as e:
+        logger.warning(f"[WorkOrder] SLA 计算失败（忽略）: {e}")
     db.add(work_order)
     db.commit()
     db.refresh(work_order)
@@ -305,6 +320,12 @@ def update_work_order(work_order_id: int, data: WorkOrderUpdate, db: Session = D
     # 修复：保存草稿不再偷偷把 DRAFT 改成 IN_PROGRESS。
     # 状态推进统一走 /transition（提交报修 → 派工 → 接单 → 到场 → 检查 → 维修），
     # 否则编辑一次就跳过五个状态，状态机形同虚设。
+    # 成本随工时/备件变化实时重算
+    try:
+        if data.work_hours is not None or data.used_parts is not None or work_order.work_hours:
+            sla_service.recompute_cost(work_order, db)
+    except Exception as e:
+        logger.warning(f"[WorkOrder] 成本重算失败（忽略）: {e}")
     db.commit()
     db.refresh(work_order)
     return work_order
@@ -454,6 +475,12 @@ def complete_work_order(work_order_id: int, db: Session = Depends(get_db)):
 
     # 3. 标记完成
     work_order.status = WorkOrderStatus.COMPLETED
+    work_order.resolved_at = work_order.resolved_at or datetime.now()
+    try:
+        sla_service.recompute_cost(work_order, db)
+        sla_service.mark_overdue(work_order)
+    except Exception as e:
+        logger.warning(f"[WorkOrder] 完成时刷新 SLA/成本失败（忽略）: {e}")
     db.commit()
     db.refresh(work_order)
     logger.info(f"[WorkOrder] 工单 {work_order.work_order_no} 已提交完成，knowledge_synced={knowledge_synced}")
@@ -461,6 +488,10 @@ def complete_work_order(work_order_id: int, db: Session = Depends(get_db)):
         "id": work_order.id,
         "work_order_no": work_order.work_order_no,
         "status": "COMPLETED",
+        "sla_status": work_order.sla_status,
+        "labor_cost": work_order.labor_cost,
+        "parts_cost": work_order.parts_cost,
+        "total_cost": work_order.total_cost,
         "knowledge_synced": knowledge_synced,
         "message": "知识已收录到知识库" if knowledge_synced else "提交成功（检测到相似知识，未重复收录）",
         "inventory_deducted": deduction_details,
@@ -861,6 +892,19 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
     db.commit()
     db.refresh(work_order)
 
+    # SLA：接单记首次响应；进入待归档视为维修完成；随后刷新 SLA 状态
+    try:
+        if to_status_val == WorkOrderStatus.ACCEPTED.value and not work_order.first_response_at:
+            work_order.first_response_at = datetime.now()
+        if to_status_val == WorkOrderStatus.ARCHIVING.value and not work_order.resolved_at:
+            work_order.resolved_at = datetime.now()
+        if work_order.used_parts or work_order.work_hours:
+            sla_service.recompute_cost(work_order, db)
+        sla_service.mark_overdue(work_order)
+        db.commit()
+    except Exception as e:
+        logger.warning(f"[WorkOrder] SLA/成本刷新失败（忽略）: {e}")
+
     # 群机器人通知：提交报修 / 派工 / 退回
     _event = {"SUBMITTED": "submitted", "ASSIGNED": "assigned", "REJECTED": "rejected"}.get(to_status_val)
     if _event:
@@ -1071,6 +1115,33 @@ def archive_complete(
         "status": WorkOrderStatus.ARCHIVED.value,
         "completeness": result["completeness"],
     }
+
+
+@router.post("/{work_order_id}/feedback", summary="报修人回访评价（1-5 分）")
+def submit_feedback(
+    work_order_id: int,
+    data: WorkOrderFeedbackIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    work_order = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
+    if not work_order:
+        raise HTTPException(status_code=404, detail="工单不存在")
+    if work_order.status not in (WorkOrderStatus.COMPLETED, WorkOrderStatus.ARCHIVED):
+        raise HTTPException(status_code=400, detail="仅已完成/已归档的工单可评价")
+    if data.score < 1 or data.score > 5:
+        raise HTTPException(status_code=400, detail="评分需在 1-5 之间")
+    is_admin = current_user.role == UserRole.ADMIN.value
+    if not is_admin and current_user.id not in (work_order.created_by, work_order.reporter_id, work_order.technician_id):
+        raise HTTPException(status_code=403, detail="仅报修人、维修员或管理员可评价")
+
+    work_order.satisfaction_score = data.score
+    work_order.satisfaction_comment = (data.comment or "").strip() or None
+    work_order.feedback_at = datetime.now()
+    db.commit()
+    logger.info(f"[WorkOrder] 回访评价 #{work_order_id}: {data.score} 分 by {current_user.real_name}")
+    return {"message": "评价已提交", "score": work_order.satisfaction_score,
+            "comment": work_order.satisfaction_comment}
 
 
 @router.get("/{work_order_id}/progress", summary="获取工单进度日志")

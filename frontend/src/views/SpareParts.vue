@@ -55,10 +55,12 @@
         <el-table-column prop="unit_price" label="单价" width="90" />
         <el-table-column prop="location" label="存放位置" width="110" />
         <el-table-column prop="supplier" label="供应商" width="110" show-overflow-tooltip />
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <div class="action-group">
               <el-button size="small" type="primary" @click="$router.push(`/spare-parts/${row.id}`)">{{ canManage ? '编辑' : '查看' }}</el-button>
+              <el-button size="small" type="success" plain @click="openConsume(row)">领用</el-button>
+              <el-button size="small" plain @click="openMovements(row)">流水</el-button>
               <el-button v-if="canManage" size="small" type="danger" @click="handleDelete(row)">删除</el-button>
             </div>
           </template>
@@ -71,8 +73,7 @@
           :total="total"
           layout="total, prev, pager, next"
           @current-change="fetchData"
-        />
-      </div>
+        />      </div>
     </el-card>
 
     <!-- 库存预警详情弹窗 -->
@@ -184,6 +185,59 @@
         <el-button type="primary" @click="importResult.visible = false; fetchData(); fetchAlerts()">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 领用 -->
+    <el-dialog v-model="consume.visible" title="领用备件" width="480px">
+      <el-form label-width="90px">
+        <el-form-item label="备件">
+          <span>{{ consume.row?.part_name }}（{{ consume.row?.part_code }}）</span>
+        </el-form-item>
+        <el-form-item label="当前库存">
+          <b>{{ consume.row?.stock_quantity }}</b> {{ consume.row?.unit || '' }}
+        </el-form-item>
+        <el-form-item label="领用数量" required>
+          <el-input-number v-model="consume.quantity" :min="1" :max="consume.row?.stock_quantity || 1" />
+        </el-form-item>
+        <el-form-item label="关联工单">
+          <el-select v-model="consume.workOrderId" filterable clearable placeholder="选填：挂到某张工单上（会自动计入该工单成本）" style="width:100%">
+            <el-option v-for="wo in consume.workOrders" :key="wo.id"
+                       :label="`${wo.work_order_no} · ${(wo.fault_description || '').slice(0, 18)}`" :value="wo.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="consume.remark" placeholder="选填，例如：抢修领用" maxlength="100" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="consume.visible = false">取消</el-button>
+        <el-button type="primary" :loading="consume.loading" @click="submitConsume">确认领用</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 流水 -->
+    <el-dialog v-model="movement.visible" :title="`出入库流水 · ${movement.partName || ''}`" width="820px">
+      <el-table :data="movement.items" size="small" border max-height="420">
+        <el-table-column prop="created_at" label="时间" width="160">
+          <template #default="{ row }">{{ (row.created_at || '').replace('T', ' ').slice(0, 16) }}</template>
+        </el-table-column>
+        <el-table-column label="类型" width="80">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.movement_type === 'OUT' ? 'warning' : 'success'">
+              {{ row.movement_type === 'OUT' ? '出库' : '入库' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="quantity" label="数量" width="70" />
+        <el-table-column label="库存变化" width="120">
+          <template #default="{ row }">{{ row.before_qty }} → {{ row.after_qty }}</template>
+        </el-table-column>
+        <el-table-column prop="amount" label="金额" width="90" />
+        <el-table-column prop="work_order_id" label="工单" width="70" />
+        <el-table-column prop="operator_name" label="操作人" width="100" />
+        <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
+      </el-table>
+      <div v-if="!movement.items.length" class="empty-hint">暂无流水</div>
+    </el-dialog>
   </div>
 </template>
 
@@ -210,6 +264,58 @@ const page = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 const showAlerts = ref(false)
+
+// ===== 领用 / 流水 =====
+const consume = reactive({
+  visible: false, row: null, quantity: 1, workOrderId: null, remark: '', loading: false, workOrders: [],
+})
+const movement = reactive({ visible: false, partName: '', items: [] })
+
+const openConsume = async (row) => {
+  if (!row.stock_quantity) {
+    ElMessage.warning('该备件库存为 0，无法领用')
+    return
+  }
+  consume.row = row
+  consume.quantity = 1
+  consume.workOrderId = null
+  consume.remark = ''
+  consume.visible = true
+  try {
+    const res = await request.get('/work-orders/', { params: { page: 1, page_size: 50 } })
+    consume.workOrders = res.items || []
+  } catch { consume.workOrders = [] }
+}
+
+const submitConsume = async () => {
+  if (!consume.row) return
+  consume.loading = true
+  try {
+    const res = await request.post(`/spare-parts/${consume.row.id}/consume`, {
+      quantity: consume.quantity,
+      work_order_id: consume.workOrderId || null,
+      remark: consume.remark || null,
+    })
+    ElMessage.success(`领用成功，剩余库存 ${res.stock_quantity}`)
+    consume.visible = false
+    fetchData()
+    fetchAlerts()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '领用失败')
+  } finally {
+    consume.loading = false
+  }
+}
+
+const openMovements = async (row) => {
+  movement.partName = row.part_name
+  movement.visible = true
+  movement.items = []
+  try {
+    const res = await request.get(`/spare-parts/${row.id}/movements`, { params: { page_size: 50 } })
+    movement.items = res.items || []
+  } catch { movement.items = [] }
+}
 
 const alerts = reactive({
   alert_count: 0,
@@ -266,8 +372,7 @@ const handleSearch = () => { page.value = 1; fetchData() }
 const handleReset = () => { keyword.value = ''; typeFilter.value = ''; stockFilter.value = ''; page.value = 1; fetchData() }
 const handleAlertFilter = () => { stockFilter.value = 'out_of_stock'; page.value = 1; fetchData() }
 
-const handleDelete = async (row) => {
-  try {
+const handleDelete = async (row) => {  try {
     await ElMessageBox.confirm('确定删除该备件？', '删除确认', { type: 'warning' })
     await request.delete(`/spare-parts/${row.id}`)
     ElMessage.success('删除成功')

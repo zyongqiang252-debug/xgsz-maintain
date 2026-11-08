@@ -177,8 +177,25 @@ class WorkOrderResponse(BaseModel):
     created_by_employee_id: Optional[str] = None
     technician_name: Optional[str] = None
     progress_logs: List["WorkOrderProgressLogResponse"] = []
+    # SLA / 回访 / 成本
+    response_due_at: Optional[datetime] = None
+    resolve_due_at: Optional[datetime] = None
+    first_response_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
+    sla_status: Optional[str] = None
+    satisfaction_score: Optional[int] = None
+    satisfaction_comment: Optional[str] = None
+    feedback_at: Optional[datetime] = None
+    labor_cost: Optional[float] = None
+    parts_cost: Optional[float] = None
+    total_cost: Optional[float] = None
 
     model_config = {"from_attributes": True}
+
+
+class WorkOrderFeedbackIn(BaseModel):
+    score: int = Field(..., ge=1, le=5, description="满意度 1-5 分")
+    comment: Optional[str] = Field(None, max_length=500)
 
 
 class WorkOrderTransition(BaseModel):
