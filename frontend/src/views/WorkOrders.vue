@@ -67,9 +67,9 @@
               <div class="action-row">
                 <el-button link type="primary" @click="$router.push(`/work-orders/${row.id}`)">查看</el-button>
                 <el-button
-                  v-if="row.status === 'SUBMITTED' && isSupervisor"
+                  v-if="['SUBMITTED', 'ASSIGNED'].includes(row.status) && isSupervisor"
                   size="small" type="primary" @click="openDispatch(row)"
-                >派工</el-button>
+                >{{ row.status === 'ASSIGNED' ? '改派' : '派工' }}</el-button>
                 <el-button v-if="!isSupervisor" link type="warning" :disabled="['COMPLETED', 'ARCHIVED'].includes(row.status) || (!isCreatedByMe(row) && !isAdmin && !isAssignedTech(row))" @click="$router.push(`/work-orders/${row.id}?edit=1`)">编辑</el-button>
                 <el-button v-if="!isSupervisor" link type="danger" :disabled="['COMPLETED', 'ARCHIVED'].includes(row.status) || (!isCreatedByMe(row) && !isAdmin)" @click="handleDelete(row)">删除</el-button>
               </div>
@@ -144,7 +144,7 @@
     </el-card>
 
     <!-- 派工 -->
-    <el-dialog v-model="dispatch.visible" title="工单派工" width="460px">
+    <el-dialog v-model="dispatch.visible" :title="dispatch.row?.status === 'ASSIGNED' ? '工单改派' : '工单派工'" width="460px">
       <el-form label-width="80px">
         <el-form-item label="工单">
           <span>{{ dispatch.row?.work_order_no }}</span>
@@ -168,7 +168,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dispatch.visible = false">取消</el-button>
-        <el-button type="primary" :loading="dispatch.submitting" @click="submitDispatch">确认派工</el-button>
+        <el-button type="primary" :loading="dispatch.submitting" @click="submitDispatch">{{ dispatch.row?.status === 'ASSIGNED' ? '确认改派' : '确认派工' }}</el-button>
       </template>
     </el-dialog>
   </div>

@@ -27,9 +27,9 @@
           <h3>{{ form.work_order_no }}</h3>
           <div class="head-right">
             <el-button
-              v-if="form.status === 'SUBMITTED' && canDispatch"
+              v-if="['SUBMITTED', 'ASSIGNED'].includes(form.status) && canDispatch"
               type="primary" plain size="small" @click="openDispatch"
-            >派工</el-button>
+            >{{ form.status === 'ASSIGNED' ? '改派' : '派工' }}</el-button>
             <el-tag :type="statusTagType" size="large">{{ statusLabel }}</el-tag>
           </div>
         </div>
@@ -99,7 +99,7 @@
     </template>
 
     <!-- 派工 -->
-    <el-dialog v-model="dispatchDlg.visible" title="工单派工" width="460px" append-to-body>
+    <el-dialog v-model="dispatchDlg.visible" :title="form.status === 'ASSIGNED' ? '工单改派' : '工单派工'" width="460px" append-to-body>
       <el-form label-width="80px">
         <el-form-item label="维修员" required>
           <el-select v-model="dispatchDlg.technicianId" filterable placeholder="选择维修员" style="width:100%">
@@ -114,7 +114,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dispatchDlg.visible = false">取消</el-button>
-        <el-button type="primary" :loading="dispatchDlg.saving" @click="submitDispatch">确认派工</el-button>
+        <el-button type="primary" :loading="dispatchDlg.saving" @click="submitDispatch">{{ form.status === 'ASSIGNED' ? '确认改派' : '确认派工' }}</el-button>
       </template>
     </el-dialog>
 

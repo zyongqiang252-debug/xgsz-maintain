@@ -813,6 +813,43 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
     from_status_val = work_order.status.value if work_order.status else None
 
     if from_status_val == to_status_val:
+        # 已派单状态下改派：允许只更换维修员（状态不变）
+        if (to_status_val == WorkOrderStatus.ASSIGNED.value and data.technician_id
+                and data.technician_id != work_order.technician_id):
+            if current_user.role not in (UserRole.SUPERVISOR.value, UserRole.ADMIN.value):
+                raise HTTPException(status_code=403, detail="仅主管或管理员可改派")
+            tech = db.query(User).filter(
+                User.id == data.technician_id, User.is_active == True).first()
+            if not tech:
+                raise HTTPException(status_code=400, detail="指定的维修员不存在或已停用")
+
+            old_tech = db.query(User).filter(User.id == work_order.technician_id).first()
+            old_name = old_tech.real_name if old_tech else "-"
+            old_id = work_order.technician_id
+
+            work_order.technician_id = tech.id
+            work_order.assignee_id = tech.id
+            _add_progress_log(
+                db=db, work_order_id=work_order.id,
+                from_status=work_order.status, to_status=work_order.status,
+                operator_id=current_user.id, operator_name=current_user.real_name,
+                source=data.source or "WEB",
+                remark=f"改派：{old_name} → {tech.real_name}" + (f"（{data.remark}）" if data.remark else ""),
+            )
+            # 工作量：原维修员减一，新维修员加一
+            if old_id:
+                _update_workload(db, old_id, -1)
+            _update_workload(db, tech.id, +1)
+            db.commit()
+            db.refresh(work_order)
+            logger.info(f"[WorkOrder] 改派 #{work_order.id}: {old_name} -> {tech.real_name}")
+            try:
+                _notify_wo(work_order, "assigned", current_user.real_name,
+                           extra=f"改派：{old_name} → {tech.real_name}")
+            except Exception as e:
+                logger.warning(f"[WorkOrder] 改派通知失败（忽略）: {e}")
+            return _build_work_order_response(work_order, db)
+
         return _build_work_order_response(work_order, db)
 
     if not _is_allowed_transition(from_status_val, to_status_val):
