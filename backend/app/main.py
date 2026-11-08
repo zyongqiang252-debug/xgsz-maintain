@@ -187,7 +187,8 @@ async def root():
     """根路径：有前端构建产物时返回 SPA 首页，否则返回 API 信息"""
     if os.path.isfile(os.path.join(_frontend_dist, "index.html")):
         from fastapi.responses import FileResponse
-        return FileResponse(os.path.join(_frontend_dist, "index.html"))
+        return FileResponse(os.path.join(_frontend_dist, "index.html"),
+                            headers={"Cache-Control": "no-store, must-revalidate"})
     return {
         "message": f"欢迎使用 {settings.APP_NAME}",
         "version": settings.APP_VERSION,
@@ -225,7 +226,8 @@ if os.path.isdir(_frontend_dist):
             if file_path.startswith(os.path.normpath(_frontend_dist)) and os.path.isfile(file_path):
                 return FileResponse(file_path)
             raise __import__("fastapi").HTTPException(status_code=404)
-        return FileResponse(os.path.join(_frontend_dist, "index.html"))
+        return FileResponse(os.path.join(_frontend_dist, "index.html"),
+                            headers={"Cache-Control": "no-store, must-revalidate"})
 
 
 if __name__ == "__main__":

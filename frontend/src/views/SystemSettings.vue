@@ -34,10 +34,19 @@
           <el-input v-model="form.baseUrl" placeholder="https://api.deepseek.com" />
         </el-form-item>
         <el-form-item label="模型">
-          <el-select v-model="form.model" style="width: 240px">
+          <el-select
+            v-model="form.model"
+            style="width: 280px"
+            filterable
+            allow-create
+            default-first-option
+            placeholder="deepseek-chat"
+          >
             <el-option label="deepseek-chat（通用，便宜）" value="deepseek-chat" />
             <el-option label="deepseek-reasoner（推理，较慢较贵）" value="deepseek-reasoner" />
+            <el-option label="deepseek-flash（快，按量计费）" value="deepseek-flash" />
           </el-select>
+          <span class="hint">可手动输入其他模型名</span>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="savingAI" @click="saveAI">保存并生效</el-button>

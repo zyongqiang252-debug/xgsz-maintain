@@ -139,7 +139,7 @@
           <!-- 菜单 -->
           <el-menu
             :default-active="activeMenu"
-            router
+            @select="onMenuSelect"
             :collapse="sidebarCollapsed"
             background-color="#FFFFFF"
             text-color="#4E5969"
@@ -290,7 +290,7 @@
         <template v-else>
           <el-menu
               :default-active="activeMenu"
-              router
+              @select="onMenuSelect"
               :collapse="sidebarCollapsed"
               background-color="#FFFFFF"
               text-color="#4E5969"
@@ -428,6 +428,15 @@ const sidebarCollapsed = ref(false)
 // 点击 Logo 回到首页（数据驾驶舱）
 function goHome() {
   if (route.path !== '/dashboard') router.push('/dashboard')
+}
+
+// 菜单跳转：不用 el-menu 自带的 router 模式（偶发不触发），改为显式处理
+function onMenuSelect(index) {
+  if (!index || typeof index !== 'string') return
+  if (index === route.path) return
+  router.push(index).catch((e) => {
+    console.warn('[Menu] 跳转失败:', index, e && e.message)
+  })
 }
 
 const activeMenu = computed(() => {
