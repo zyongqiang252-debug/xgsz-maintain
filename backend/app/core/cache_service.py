@@ -34,21 +34,33 @@ class CacheService:
         self._prefix = "maint:"
         self._default_ttl = 300
         self._enabled = True
+        # Redis 不可用时的冷却：避免每次读写都重连（每次要等连接超时，实测单次 ~2s）
+        self._fail_until = 0.0
+        self._fail_cooldown = 60.0
+        self._last_fail_log = 0.0
 
     @property
     def client(self):
+        if time.time() < self._fail_until:
+            return None
         if self._client is None and _redis_available and self._enabled:
             try:
                 self._client = redis.from_url(
                     settings.REDIS_URL,
                     decode_responses=True,
-                    socket_connect_timeout=2,
+                    socket_connect_timeout=0.5,
+                    socket_timeout=0.5,
                 )
                 self._client.ping()
                 logger.info("[Cache] Redis 连接成功")
             except Exception as e:
-                logger.warning(f"[Cache] Redis 连接失败: {e}，使用内存缓存")
                 self._client = None
+                self._fail_until = time.time() + self._fail_cooldown
+                if time.time() - self._last_fail_log > self._fail_cooldown:
+                    self._last_fail_log = time.time()
+                    logger.warning(
+                        f"[Cache] Redis 连接失败: {e}；后续 {int(self._fail_cooldown)}s 内直接用内存缓存"
+                    )
         return self._client
 
     def _make_key(self, key: str) -> str:
