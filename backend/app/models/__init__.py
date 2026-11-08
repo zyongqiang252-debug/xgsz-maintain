@@ -19,6 +19,9 @@ from app.models.manual_code import ManualCodeEntry
 from app.models.work_order_import import WorkOrderImportBatch, WorkOrderImportItem
 from app.models.stock_movement import StockMovement
 from app.models.login_log import LoginLog
+from app.models.maintenance import (
+    MaintenancePlan, MaintenanceRecord, InspectionTemplate, InspectionRecord,
+)
 
 __all__ = [
     "Device", "WorkOrder", "WorkOrderStatus",
@@ -39,4 +42,6 @@ __all__ = [
     "WorkOrderImportBatch", "WorkOrderImportItem",
     "StockMovement",
     "LoginLog",
+    "MaintenancePlan", "MaintenanceRecord",
+    "InspectionTemplate", "InspectionRecord",
 ]

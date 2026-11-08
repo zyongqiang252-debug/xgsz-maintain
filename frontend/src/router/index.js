@@ -15,6 +15,7 @@ const router = createRouter({
         { path: 'devices', name: 'Devices', component: () => import('../views/Devices.vue'), meta: { title: '设备监控' } },
         { path: 'devices/new', name: 'DeviceCreate', component: () => import('../views/DeviceForm.vue'), meta: { title: '新增设备' } },
         { path: 'devices/:id', name: 'DeviceForm', component: () => import('../views/DeviceForm.vue'), meta: { title: '设备详情' } },
+        { path: 'maintenance', name: 'Maintenance', component: () => import('../views/Maintenance.vue'), meta: { title: '保养与点检' } },
         {
           path: 'knowledge',
           name: 'Knowledge',

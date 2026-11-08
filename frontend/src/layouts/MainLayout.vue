@@ -164,6 +164,11 @@
                 <template #title>设备监控</template>
               </el-menu-item>
 
+              <el-menu-item index="/maintenance">
+                <el-icon><Tools /></el-icon>
+                <template #title>保养与点检</template>
+              </el-menu-item>
+
               <div class="menu-group-label">主管中心</div>
               <el-menu-item index="/supervisor/dispatch">
                 <el-icon><SetUp /></el-icon>
@@ -215,6 +220,10 @@
               <el-menu-item index="/devices">
                 <el-icon><Monitor /></el-icon>
                 <template #title>设备监控</template>
+              </el-menu-item>
+              <el-menu-item index="/maintenance">
+                <el-icon><Tools /></el-icon>
+                <template #title>保养与点检</template>
               </el-menu-item>
               <el-menu-item index="/categories">
                 <el-icon><Grid /></el-icon>
@@ -418,7 +427,7 @@ import {
   User, Lock, QuestionFilled, SwitchButton,
   SetUp, Histogram, Calendar, Upload,
   DataAnalysis, Document, ChatLineSquare, Reading, Monitor, Grid, Box, Connection,
-  Setting
+  Setting, Tools
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
