@@ -182,3 +182,30 @@ GET    /api/v1/system-settings/dingtalk-group
 PUT    /api/v1/system-settings/dingtalk-group {webhook?, secret?}
 POST   /api/v1/system-settings/dingtalk-group/test
 ```
+
+### 9.1 密钥安全（重要）
+
+网页里填的 API Key / 群机器人 Webhook / 加签密钥，**不是明文存库**：
+
+| 暴露面 | 情况 |
+|---|---|
+| 页面 / 接口返回 | 只给打码值（`sk-a****7890`），连管理员也读不到明文 |
+| 数据库直连 / 数据库备份 | **Fernet 密文**（`enc:v1:...`），看不到明文 |
+| 后端日志 | 只记「更新了哪些字段」，不记值 |
+| 浏览器 localStorage / F12 | 不落明文，保存后输入框清空 |
+| 抓包 | ⚠️ 本机是 HTTP 明文传输，生产必须上 HTTPS |
+| 拿到服务器（进程 + env） | ⚠️ 服务端必须能解密，这类攻击无法只靠加密防御 |
+
+加密密钥来源：
+
+```ini
+# 不填则用 SECRET_KEY 派生（简单，但换 SECRET_KEY 会导致旧密文解不开）
+SETTINGS_ENC_KEY=
+# 建议生成一把独立的：
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+注意：
+- 换 `SECRET_KEY` 或 `SETTINGS_ENC_KEY` 后，已存的密文将无法解密 → 重新在页面录入 Key 即可（日志会告警，不会崩）
+- `backend/.env` 里的 `DEEPSEEK_API_KEY` 仍是明文，**建议留空**、统一走网页配置
+- 历史明文配置（改造前写入的）会在程序启动读取时**自动加密迁移**

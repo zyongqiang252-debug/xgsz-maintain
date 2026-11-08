@@ -4,6 +4,11 @@
 - 原来 DeepSeek Key / 群机器人 webhook 只能写死在 backend/.env，改一次要重启
 - 现在允许管理员在网页「系统设置」里填，存 `sys_configs` 表，保存即生效、重启后自动加载
 
+安全：
+- API Key / 群机器人 Webhook / 加签密钥 **加密后入库**（Fernet，见 app/core/crypto.py）
+- 历史明文值在读取时自动就地加密（平滑迁移）
+- 对外接口一律只返回打码值
+
 优先级：**数据库 > .env > 代码默认值**（数据库没值时不动 settings）
 """
 from typing import Dict, Optional
@@ -11,22 +16,24 @@ from typing import Dict, Optional
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from app.core import sys_config
+from app.core import crypto, sys_config
 from app.core.config import settings
 
 # ---------- 配置键 ----------
-KEY_API_KEY = "ai.deepseek_api_key"
+KEY_API_KEY = "ai.deepseek_api_key"        # 敏感：加密存储
 KEY_BASE_URL = "ai.deepseek_base_url"
 KEY_MODEL = "ai.deepseek_model"
-KEY_GROUP_WEBHOOK = "dingtalk.group_webhook"
-KEY_GROUP_SECRET = "dingtalk.group_secret"
+KEY_GROUP_WEBHOOK = "dingtalk.group_webhook"   # 敏感：含 access_token，加密存储
+KEY_GROUP_SECRET = "dingtalk.group_secret"     # 敏感：加密存储
+
+SECRET_KEYS = {KEY_API_KEY, KEY_GROUP_WEBHOOK, KEY_GROUP_SECRET}
 
 DESCRIPTIONS = {
-    KEY_API_KEY: "DeepSeek API Key（网页设置，优先级高于 .env）",
+    KEY_API_KEY: "DeepSeek API Key（加密存储；网页设置优先于 .env）",
     KEY_BASE_URL: "DeepSeek API Base URL",
     KEY_MODEL: "DeepSeek 模型名",
-    KEY_GROUP_WEBHOOK: "钉钉群机器人 Webhook",
-    KEY_GROUP_SECRET: "钉钉群机器人加签密钥",
+    KEY_GROUP_WEBHOOK: "钉钉群机器人 Webhook（加密存储）",
+    KEY_GROUP_SECRET: "钉钉群机器人加签密钥（加密存储）",
 }
 
 
@@ -72,7 +79,7 @@ def reset_ai_clients() -> int:
 
 
 def apply_to_settings(values: Dict[str, Optional[str]]) -> None:
-    """把 {配置键: 值} 应用到 settings（None 表示不动）"""
+    """把 {配置键: 明文值} 应用到 settings（None 表示不动）"""
     if values.get(KEY_API_KEY) is not None:
         settings.DEEPSEEK_API_KEY = values[KEY_API_KEY] or ""
     if values.get(KEY_BASE_URL) is not None:
@@ -86,21 +93,47 @@ def apply_to_settings(values: Dict[str, Optional[str]]) -> None:
     reset_ai_clients()
 
 
+def _read_value(db: Session, key: str, migrate: bool = True) -> Optional[str]:
+    """读一条配置并解密；历史明文顺带就地加密"""
+    raw = sys_config.get(db, key, None)
+    if raw is None:
+        return None
+    if key in SECRET_KEYS:
+        if not crypto.is_encrypted(raw) and raw:
+            if migrate:
+                try:
+                    sys_config.set_value(db, key, crypto.encrypt(str(raw)), DESCRIPTIONS.get(key))
+                    logger.info(f"[RuntimeSettings] 已把历史明文配置 {key} 迁移为密文")
+                except Exception as e:
+                    logger.warning(f"[RuntimeSettings] {key} 明文迁移失败: {e}")
+            return str(raw)
+        return crypto.decrypt(str(raw))
+    return str(raw)
+
+
 def load_into_settings(db: Session) -> int:
     """启动时把数据库里的配置加载进 settings，返回加载条数"""
     values = {}
     for key in DESCRIPTIONS:
-        raw = sys_config.get(db, key, None)
-        if raw is not None:
-            values[key] = raw
+        v = _read_value(db, key)
+        if v is not None:
+            values[key] = v
     if not values:
         logger.info("[RuntimeSettings] 数据库暂无第三方接入配置，沿用 .env")
         return 0
     apply_to_settings(values)
-    logger.info(f"[RuntimeSettings] 已从数据库加载 {len(values)} 项接入配置"
-                f"（DeepSeek Key：{'已配置' if settings.DEEPSEEK_API_KEY else '未配置'}，"
-                f"群机器人：{'已配置' if settings.DINGTALK_GROUP_WEBHOOK else '未配置'}）")
+    logger.info(
+        f"[RuntimeSettings] 已从数据库加载 {len(values)} 项接入配置"
+        f"（DeepSeek Key：{'已配置' if settings.DEEPSEEK_API_KEY else '未配置'}，"
+        f"群机器人：{'已配置' if settings.DINGTALK_GROUP_WEBHOOK else '未配置'}）"
+    )
     return len(values)
+
+
+def _write_value(db: Session, key: str, plain: str) -> None:
+    """写一条配置（敏感项加密后落库）"""
+    stored = crypto.encrypt(plain) if key in SECRET_KEYS else plain
+    sys_config.set_value(db, key, stored, DESCRIPTIONS.get(key))
 
 
 def save_ai(db: Session, api_key: Optional[str] = None,
@@ -108,13 +141,13 @@ def save_ai(db: Session, api_key: Optional[str] = None,
     """保存 AI 配置（传 None 表示不修改；传空串表示清空）"""
     changed = {}
     if api_key is not None:
-        sys_config.set_value(db, KEY_API_KEY, api_key.strip(), DESCRIPTIONS[KEY_API_KEY])
+        _write_value(db, KEY_API_KEY, api_key.strip())
         changed[KEY_API_KEY] = api_key.strip()
     if base_url is not None:
-        sys_config.set_value(db, KEY_BASE_URL, base_url.strip(), DESCRIPTIONS[KEY_BASE_URL])
+        _write_value(db, KEY_BASE_URL, base_url.strip())
         changed[KEY_BASE_URL] = base_url.strip()
     if model is not None:
-        sys_config.set_value(db, KEY_MODEL, model.strip(), DESCRIPTIONS[KEY_MODEL])
+        _write_value(db, KEY_MODEL, model.strip())
         changed[KEY_MODEL] = model.strip()
     apply_to_settings(changed)
     return changed
@@ -124,10 +157,10 @@ def save_group_robot(db: Session, webhook: Optional[str] = None,
                      secret: Optional[str] = None) -> Dict:
     changed = {}
     if webhook is not None:
-        sys_config.set_value(db, KEY_GROUP_WEBHOOK, webhook.strip(), DESCRIPTIONS[KEY_GROUP_WEBHOOK])
+        _write_value(db, KEY_GROUP_WEBHOOK, webhook.strip())
         changed[KEY_GROUP_WEBHOOK] = webhook.strip()
     if secret is not None:
-        sys_config.set_value(db, KEY_GROUP_SECRET, secret.strip(), DESCRIPTIONS[KEY_GROUP_SECRET])
+        _write_value(db, KEY_GROUP_SECRET, secret.strip())
         changed[KEY_GROUP_SECRET] = secret.strip()
     apply_to_settings(changed)
     return changed

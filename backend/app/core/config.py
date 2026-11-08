@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "your-secret-key-change-this-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    # 敏感配置（API Key 等）落库前的加密密钥，Fernet 32 字节 base64。
+    # 不填则用 SECRET_KEY 派生（换 SECRET_KEY 会导致已存的密文解不开，需重新录入）
+    SETTINGS_ENC_KEY: str = ""
 
     # 日志配置
     LOG_LEVEL: str = "INFO"
