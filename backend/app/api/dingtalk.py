@@ -507,18 +507,24 @@ def mobile_report(req: MobileReportRequest, db: Session = Depends(get_db),
 
 @router.get("/tech/queue", summary="维修人员工单队列")
 def tech_queue(
-    userid: str = Query(...),
+    userid: Optional[str] = Query(None, description="仅主管/管理员可指定他人；普通维修员忽略此参数"),
     current_user: User = Depends(get_current_user),
     page: int = Query(1, ge=1),
     page_size: int = Query(10),
     db: Session = Depends(get_db),
 ):
-    """获取当前维修人员的待处理工单列表"""
-    user = db.query(User).filter(
-        (User.username == userid) | (User.dingtalk_userid == userid)
-    ).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
+    """获取维修人员的待处理工单列表（默认只看自己，避免越权查看他人工单）"""
+    user = current_user
+    wanted = (userid or "").strip()
+    mine = {current_user.username, current_user.dingtalk_userid or ""}
+    if wanted and wanted not in mine:
+        if current_user.role in (UserRole.ADMIN.value, UserRole.SUPERVISOR.value):
+            target = db.query(User).filter(
+                (User.username == wanted) | (User.dingtalk_userid == wanted)
+            ).first()
+            if target:
+                user = target
+        # 普通维修员传了别人的 id 一律忽略，只返回自己的队列
 
     query = db.query(WorkOrder).filter(
         WorkOrder.assignee_id == user.id,

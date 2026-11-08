@@ -55,7 +55,7 @@ const statusLabel = (s) => ({ ASSIGNED: '待接单', IN_PROGRESS: '维修中', C
 const fetchData = async () => {
   try {
     const res = await request.get('/dingtalk/tech/queue', {
-      params: { userid: 'demo_user', page_size: 50 }
+      params: { page_size: 50 }
     })
     list.value = (res.items || []).filter(wo => {
       if (activeTab.value === 'pending') return wo.status === 'ASSIGNED'
