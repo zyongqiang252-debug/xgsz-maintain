@@ -70,6 +70,14 @@
                   v-if="['SUBMITTED', 'ASSIGNED'].includes(row.status) && isSupervisor"
                   size="small" type="primary" @click="openDispatch(row)"
                 >{{ row.status === 'ASSIGNED' ? '改派' : '派工' }}</el-button>
+                <el-button
+                  v-if="row.status === 'SUBMITTED' && isTechnician"
+                  size="small" type="primary" :loading="claiming === row.id" @click="claimTask(row)"
+                >领取</el-button>
+                <el-button
+                  v-if="row.status === 'ASSIGNED' && isAssignedTech(row)"
+                  size="small" plain @click="openDispatch(row)"
+                >转派</el-button>
                 <el-button v-if="!isSupervisor" link type="warning" :disabled="['COMPLETED', 'ARCHIVED'].includes(row.status) || (!isCreatedByMe(row) && !isAdmin && !isAssignedTech(row))" @click="$router.push(`/work-orders/${row.id}?edit=1`)">编辑</el-button>
                 <el-button v-if="!isSupervisor" link type="danger" :disabled="['COMPLETED', 'ARCHIVED'].includes(row.status) || (!isCreatedByMe(row) && !isAdmin)" @click="handleDelete(row)">删除</el-button>
               </div>
@@ -144,7 +152,7 @@
     </el-card>
 
     <!-- 派工 -->
-    <el-dialog v-model="dispatch.visible" :title="dispatch.row?.status === 'ASSIGNED' ? '工单改派' : '工单派工'" width="460px">
+    <el-dialog v-model="dispatch.visible" :title="dispatchTitle" width="460px">
       <el-form label-width="80px">
         <el-form-item label="工单">
           <span>{{ dispatch.row?.work_order_no }}</span>
@@ -168,14 +176,14 @@
       </el-form>
       <template #footer>
         <el-button @click="dispatch.visible = false">取消</el-button>
-        <el-button type="primary" :loading="dispatch.submitting" @click="submitDispatch">{{ dispatch.row?.status === 'ASSIGNED' ? '确认改派' : '确认派工' }}</el-button>
+        <el-button type="primary" :loading="dispatch.submitting" @click="submitDispatch">{{ dispatchConfirmText }}</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api'
@@ -203,6 +211,7 @@ const currentUser = (() => {
 })()
 const isAdmin = currentUser.role === 'ADMIN'
 const isSupervisor = currentUser.role === 'SUPERVISOR' || isAdmin
+const isTechnician = currentUser.role === 'TECHNICIAN'
 const isCreatedByMe = (row) => {
   if (row.created_by_employee_id && currentUser.employee_id) {
     return row.created_by_employee_id === currentUser.employee_id
@@ -218,11 +227,50 @@ const canOperateProgress = (row) => isAssignedTech(row) || row.status === 'DRAFT
 
 // ===== 派工（把 SUBMITTED 指派给维修员 → ASSIGNED）=====
 const dispatch = reactive({ visible: false, row: null, technicianId: null, remark: '', technicians: [], submitting: false })
+const isSelfDispatch = computed(() => {
+  const r = dispatch.row
+  if (!r) return false
+  const mine = (r.technician_id || r.assigned_technician_id) === currentUser.id
+  return mine && !isSupervisor
+})
+const dispatchTitle = computed(() => {
+  if (isSelfDispatch.value) return '转派工单'
+  return dispatch.row?.status === 'ASSIGNED' ? '工单改派' : '工单派工'
+})
+const dispatchConfirmText = computed(() => {
+  if (isSelfDispatch.value) return '确认转派'
+  return dispatch.row?.status === 'ASSIGNED' ? '确认改派' : '确认派工'
+})
+const claiming = ref(null)
+// 维修员主动领取（抢单）
+const claimTask = async (row) => {
+  try {
+    await ElMessageBox.confirm(
+      `确认领取工单 ${row.work_order_no}？领取后由你负责。`, '领取任务',
+      { type: 'info', confirmButtonText: '确认领取' })
+  } catch { return }
+  claiming.value = row.id
+  try {
+    await request.post(`/work-orders/${row.id}/transition`, {
+      to_status: 'ASSIGNED',
+      technician_id: currentUser.id,
+      source: 'TECH_CLAIM',
+    })
+    ElMessage.success('领取成功，工单已归你负责')
+    fetchData()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '领取失败')
+  } finally {
+    claiming.value = null
+  }
+}
+
 const openDispatch = async (row) => {
   Object.assign(dispatch, { visible: true, row, technicianId: null, remark: '', submitting: false })
   try {
     const res = await request.get('/dispatch/technicians')
-    dispatch.technicians = Array.isArray(res) ? res : (res.items || [])
+    const all = Array.isArray(res) ? res : (res.items || [])
+    dispatch.technicians = isSupervisor ? all : all.filter((t) => t.id !== currentUser.id)
   } catch (e) {
     dispatch.technicians = []
     ElMessage.error('获取维修员列表失败')
@@ -238,7 +286,7 @@ const submitDispatch = async () => {
       source: 'SUPERVISOR_DISPATCH',
       remark: dispatch.remark || null,
     })
-    ElMessage.success('派工成功')
+    ElMessage.success(isSelfDispatch.value ? '转派成功' : (dispatch.row?.status === 'ASSIGNED' ? '改派成功' : '派工成功'))
     dispatch.visible = false
     fetchData()
   } catch (e) {

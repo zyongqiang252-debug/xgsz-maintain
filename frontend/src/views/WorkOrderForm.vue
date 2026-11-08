@@ -30,6 +30,14 @@
               v-if="['SUBMITTED', 'ASSIGNED'].includes(form.status) && canDispatch"
               type="primary" plain size="small" @click="openDispatch"
             >{{ form.status === 'ASSIGNED' ? '改派' : '派工' }}</el-button>
+            <el-button
+              v-if="form.status === 'SUBMITTED' && canClaim"
+              type="primary" size="small" :loading="claiming" @click="claimTask"
+            >领取任务</el-button>
+            <el-button
+              v-if="form.status === 'ASSIGNED' && isMyTask && !canDispatch"
+              type="primary" plain size="small" @click="openDispatch"
+            >转派</el-button>
             <el-tag :type="statusTagType" size="large">{{ statusLabel }}</el-tag>
           </div>
         </div>
@@ -99,7 +107,7 @@
     </template>
 
     <!-- 派工 -->
-    <el-dialog v-model="dispatchDlg.visible" :title="form.status === 'ASSIGNED' ? '工单改派' : '工单派工'" width="460px" append-to-body>
+    <el-dialog v-model="dispatchDlg.visible" :title="dispatchTitle" width="460px" append-to-body>
       <el-form label-width="80px">
         <el-form-item label="维修员" required>
           <el-select v-model="dispatchDlg.technicianId" filterable placeholder="选择维修员" style="width:100%">
@@ -114,7 +122,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dispatchDlg.visible = false">取消</el-button>
-        <el-button type="primary" :loading="dispatchDlg.saving" @click="submitDispatch">{{ form.status === 'ASSIGNED' ? '确认改派' : '确认派工' }}</el-button>
+        <el-button type="primary" :loading="dispatchDlg.saving" @click="submitDispatch">{{ dispatchTitle === '转派工单' ? '确认转派' : (form.status === 'ASSIGNED' ? '确认改派' : '确认派工') }}</el-button>
       </template>
     </el-dialog>
 
@@ -791,6 +799,7 @@ const slaTagType = computed(() => {
   return 'success'
 })
 
+const currentUserId = (() => { try { return JSON.parse(localStorage.getItem('current_user') || '{}').id } catch { return null } })()
 const canDispatch = computed(() => {
   try {
     const u = JSON.parse(localStorage.getItem('current_user') || '{}')
@@ -798,12 +807,49 @@ const canDispatch = computed(() => {
   } catch { return false }
 })
 
+const canClaim = computed(() => {
+  try {
+    const u = JSON.parse(localStorage.getItem('current_user') || '{}')
+    return u.role === 'TECHNICIAN'
+  } catch { return false }
+})
+const isMyTask = computed(() => {
+  try {
+    const u = JSON.parse(localStorage.getItem('current_user') || '{}')
+    return !!u.id && (form.technician_id === u.id || form.assignee_id === u.id)
+  } catch { return false }
+})
+
+const claiming = ref(false)
+const claimTask = async () => {
+  try {
+    await ElMessageBox.confirm(`确认领取工单 ${form.work_order_no}？领取后由你负责。`, '领取任务',
+      { type: 'info', confirmButtonText: '确认领取' })
+  } catch { return }
+  claiming.value = true
+  try {
+    const u = JSON.parse(localStorage.getItem('current_user') || '{}')
+    await request.post(`/work-orders/${form.id}/transition`, {
+      to_status: 'ASSIGNED', technician_id: u.id, source: 'TECH_CLAIM',
+    })
+    ElMessage.success('领取成功')
+    const res = await request.get(`/work-orders/${form.id}`)
+    Object.assign(form, res)
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '领取失败')
+  } finally {
+    claiming.value = false
+  }
+}
+
+const dispatchTitle = computed(() => (!canDispatch.value && form.status === 'ASSIGNED') ? '转派工单' : (form.status === 'ASSIGNED' ? '工单改派' : '工单派工'))
 const dispatchDlg = reactive({ visible: false, technicianId: null, remark: '', technicians: [], saving: false })
 const openDispatch = async () => {
   Object.assign(dispatchDlg, { visible: true, technicianId: null, remark: '', saving: false })
   try {
     const res = await request.get('/dispatch/technicians')
-    dispatchDlg.technicians = Array.isArray(res) ? res : (res.items || [])
+    const all = Array.isArray(res) ? res : (res.items || [])
+    dispatchDlg.technicians = canDispatch.value ? all : all.filter((t) => t.id !== currentUserId)
   } catch { dispatchDlg.technicians = [] }
 }
 const submitDispatch = async () => {
@@ -816,7 +862,7 @@ const submitDispatch = async () => {
       source: 'SUPERVISOR_DISPATCH',
       remark: dispatchDlg.remark || null,
     })
-    ElMessage.success('派工成功')
+    ElMessage.success(!canDispatch.value ? '转派成功' : (form.status === 'ASSIGNED' ? '改派成功' : '派工成功'))
     dispatchDlg.visible = false
     const res = await request.get(`/work-orders/${form.id}`)
     Object.assign(form, res)

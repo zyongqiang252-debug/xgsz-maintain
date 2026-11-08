@@ -270,8 +270,13 @@ def create_work_order(data: WorkOrderCreate, db: Session = Depends(get_db), curr
         raise HTTPException(status_code=400, detail="工单编号已存在")
     work_order = WorkOrder(**data.model_dump(exclude_unset=True))
     work_order.created_by = current_user.id
-    # 维修员强制为当前创建者（号主），不可指定他人
-    work_order.technician_id = current_user.id
+    # 只有维修员自己建单才自动归自己；管理员/主管建单不预占维修员，
+    # 否则待派工工单"看起来已有人"，别人无法抢单。
+    if current_user.role == UserRole.TECHNICIAN.value:
+        work_order.technician_id = current_user.id
+    else:
+        work_order.technician_id = None
+        work_order.assignee_id = None
     if work_order.status not in (WorkOrderStatus.DRAFT, None):
         work_order.status = WorkOrderStatus.DRAFT
     # SLA：按优先级算出响应/修复截止时间
@@ -816,8 +821,13 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
         # 已派单状态下改派：允许只更换维修员（状态不变）
         if (to_status_val == WorkOrderStatus.ASSIGNED.value and data.technician_id
                 and data.technician_id != work_order.technician_id):
-            if current_user.role not in (UserRole.SUPERVISOR.value, UserRole.ADMIN.value):
-                raise HTTPException(status_code=403, detail="仅主管或管理员可改派")
+            is_owner = work_order.technician_id == current_user.id
+            if current_user.role not in (UserRole.SUPERVISOR.value, UserRole.ADMIN.value) and not is_owner:
+                owner = db.query(User).filter(User.id == work_order.technician_id).first()
+                owner_name = owner.real_name if owner else "其他人"
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"该工单当前负责人是 {owner_name}，不能重复领取或改派")
             tech = db.query(User).filter(
                 User.id == data.technician_id, User.is_active == True).first()
             if not tech:
@@ -887,17 +897,48 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
             raise HTTPException(status_code=403, detail="仅维修员、主管或管理员可退回")
 
     elif to_status_val == WorkOrderStatus.ASSIGNED.value:
-        if not (is_supervisor or is_admin):
-            raise HTTPException(status_code=403, detail="仅主管或管理员可派工/改派")
-        # 派工/改派：必须指定维修员（否则状态变了但没人负责）
-        if data.technician_id:
+        if is_supervisor or is_admin:
+            # 派工 / 改派：必须指定维修员（否则状态变了但没人负责）
+            if data.technician_id:
+                tech = db.query(User).filter(User.id == data.technician_id).first()
+                if not tech or not tech.is_active:
+                    raise HTTPException(status_code=400, detail="指定的维修员不存在或已停用")
+                work_order.technician_id = tech.id
+                work_order.assignee_id = tech.id
+            elif not work_order.technician_id:
+                raise HTTPException(status_code=400, detail="派工必须指定维修员（technician_id）")
+        elif is_technician:
+            if not data.technician_id:
+                raise HTTPException(status_code=400, detail="领取任务请把自己设为接收人（technician_id=本人）")
             tech = db.query(User).filter(User.id == data.technician_id).first()
             if not tech or not tech.is_active:
-                raise HTTPException(status_code=400, detail="指定的维修员不存在或已停用")
-            work_order.technician_id = tech.id
-            work_order.assignee_id = tech.id
-        elif not work_order.technician_id:
-            raise HTTPException(status_code=400, detail="派工必须指定维修员（technician_id）")
+                raise HTTPException(status_code=400, detail="接收人不存在或已停用")
+
+            # 判断工单当前是否真的"有人负责"：负责人必须是 TECHNICIAN 才算被派
+            current_owner = None
+            if work_order.technician_id:
+                owner = db.query(User).filter(User.id == work_order.technician_id).first()
+                if owner and owner.role == UserRole.TECHNICIAN.value and owner.is_active:
+                    current_owner = owner
+
+            if data.technician_id == current_user.id:
+                # 抢单：工单还没人负责（或本来就归自己）
+                if current_owner and current_owner.id != current_user.id:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"该工单已派给 {current_owner.real_name}，不能重复领取")
+                work_order.technician_id = current_user.id
+                work_order.assignee_id = current_user.id
+            else:
+                # 转派：只有当前负责人可以把自己名下的工单转给别人
+                if not current_owner or current_owner.id != current_user.id:
+                    raise HTTPException(status_code=403, detail="只有当前负责人可以转派该工单")
+                if tech.role != UserRole.TECHNICIAN.value:
+                    raise HTTPException(status_code=400, detail="只能转派给维修员")
+                work_order.technician_id = tech.id
+                work_order.assignee_id = tech.id
+        else:
+            raise HTTPException(status_code=403, detail="仅主管/管理员可派工，维修员可领取或转派")
 
     old_technician_id = work_order.technician_id
     from_status_enum = work_order.status

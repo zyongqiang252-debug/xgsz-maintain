@@ -40,8 +40,11 @@ def list_technicians(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role not in (UserRole.SUPERVISOR.value, UserRole.ADMIN.value):
-        raise HTTPException(status_code=403, detail="仅主管或管理员可查看维修员列表")
+    # 维修员也需要这份名单用于「转派」；仅这三种角色可看
+    if current_user.role not in (
+        UserRole.SUPERVISOR.value, UserRole.ADMIN.value, UserRole.TECHNICIAN.value
+    ):
+        raise HTTPException(status_code=403, detail="仅主管、管理员或维修员可查看维修员列表")
 
     technicians = (
         db.query(User)
