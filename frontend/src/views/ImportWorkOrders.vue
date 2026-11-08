@@ -183,13 +183,13 @@
       </template>
 
       <el-table v-loading="loading" :data="items" size="small">
-        <el-table-column label="文件 / 工单号" min-width="180">
+        <el-table-column label="文件 / 工单号" min-width="160">
           <template #default="{ row }">
             <div class="cell-main">{{ row.file_name }}</div>
             <div class="cell-sub">{{ row.extracted_data?.work_order_no || '—' }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="来源" width="90">
+        <el-table-column label="来源" width="60" align="center">
           <template #default="{ row }">
             <el-tag size="small" effect="plain"
                     :type="row.source === 'EXCEL' ? 'success' : row.source === 'IMAGE' ? 'warning' : 'info'">
@@ -197,29 +197,29 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="原图" width="70">
+        <el-table-column label="原图" width="58" align="center">
           <template #default="{ row }">
             <img v-if="row.image_url" :src="row.image_url" class="thumb"
                  title="点击查看大图" @click="openPreview(row.image_url)" />
             <span v-else style="color: #C9CDD4">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="设备" width="120">
+        <el-table-column label="设备" width="100">
           <template #default="{ row }">{{ row.extracted_data?.device_code || '—' }}</template>
         </el-table-column>
-        <el-table-column label="故障描述" min-width="220" show-overflow-tooltip>
+        <el-table-column label="故障描述" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">{{ row.extracted_data?.fault_description || '—' }}</template>
         </el-table-column>
-        <el-table-column label="故障码" width="110">
+        <el-table-column label="故障码" width="90">
           <template #default="{ row }">{{ row.extracted_data?.fault_code || '—' }}</template>
         </el-table-column>
         <el-table-column label="维修员" width="90">
           <template #default="{ row }">{{ row.extracted_data?.technician_name || '—' }}</template>
         </el-table-column>
-        <el-table-column label="工时" width="70">
+        <el-table-column label="工时" width="60" align="right">
           <template #default="{ row }">{{ row.extracted_data?.work_hours ?? '—' }}</template>
         </el-table-column>
-        <el-table-column label="校验" width="160">
+        <el-table-column label="校验" width="110" align="center">
           <template #default="{ row }">
             <el-tooltip v-if="row.validate_warnings?.length" :content="row.validate_warnings.join('；')" placement="top">
               <el-tag type="warning" size="small">⚠ {{ row.validate_warnings.length }} 项</el-tag>
@@ -228,17 +228,19 @@
             <el-tag v-else-if="row.status === 'ERROR'" type="danger" size="small">失败</el-tag>
           </template>
         </el-table-column>
-        <el-table-column v-if="activeTab === 'CONFIRMED'" label="工单" width="170">
+        <el-table-column v-if="activeTab === 'CONFIRMED'" label="工单" width="150">
           <template #default="{ row }">
             <el-link type="primary" @click="goWorkOrder(row.work_order_id)">{{ row.work_order_id }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="205">
           <template #default="{ row }">
             <template v-if="row.status === 'PENDING'">
-              <el-button type="primary" size="small" @click="openEdit(row)">编辑</el-button>
-              <el-button type="success" size="small" :loading="confirmingId === row.id" @click="confirmItem(row)">确认入库</el-button>
-              <el-button size="small" @click="rejectItem(row)">拒绝</el-button>
+              <div class="op-cell">
+                <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+                <el-button type="success" size="small" :loading="confirmingId === row.id" @click="confirmItem(row)">入库</el-button>
+                <el-button link type="info" @click="rejectItem(row)">拒绝</el-button>
+              </div>
             </template>
             <el-button v-else-if="row.status === 'ERROR' && activeTab === 'ERROR'" size="small" type="danger" plain
                        @click="showError(row)">查看原因</el-button>
@@ -662,4 +664,9 @@ onMounted(() => {
 .thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; border: 1px solid #E5E6EB; cursor: zoom-in; }
 .preview-wrap { display: flex; justify-content: center; max-height: 70vh; overflow: auto; }
 .preview-img { max-width: 100%; max-height: 68vh; object-fit: contain; border-radius: 4px; }
+.op-cell { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.op-cell :deep(.el-button.is-link) { padding: 0 2px; height: auto; }
+:deep(.cell-main) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:deep(.cell-sub) { font-size: 12px; color: #86909C; white-space: nowrap; }
+:deep(.el-table__cell) { padding: 8px 0; }
 </style>

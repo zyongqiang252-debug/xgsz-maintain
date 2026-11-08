@@ -7,7 +7,7 @@
 
     <el-card class="table-card" shadow="never">
       <el-table :data="list" v-loading="loading" stripe>
-        <el-table-column label="用户" width="180">
+        <el-table-column label="用户" min-width="160">
           <template #default="{ row }">
             <div style="display: flex; align-items: center; gap: 8px;">
               <el-avatar :size="32" icon="UserFilled" />
@@ -15,41 +15,41 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="username" label="用户名" width="120" />
-        <el-table-column prop="employee_id" label="工号" width="110">
+        
+        <el-table-column prop="employee_id" label="工号" width="100">
           <template #default="{ row }">{{ row.employee_id || '—' }}</template>
         </el-table-column>
-        <el-table-column label="角色" width="120">
+        <el-table-column label="角色" width="100">
           <template #default="{ row }">
             <span class="role-tag" :class="'role-' + row.role">{{ roleLabel(row.role) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="email" label="邮箱" width="200" />
-        <el-table-column prop="phone" label="手机" width="140" />
-        <el-table-column label="状态" width="100">
+        
+        <el-table-column prop="phone" label="手机" width="120" />
+        <el-table-column label="状态" width="90">
           <template #default="{ row }">
             <span class="status-dot" :class="row.is_active ? 'active' : 'inactive'">
               {{ row.is_active ? '启用' : '禁用' }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="钉钉" width="100">
+        <el-table-column label="钉钉" width="90">
           <template #default="{ row }">
             <span v-if="row.dingtalk_userid" class="dt-bound-tag">已绑定</span>
             <span v-else class="dt-unbound-tag">未绑定</span>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="170">
+        <el-table-column prop="created_at" label="创建时间" width="140">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="操作" width="265">
           <template #default="{ row }">
             <div class="action-group">
               <el-button size="small" type="primary" @click="handleEdit(row)">编辑</el-button>
-              <el-button size="small" type="warning" @click="handleResetPwd(row)">重置密码</el-button>
-              <el-button v-if="!row.dingtalk_userid" size="small" type="success" plain @click="openBindDingTalk(row)">绑定钉钉</el-button>
-              <el-button v-else size="small" type="info" @click="handleUnbindDingTalk(row)">解绑钉钉</el-button>
-              <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
+              <el-button link type="warning" @click="handleResetPwd(row)">重置密码</el-button>
+              <el-button v-if="!row.dingtalk_userid" link type="success" @click="openBindDingTalk(row)">绑定钉钉</el-button>
+              <el-button v-else link type="info" @click="handleUnbindDingTalk(row)">解绑钉钉</el-button>
+              <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
             </div>
           </template>
         </el-table-column>

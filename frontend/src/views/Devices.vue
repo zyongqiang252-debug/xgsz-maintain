@@ -48,7 +48,7 @@
     <!-- 设备监控列表 -->
     <el-card class="table-card" shadow="never">
       <el-table :data="list" v-loading="loading" stripe row-class-name="mon-row">
-        <el-table-column label="设备" min-width="260">
+        <el-table-column label="设备" min-width="200">
           <template #default="{ row }">
             <div class="device-cell">
               <div class="device-name-row">
@@ -65,10 +65,10 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="model" label="型号" width="140" />
-        <el-table-column prop="manufacturer" label="制造商" width="140" />
-        <el-table-column prop="location" label="位置" width="160" />
-        <el-table-column label="故障标签" min-width="240">
+        <el-table-column prop="model" label="型号" width="110" />
+        <el-table-column prop="manufacturer" label="制造商" width="110" />
+        <el-table-column prop="location" label="位置" width="120" show-overflow-tooltip />
+        <el-table-column label="故障标签" min-width="170">
           <template #default="{ row }">
             <div v-if="row.fault_tags && row.fault_tags.length > 0" class="fault-tags">
               <el-tag
@@ -89,21 +89,21 @@
             <span v-else class="dim">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态原因" min-width="200" show-overflow-tooltip>
+        <el-table-column label="状态原因" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="status-reason">{{ row.status_reason || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="!isPureSupervisor" label="操作" width="330" fixed="right">
+        <el-table-column v-if="!isPureSupervisor" label="操作" width="270">
           <template #default="{ row }">
             <div class="action-group">
-              <el-button size="small" type="primary" @click="$router.push(`/devices/${row.id}`)">编辑</el-button>
+              <el-button link type="primary" @click="$router.push(`/devices/${row.id}`)">编辑</el-button>
               <el-button size="small" plain @click="openQr(row)">二维码</el-button>
               <el-button
                 v-if="row.fault_tags && row.fault_tags.length"
                 size="small" type="success" @click="handleClearFaults(row)"
               >清故障</el-button>
-              <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
+              <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
             </div>
           </template>
         </el-table-column>

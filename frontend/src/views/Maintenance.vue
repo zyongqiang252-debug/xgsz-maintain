@@ -37,26 +37,28 @@
             <el-button text @click="loadPlans">刷新</el-button>
           </div>
           <el-table :data="plans" v-loading="loadingPlans" stripe size="small">
-            <el-table-column prop="plan_name" label="保养项目" min-width="180" show-overflow-tooltip />
-            <el-table-column prop="device_code" label="设备" width="120" />
-            <el-table-column label="周期" width="90">
+            <el-table-column prop="plan_name" label="保养项目" min-width="150" show-overflow-tooltip />
+            <el-table-column prop="device_code" label="设备" width="110" />
+            <el-table-column label="周期" width="80">
               <template #default="{ row }">每 {{ row.cycle_value }} 天</template>
             </el-table-column>
-            <el-table-column label="下次到期" width="150">
+            <el-table-column label="下次到期" width="140">
               <template #default="{ row }">{{ fmt(row.next_due_at) }}</template>
             </el-table-column>
-            <el-table-column label="状态" width="110">
+            <el-table-column label="状态" width="100">
               <template #default="{ row }">
                 <el-tag size="small" :type="dueType(row)">{{ dueText(row) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="responsible_name" label="负责人" width="100" />
-            <el-table-column prop="items" label="保养内容" min-width="200" show-overflow-tooltip />
-            <el-table-column label="操作" width="230" fixed="right">
+            <el-table-column prop="responsible_name" label="负责人" width="90" />
+            <el-table-column prop="items" label="保养内容" min-width="150" show-overflow-tooltip />
+            <el-table-column label="操作" width="215">
               <template #default="{ row }">
-                <el-button size="small" type="primary" @click="openDone(row)">执行保养</el-button>
-                <el-button v-if="canManage" size="small" @click="openPlan(row)">编辑</el-button>
-                <el-button v-if="canManage" size="small" type="danger" @click="removePlan(row)">删除</el-button>
+                <div class="op-cell">
+                  <el-button size="small" type="primary" @click="openDone(row)">执行保养</el-button>
+                  <el-button v-if="canManage" link type="primary" @click="openPlan(row)">编辑</el-button>
+                  <el-button v-if="canManage" link type="danger" @click="removePlan(row)">删除</el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -387,4 +389,7 @@ onMounted(async () => {
 .check-item { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px dashed #F2F3F5; }
 .check-name { min-width: 110px; font-weight: 500; }
 .check-std { flex: 1; font-size: 12px; color: #86909C; }
+.op-cell { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.op-cell :deep(.el-button.is-link) { padding: 0 2px; height: auto; }
+:deep(.el-table__cell) { padding: 8px 0; }
 </style>

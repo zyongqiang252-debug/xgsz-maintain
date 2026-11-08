@@ -58,7 +58,7 @@
           {{ formatTime(row.created_at) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="80" fixed="right">
+      <el-table-column label="操作" width="80">
         <template #default="{ row }">
           <el-button size="small" type="primary" @click="showDetail(row)">详情</el-button>
         </template>
