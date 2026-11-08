@@ -200,6 +200,7 @@ class WorkOrderFeedbackIn(BaseModel):
 
 class WorkOrderTransition(BaseModel):
     to_status: str
+    technician_id: Optional[int] = Field(None, description="派工/改派时指定的维修员 ID")
     source: Optional[str] = "WEB"
     remark: Optional[str] = None
     location: Optional[str] = None

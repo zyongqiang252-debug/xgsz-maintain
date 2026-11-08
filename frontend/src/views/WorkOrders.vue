@@ -66,6 +66,10 @@
             <div class="col-actions">
               <div class="action-row">
                 <el-button link type="primary" @click="$router.push(`/work-orders/${row.id}`)">查看</el-button>
+                <el-button
+                  v-if="row.status === 'SUBMITTED' && isSupervisor"
+                  size="small" type="primary" @click="openDispatch(row)"
+                >派工</el-button>
                 <el-button v-if="!isSupervisor" link type="warning" :disabled="['COMPLETED', 'ARCHIVED'].includes(row.status) || (!isCreatedByMe(row) && !isAdmin && !isAssignedTech(row))" @click="$router.push(`/work-orders/${row.id}?edit=1`)">编辑</el-button>
                 <el-button v-if="!isSupervisor" link type="danger" :disabled="['COMPLETED', 'ARCHIVED'].includes(row.status) || (!isCreatedByMe(row) && !isAdmin)" @click="handleDelete(row)">删除</el-button>
               </div>
@@ -138,11 +142,40 @@
         />
       </div>
     </el-card>
+
+    <!-- 派工 -->
+    <el-dialog v-model="dispatch.visible" title="工单派工" width="460px">
+      <el-form label-width="80px">
+        <el-form-item label="工单">
+          <span>{{ dispatch.row?.work_order_no }}</span>
+        </el-form-item>
+        <el-form-item label="故障">
+          <span class="ellipsis-1">{{ dispatch.row?.fault_description }}</span>
+        </el-form-item>
+        <el-form-item label="维修员" required>
+          <el-select v-model="dispatch.technicianId" filterable placeholder="选择维修员" style="width:100%">
+            <el-option
+              v-for="t in dispatch.technicians" :key="t.id"
+              :label="`${t.real_name}（在办 ${t.current_workload_count} · 近7天完成 ${t.recent7d_completed}）`"
+              :value="t.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="dispatch.remark" type="textarea" :rows="2" maxlength="100"
+                    placeholder="选填，例如：优先处理、带好备件" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="dispatch.visible = false">取消</el-button>
+        <el-button type="primary" :loading="dispatch.submitting" @click="submitDispatch">确认派工</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api'
@@ -182,6 +215,38 @@ const isAssignedTech = (row) => {
   return tid === currentUser.id
 }
 const canOperateProgress = (row) => isAssignedTech(row) || row.status === 'DRAFT'
+
+// ===== 派工（把 SUBMITTED 指派给维修员 → ASSIGNED）=====
+const dispatch = reactive({ visible: false, row: null, technicianId: null, remark: '', technicians: [], submitting: false })
+const openDispatch = async (row) => {
+  Object.assign(dispatch, { visible: true, row, technicianId: null, remark: '', submitting: false })
+  try {
+    const res = await request.get('/dispatch/technicians')
+    dispatch.technicians = Array.isArray(res) ? res : (res.items || [])
+  } catch (e) {
+    dispatch.technicians = []
+    ElMessage.error('获取维修员列表失败')
+  }
+}
+const submitDispatch = async () => {
+  if (!dispatch.technicianId) return ElMessage.warning('请选择维修员')
+  dispatch.submitting = true
+  try {
+    await request.post(`/work-orders/${dispatch.row.id}/transition`, {
+      to_status: 'ASSIGNED',
+      technician_id: dispatch.technicianId,
+      source: 'SUPERVISOR_DISPATCH',
+      remark: dispatch.remark || null,
+    })
+    ElMessage.success('派工成功')
+    dispatch.visible = false
+    fetchData()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '派工失败')
+  } finally {
+    dispatch.submitting = false
+  }
+}
 const transitionLoading = ref({})
 
 const handleTransition = async (row, toStatus, source = 'TECH_PROGRESS') => {
@@ -389,4 +454,5 @@ const handleExport = async () => {
 .status-ARCHIVED { background: #E8F8EE; color: #00B42A; }
 .status-COMPLETED { background: #E8F8EE; color: #00B42A; }
 .filter-date { width: 240px; }
+.ellipsis-1 { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 </style>

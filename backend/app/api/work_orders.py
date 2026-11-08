@@ -852,6 +852,15 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
     elif to_status_val == WorkOrderStatus.ASSIGNED.value:
         if not (is_supervisor or is_admin):
             raise HTTPException(status_code=403, detail="仅主管或管理员可派工/改派")
+        # 派工/改派：必须指定维修员（否则状态变了但没人负责）
+        if data.technician_id:
+            tech = db.query(User).filter(User.id == data.technician_id).first()
+            if not tech or not tech.is_active:
+                raise HTTPException(status_code=400, detail="指定的维修员不存在或已停用")
+            work_order.technician_id = tech.id
+            work_order.assignee_id = tech.id
+        elif not work_order.technician_id:
+            raise HTTPException(status_code=400, detail="派工必须指定维修员（technician_id）")
 
     old_technician_id = work_order.technician_id
     from_status_enum = work_order.status

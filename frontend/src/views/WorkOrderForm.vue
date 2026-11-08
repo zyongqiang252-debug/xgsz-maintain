@@ -25,7 +25,13 @@
       <el-card shadow="never" class="detail-card">
         <div class="detail-header">
           <h3>{{ form.work_order_no }}</h3>
-          <el-tag :type="statusTagType" size="large">{{ statusLabel }}</el-tag>
+          <div class="head-right">
+            <el-button
+              v-if="form.status === 'SUBMITTED' && canDispatch"
+              type="primary" plain size="small" @click="openDispatch"
+            >派工</el-button>
+            <el-tag :type="statusTagType" size="large">{{ statusLabel }}</el-tag>
+          </div>
         </div>
         <el-descriptions :column="2" border>
           <el-descriptions-item label="故障描述" :span="2">{{ form.fault_description || '-' }}</el-descriptions-item>
@@ -91,6 +97,26 @@
         </div>
       </el-card>
     </template>
+
+    <!-- 派工 -->
+    <el-dialog v-model="dispatchDlg.visible" title="工单派工" width="460px" append-to-body>
+      <el-form label-width="80px">
+        <el-form-item label="维修员" required>
+          <el-select v-model="dispatchDlg.technicianId" filterable placeholder="选择维修员" style="width:100%">
+            <el-option v-for="t in dispatchDlg.technicians" :key="t.id"
+                       :label="`${t.real_name}（在办 ${t.current_workload_count} · 近7天完成 ${t.recent7d_completed}）`"
+                       :value="t.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="dispatchDlg.remark" type="textarea" :rows="2" maxlength="100" placeholder="选填" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="dispatchDlg.visible = false">取消</el-button>
+        <el-button type="primary" :loading="dispatchDlg.saving" @click="submitDispatch">确认派工</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 报修人评价 -->
     <el-dialog v-model="feedbackVisible" title="报修人回访评价" width="460px" append-to-body>
@@ -764,6 +790,42 @@ const slaTagType = computed(() => {
   if (['COMPLETED', 'ARCHIVED'].includes(form.status)) return st === 'OVERDUE' ? 'danger' : 'success'
   return 'success'
 })
+
+const canDispatch = computed(() => {
+  try {
+    const u = JSON.parse(localStorage.getItem('current_user') || '{}')
+    return ['ADMIN', 'SUPERVISOR'].includes(u.role)
+  } catch { return false }
+})
+
+const dispatchDlg = reactive({ visible: false, technicianId: null, remark: '', technicians: [], saving: false })
+const openDispatch = async () => {
+  Object.assign(dispatchDlg, { visible: true, technicianId: null, remark: '', saving: false })
+  try {
+    const res = await request.get('/dispatch/technicians')
+    dispatchDlg.technicians = Array.isArray(res) ? res : (res.items || [])
+  } catch { dispatchDlg.technicians = [] }
+}
+const submitDispatch = async () => {
+  if (!dispatchDlg.technicianId) return ElMessage.warning('请选择维修员')
+  dispatchDlg.saving = true
+  try {
+    await request.post(`/work-orders/${form.id}/transition`, {
+      to_status: 'ASSIGNED',
+      technician_id: dispatchDlg.technicianId,
+      source: 'SUPERVISOR_DISPATCH',
+      remark: dispatchDlg.remark || null,
+    })
+    ElMessage.success('派工成功')
+    dispatchDlg.visible = false
+    const res = await request.get(`/work-orders/${form.id}`)
+    Object.assign(form, res)
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '派工失败')
+  } finally {
+    dispatchDlg.saving = false
+  }
+}
 
 const openFeedback = () => {
   feedbackScore.value = form.satisfaction_score || 5
@@ -1979,4 +2041,5 @@ onMounted(async () => {
 .work-order-form-head { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; }
 .work-order-form-title { font-size:20px; font-weight:600; color:var(--color-text-primary); margin:0; }
 .work-order-form-actions { display:flex; gap:10px; flex-shrink:0; }
+.head-right { display:flex; align-items:center; gap:10px; }
 </style>
