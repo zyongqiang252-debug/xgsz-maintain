@@ -72,8 +72,11 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import request from '../../api'
+
+const route = useRoute()
 
 const form = reactive({
   device_code: '',
@@ -94,6 +97,21 @@ const quickOptions = [
   '精度偏差',
   '显示屏故障',
 ]
+
+// 扫码报修：/m/report?device=EQ-001 直接带出设备
+onMounted(async () => {
+  const code = route.query.device || route.query.device_code
+  if (!code) return
+  form.device_code = String(code)
+  try {
+    const list = await request.get('/devices/', { params: { page: 1, page_size: 500 } })
+    const dev = (list.items || []).find((d) => d.device_code === form.device_code)
+    if (dev) {
+      form.device_code = dev.device_code
+      if (!form.location && dev.location) form.location = dev.location
+    }
+  } catch { /* 带不出信息不影响报修 */ }
+})
 
 const handleScan = () => {
   // 模拟扫码（实际接入钉钉 JSAPI dd.biz.util.scan）

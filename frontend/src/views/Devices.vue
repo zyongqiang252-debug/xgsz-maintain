@@ -94,10 +94,11 @@
             <span class="status-reason">{{ row.status_reason || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="!isPureSupervisor" label="操作" width="260" fixed="right">
+        <el-table-column v-if="!isPureSupervisor" label="操作" width="330" fixed="right">
           <template #default="{ row }">
             <div class="action-group">
               <el-button size="small" type="primary" @click="$router.push(`/devices/${row.id}`)">编辑</el-button>
+              <el-button size="small" plain @click="openQr(row)">二维码</el-button>
               <el-button
                 v-if="row.fault_tags && row.fault_tags.length"
                 size="small" type="success" @click="handleClearFaults(row)"
@@ -117,6 +118,17 @@
         />
       </div>
     </el-card>
+
+    <!-- 设备二维码：扫码直接报修 -->
+    <el-dialog v-model="qr.visible" title="设备二维码" width="420px">
+      <div class="qr-wrap">
+        <qrcode-vue v-if="qr.url" :value="qr.url" :size="220" level="M" />
+        <div class="qr-device">{{ qr.row?.device_name || '' }}（{{ qr.row?.device_code || '' }}）</div>
+        <div class="qr-tip">手机扫码 → 自动带出设备信息 → 填故障描述即可报修</div>
+        <div class="qr-url">{{ qr.url }}</div>
+        <el-button size="small" type="primary" plain @click="copyQrUrl">复制链接</el-button>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -125,6 +137,7 @@ import { ref, onMounted, onBeforeUnmount, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api'
 import dayjs from 'dayjs'
+import QrcodeVue from 'qrcode.vue'
 
 const list = ref([])
 const loading = ref(false)
@@ -270,6 +283,24 @@ onMounted(async () => {
   timer = setInterval(() => { if (autoRefresh.value) fetchAll() }, 15000)
 })
 onBeforeUnmount(() => { if (timer) clearInterval(timer) })
+
+// ===== 设备二维码 =====
+const qr = reactive({ visible: false, row: null, url: '' })
+const openQr = (row) => {
+  const base = window.location.origin
+  qr.row = row
+  qr.url = `${base}/m/report?device=${encodeURIComponent(row.device_code || '')}`
+  qr.visible = true
+}
+const copyQrUrl = async () => {
+  try {
+    await navigator.clipboard.writeText(qr.url)
+    ElMessage.success('链接已复制')
+  } catch {
+    ElMessage.warning('浏览器不允许复制，请手动选中')
+  }
+}
+
 </script>
 
 <style scoped>
@@ -309,4 +340,10 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 .small { font-size: 11px; }
 .status-reason { color: #6B7280; font-size: 12px; }
 :deep(.mon-row) { height: 60px; }
+
+/* 二维码弹窗 */
+.qr-wrap { display:flex; flex-direction:column; align-items:center; gap:10px; padding:8px 0 4px; }
+.qr-device { font-weight:600; color:#1F2329; }
+.qr-tip { font-size:12px; color:#86909C; }
+.qr-url { font-size:11px; color:#C9CDD4; word-break:break-all; text-align:center; }
 </style>
