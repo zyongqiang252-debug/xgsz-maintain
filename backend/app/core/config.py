@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     DINGTALK_AGENT_ID: str = ""
     DINGTALK_CORP_ID: str = ""
     DINGTALK_ROBOT_CODE: str = ""  # 企业内部机器人 RobotCode（单聊消息回复用）
+    # 自定义群机器人（webhook + 加签）：往项目群推送工单事件，不需要公网
+    DINGTALK_GROUP_WEBHOOK: str = ""
+    DINGTALK_GROUP_SECRET: str = ""
+    DINGTALK_GROUP_TIMEOUT: float = 6.0
     DINGTALK_API_TOKEN: str = ""  # 直接使用 API Token（跳过 AppKey/AppSecret 换 token）
     DINGTALK_REDIRECT_URI: str = "http://localhost:8000/api/v1/dingtalk/callback"
     DINGTALK_MOCK_MODE: bool = True  # Mock 模式：钉钉 API 不可用时使用模拟数据

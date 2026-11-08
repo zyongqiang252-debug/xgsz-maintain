@@ -16,7 +16,7 @@ import re
 from app.core.database import get_db
 from app.core.dingtalk import dingtalk
 from app.core.config import settings
-from app.core.security import get_current_user, require_supervisor
+from app.core.security import get_current_user, require_supervisor, require_admin
 from app.core.notification import notification_service
 from app.models.work_order import WorkOrder, WorkOrderStatus
 from app.models.user import User, UserRole
@@ -98,6 +98,35 @@ def ensure_oa_services_started(app) -> None:
 
 
 # ==================== 钉钉 OAuth2 扫码回调 ====================
+
+@router.get("/group/status", summary="群机器人推送配置状态（管理员）")
+def group_robot_status(current_user: User = Depends(require_admin)):
+    from app.core.dingtalk_group import group_robot
+    return {
+        "enabled": group_robot.enabled,
+        "webhook": group_robot.masked_webhook(),
+        "signed": bool(group_robot.secret),
+        "events": ["created", "submitted", "assigned", "rejected", "archived"],
+        "hint": "在 backend/.env 配置 DINGTALK_GROUP_WEBHOOK / DINGTALK_GROUP_SECRET 后重启生效",
+    }
+
+
+@router.post("/group/test", summary="发一条测试消息到群机器人（管理员）")
+def group_robot_test(current_user: User = Depends(require_admin)):
+    from app.core.dingtalk_group import group_robot
+    if not group_robot.enabled:
+        raise HTTPException(status_code=400, detail="未配置 DINGTALK_GROUP_WEBHOOK，请先在 backend/.env 填写群机器人 webhook")
+    res = group_robot.send_markdown(
+        "芯光数智 · 群机器人测试",
+        f"### ✅ 群机器人连通测试\n\n"
+        f"- 操作人：{current_user.real_name}\n"
+        f"- 时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        f"收到这条说明 webhook（加签）已配好，后续新工单/派工/归档会自动推到这个群。",
+    )
+    if not res.get("ok"):
+        raise HTTPException(status_code=400, detail=f"发送失败：{res.get('resp') or res.get('error') or res}")
+    return {"ok": True, "resp": res.get("resp")}
+
 
 def _check_scheduler_token(token: str) -> bool:
     """调度 token 校验：必须显式配置 SCHEDULER_TOKEN，且不再提供硬编码默认值"""

@@ -108,3 +108,47 @@ cd backend
 PAT 权限：
 - classic：勾 `repo`
 - fine-grained：Repository access 选该仓库，Contents = Read and write（看不到该仓库说明你不是协作者，需先 fork）
+
+## 八、钉钉群机器人推送（新工单 / 派工 / 归档 → 群里弹消息）
+
+无需公网、无需钉钉应用审批，只要一个群机器人 webhook。
+
+### 配置
+
+1. 钉钉群 → 群设置 → 智能群助手 → 添加机器人 → **自定义**
+2. 安全设置勾 **加签**（不建议用"关键词"，容易漏发）
+3. 复制 **Webhook 地址** 和 **加签密钥**，填进 `backend/.env`：
+
+```ini
+DINGTALK_GROUP_WEBHOOK=https://oapi.dingtalk.com/robot/send?access_token=xxxxxxxx
+DINGTALK_GROUP_SECRET=SECxxxxxxxxxxxxxxxx
+```
+
+4. 重启后端
+
+### 触发时机
+
+| 事件 | 时机 |
+|---|---|
+| `created` | 新建工单 |
+| `submitted` | 提交报修 |
+| `assigned` | 主管派工 |
+| `rejected` | 工单被退回 |
+| `archived` | 归档完成 |
+
+### 自检
+
+```powershell
+# 看配置是否生效（webhook 会打码）
+curl -H "Authorization: Bearer <token>" http://127.0.0.1:18080/api/v1/dingtalk/group/status
+
+# 往群里发一条测试消息
+curl -X POST -H "Authorization: Bearer <token>" http://127.0.0.1:18080/api/v1/dingtalk/group/test
+```
+
+### 说明
+
+- 推送在**后台线程**发送，群机器人慢或挂掉**不会拖慢/弄失败**业务接口
+- 未配置 webhook 时全部逻辑直接跳过，本地开发不会有任何副作用
+- 加签算法：`sign = base64(HMAC-SHA256(secret, timestamp + "\n" + secret))`，已按钉钉文档实现并实测校验一致
+- 目前只推**工单事件**；库存预警、请假审批如需推送，可在对应位置调用 `group_robot.send_markdown_async(...)`

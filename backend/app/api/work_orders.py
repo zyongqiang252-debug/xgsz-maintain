@@ -271,6 +271,7 @@ def create_work_order(data: WorkOrderCreate, db: Session = Depends(get_db), curr
     db.commit()
     db.refresh(work_order)
     logger.info(f"[WorkOrder] 创建草稿: {work_order.work_order_no}")
+    _notify_wo(work_order, "created", actor=current_user.real_name)
     return work_order
 
 
@@ -710,6 +711,32 @@ def _add_progress_log(
     return log
 
 
+def _notify_wo(wo: WorkOrder, event: str, actor: str = "", extra: str = "") -> None:
+    """钉钉自定义群机器人推送（未配置 webhook 直接跳过；内部异步发送，不阻塞接口）"""
+    try:
+        from app.core.dingtalk_group import group_robot
+        if not group_robot.enabled:
+            return
+        tech_name = ""
+        try:
+            tech_name = wo.technician.real_name if wo.technician else ""
+        except Exception:
+            tech_name = ""
+        group_robot.work_order_event(event, {
+            "id": wo.id,
+            "work_order_no": wo.work_order_no,
+            "device_code": wo.device_code,
+            "fault_description": wo.fault_description,
+            "priority": wo.priority,
+            "location": wo.location,
+            "status": wo.status.value if hasattr(wo.status, "value") else wo.status,
+            "technician_name": tech_name,
+            "reporter_name": actor,
+        }, extra=extra)
+    except Exception as e:  # 推送失败绝不影响业务
+        logger.warning(f"[WorkOrder] 群机器人推送失败（忽略）: {e}")
+
+
 def _update_workload(db: Session, technician_id: Optional[int], delta: int):
     if not technician_id or delta == 0:
         return
@@ -833,6 +860,11 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
 
     db.commit()
     db.refresh(work_order)
+
+    # 群机器人通知：提交报修 / 派工 / 退回
+    _event = {"SUBMITTED": "submitted", "ASSIGNED": "assigned", "REJECTED": "rejected"}.get(to_status_val)
+    if _event:
+        _notify_wo(work_order, _event, actor=current_user.real_name, extra=(data.remark or ""))
 
     # 状态变更后，异步刷新维修员钉钉上的派工进度卡片（Web 端操作实时反映到钉钉，不阻塞接口响应）
     # 钉钉卡片回调走 DINGTALK_CARD 来源，卡片已由 dingtalk_wo_card._dispatch_action 异步刷新，此处跳过避免重复。
@@ -1030,6 +1062,8 @@ def archive_complete(
     db.commit()
     db.refresh(work_order)
     logger.info(f"[Archive] 工单归档完成 #{work_order_id}: {work_order.work_order_no} by {current_user.real_name}")
+    _notify_wo(work_order, "archived", actor=current_user.real_name,
+               extra=f"归档完成度 {result['completeness']:.0%}")
     return {
         "archived": True,
         "work_order_id": work_order.id,
