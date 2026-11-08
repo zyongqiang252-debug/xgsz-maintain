@@ -43,28 +43,27 @@
 
     <!-- 数据表格 -->
     <el-card class="table-card" shadow="never">
-      <el-table :data="list" v-loading="loading" stripe>
-        <el-table-column prop="part_code" label="备件编码" width="120" />
+      <el-table :data="list" v-loading="loading" stripe class="sp-table">
+        <el-table-column prop="part_code" label="备件编码" width="118" show-overflow-tooltip />
         <el-table-column prop="part_name" label="备件名称" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="specification" label="规格型号" width="140" />
-        <el-table-column prop="unit" label="单位" width="60" />
-        <el-table-column prop="stock_quantity" label="库存" width="70" sortable />
-        <el-table-column prop="safety_stock" label="安全库存" width="80" />
-        <el-table-column label="状态" width="80">
+        <el-table-column prop="specification" label="规格型号" width="130" show-overflow-tooltip />
+        <el-table-column prop="unit" label="单位" width="58" align="center" />
+        <el-table-column prop="stock_quantity" label="库存" width="68" sortable align="right" />
+        <el-table-column prop="safety_stock" label="安全库存" width="80" align="right" />
+        <el-table-column label="状态" width="78" align="center">
           <template #default="{ row }">
             <span class="stock-status" :class="stockClass(row)">{{ stockLabel(row) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="unit_price" label="单价" width="90" />
-        <el-table-column prop="location" label="存放位置" width="110" />
-        <el-table-column prop="supplier" label="供应商" width="110" show-overflow-tooltip />
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column prop="unit_price" label="单价" width="72" align="right" />
+        <el-table-column prop="location" label="存放位置" width="100" show-overflow-tooltip />
+        <el-table-column label="操作" width="256">
           <template #default="{ row }">
             <div class="action-group">
-              <el-button size="small" type="primary" @click="$router.push(`/spare-parts/${row.id}`)">{{ canManage ? '编辑' : '查看' }}</el-button>
+              <el-button link type="primary" @click="$router.push(`/spare-parts/${row.id}`)">{{ canManage ? '编辑' : '查看' }}</el-button>
               <el-button size="small" type="success" plain @click="openConsume(row)">领用</el-button>
-              <el-button size="small" plain @click="openMovements(row)">流水</el-button>
-              <el-button v-if="canManage" size="small" type="danger" @click="handleDelete(row)">删除</el-button>
+              <el-button link type="primary" @click="openMovements(row)">流水</el-button>
+              <el-button v-if="canManage" link type="danger" @click="handleDelete(row)">删除</el-button>
             </div>
           </template>
         </el-table-column>
@@ -481,5 +480,7 @@ const handleExport = async () => {
 .stock-out::before { background: #F53F3F; }
 .stock-out { color: #F53F3F; }
 
-.action-group { display: flex; gap: 8px; }
+.action-group { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.sp-table :deep(.el-table__cell) { padding: 8px 0; }
+.sp-table :deep(.el-button.is-link) { padding: 0 2px; height: auto; }
 </style>

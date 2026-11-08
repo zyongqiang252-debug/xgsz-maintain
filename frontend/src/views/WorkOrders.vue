@@ -37,37 +37,37 @@
     </el-card>
 
     <el-card class="table-card" shadow="never">
-      <el-table :data="list" v-loading="loading" stripe>
-        <el-table-column prop="work_order_no" label="工单编号" width="170" />
-        <el-table-column prop="fault_description" label="故障描述" min-width="180" show-overflow-tooltip />
-        <el-table-column label="状态" width="100">
+      <el-table :data="list" v-loading="loading" stripe class="wo-table">
+        <el-table-column prop="work_order_no" label="工单编号" width="168" show-overflow-tooltip />
+        <el-table-column prop="fault_description" label="故障描述" min-width="190" show-overflow-tooltip />
+        <el-table-column label="状态" width="90">
           <template #default="{ row }">
             <span class="status-tag" :class="'status-' + row.status">{{ statusLabel(row.status) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="时效(SLA)" width="130">
+        <el-table-column label="时效" width="110" align="center">
           <template #default="{ row }">
             <el-tooltip :content="slaTooltip(row)" placement="top">
               <el-tag size="small" :type="slaTagType(row)" effect="light">{{ slaLabel(row) }}</el-tag>
             </el-tooltip>
           </template>
         </el-table-column>
-        <el-table-column label="成本" width="100">
+        <el-table-column label="成本" width="90" align="right">
           <template #default="{ row }">
             <span v-if="row.total_cost">{{ row.total_cost.toFixed(0) }} 元</span>
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="170">
+        <el-table-column prop="created_at" label="创建时间" width="145">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="480" fixed="right">
+        <el-table-column label="操作" width="290">
           <template #default="{ row }">
             <div class="col-actions">
               <div class="action-row">
-                <el-button size="small" type="primary" @click="$router.push(`/work-orders/${row.id}`)">查看</el-button>
-                <el-button v-if="!isSupervisor" size="small" type="warning" :disabled="['COMPLETED', 'ARCHIVED'].includes(row.status) || (!isCreatedByMe(row) && !isAdmin && !isAssignedTech(row))" @click="$router.push(`/work-orders/${row.id}?edit=1`)">编辑</el-button>
-                <el-button v-if="!isSupervisor" size="small" type="danger" :disabled="['COMPLETED', 'ARCHIVED'].includes(row.status) || (!isCreatedByMe(row) && !isAdmin)" @click="handleDelete(row)">删除</el-button>
+                <el-button link type="primary" @click="$router.push(`/work-orders/${row.id}`)">查看</el-button>
+                <el-button v-if="!isSupervisor" link type="warning" :disabled="['COMPLETED', 'ARCHIVED'].includes(row.status) || (!isCreatedByMe(row) && !isAdmin && !isAssignedTech(row))" @click="$router.push(`/work-orders/${row.id}?edit=1`)">编辑</el-button>
+                <el-button v-if="!isSupervisor" link type="danger" :disabled="['COMPLETED', 'ARCHIVED'].includes(row.status) || (!isCreatedByMe(row) && !isAdmin)" @click="handleDelete(row)">删除</el-button>
               </div>
               <div class="action-row progress-row" v-if="canOperateProgress(row)">
                 <el-button
@@ -372,11 +372,15 @@ const handleExport = async () => {
 .filter-select { width: 150px; }
 .action-btn { flex-shrink: 0; }
 .secondary-btn { background: #fff; border-color: #d9d9d9; color: #333; }
-.table-card { min-height: 300px; }
+.table-card { min-height: 300px; overflow: hidden; }
+.muted { color: #C9CDD4; }
+/* 表格统一行高，避免按钮把行撑高 */
+.wo-table :deep(.el-table__cell) { padding: 8px 0; }
+.wo-table :deep(.el-button.is-link) { padding: 0 2px; height: auto; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
-.col-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-.action-row { display: flex; gap: 6px; align-items: center; }
-.progress-row { padding: 6px 8px; background: #F7F8FA; border-radius: 6px; width: 100%; justify-content: flex-end; }
+.col-actions { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.action-row { display: contents; }
+.progress-row { display: contents; }
 
 .status-tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; }
 .status-DRAFT { background: #F2F3F5; color: #4E5969; }
