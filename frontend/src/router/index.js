@@ -32,6 +32,7 @@ const router = createRouter({
         { path: 'spare-parts/:id', name: 'SparePartForm', component: () => import('../views/SparePartForm.vue'), meta: { title: '备件详情' } },
         { path: 'warehouse', name: 'Warehouse', component: () => import('../views/Warehouse.vue'), meta: { title: '仓库库存' } },
         { path: 'users', name: 'Users', component: () => import('../views/Users.vue'), meta: { title: '用户管理' } },
+        { path: 'system-settings', name: 'SystemSettings', component: () => import('../views/SystemSettings.vue'), meta: { title: '系统设置', roles: ['ADMIN'] } },
         { path: 'categories', name: 'Categories', component: () => import('../views/Categories.vue'), meta: { title: '分类管理' } },
         { path: 'search', redirect: '/ai-assistant' },
         { path: 'ai-assistant', name: 'AiAssistant', component: () => import('../views/AiAssistant.vue'), meta: { title: 'AI 问答看板' } },

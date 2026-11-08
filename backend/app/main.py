@@ -63,6 +63,17 @@ async def lifespan(app: FastAPI):
     logger.info(f"🚀 {settings.APP_NAME} v{settings.APP_VERSION} 启动中...")
     logger.info(f"📊 数据库: {settings.DATABASE_URL.split('@')[1] if '@' in settings.DATABASE_URL else 'N/A'}")
     logger.info(f"🔴 Redis: {settings.REDIS_URL}")
+    # 第三方接入参数以数据库为准（网页「系统设置」里填的），.env 只作兜底
+    try:
+        from app.core.database import SessionLocal
+        from app.core.runtime_settings import load_into_settings
+        _db = SessionLocal()
+        try:
+            load_into_settings(_db)
+        finally:
+            _db.close()
+    except Exception as e:
+        logger.warning(f"⚠️ 加载运行期配置失败（沿用 .env）: {e}")
     logger.info(f"🤖 DeepSeek API: {'已配置' if settings.DEEPSEEK_API_KEY else '未配置'}")
     # 预热：探测推理服务（bge-m3 编码 + reranker 重排）是否就绪，不阻塞启动
     try:
@@ -127,6 +138,8 @@ app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["
 app.include_router(dispatch.router, tags=["派工管理"])
 app.include_router(dingtalk_mock_router, tags=["钉钉扫码模拟"])
 app.include_router(work_order_imports_router, prefix="/api/v1/work-order-imports", tags=["历史工单导入"])
+from app.api.system_settings import router as system_settings_router  # noqa: E402
+app.include_router(system_settings_router, prefix="/api/v1/system-settings", tags=["系统设置"])
 
 # ============================================================
 # MCP Server（Streamable HTTP）：仅本机可访问，可配置 API Key

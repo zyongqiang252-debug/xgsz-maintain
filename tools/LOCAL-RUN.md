@@ -152,3 +152,33 @@ curl -X POST -H "Authorization: Bearer <token>" http://127.0.0.1:18080/api/v1/di
 - 未配置 webhook 时全部逻辑直接跳过，本地开发不会有任何副作用
 - 加签算法：`sign = base64(HMAC-SHA256(secret, timestamp + "\n" + secret))`，已按钉钉文档实现并实测校验一致
 - 目前只推**工单事件**；库存预警、请假审批如需推送，可在对应位置调用 `group_robot.send_markdown_async(...)`
+
+## 九、网页上接入第三方 API（推荐，不用改 .env）
+
+管理员登录 → 左侧「系统管理 → 系统设置」（`/system-settings`）
+
+| 能配 | 效果 |
+|---|---|
+| AI 大模型（DeepSeek）：API Key / Base URL / 模型 | 保存即生效，AI 问答、PDF 抽取、知识自动收录立刻可用 |
+| 钉钉群机器人：Webhook / 加签密钥 | 保存即生效，新工单/派工/归档自动推群 |
+
+特点：
+
+- **存数据库**（`sys_configs` 表），重启自动加载，不用再动 `.env`
+- **优先级**：数据库 > `.env` > 代码默认值
+- **密钥只写不读**：接口返回一律打码（`sk-a****7890`）
+- **测试连接**：AI 会真的发一条最小请求，返回延迟/模型/错误原因；群机器人会往群里发一条测试消息
+- **仅管理员**可见可改（维修员/匿名 403/401）
+- 短信、钉钉扫码、Milvus 属于启动期配置，仍需改 `.env` 后重启，页面里只做状态展示
+
+对应的接口：
+
+```
+GET    /api/v1/system-settings/overview
+GET    /api/v1/system-settings/ai
+PUT    /api/v1/system-settings/ai            {api_key?, base_url?, model?}
+POST   /api/v1/system-settings/ai/test
+GET    /api/v1/system-settings/dingtalk-group
+PUT    /api/v1/system-settings/dingtalk-group {webhook?, secret?}
+POST   /api/v1/system-settings/dingtalk-group/test
+```

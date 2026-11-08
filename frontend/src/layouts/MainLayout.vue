@@ -263,6 +263,10 @@
                   <el-icon><User /></el-icon>
                   <template #title>用户管理</template>
                 </el-menu-item>
+                <el-menu-item index="/system-settings">
+                  <el-icon><Setting /></el-icon>
+                  <template #title>系统设置</template>
+                </el-menu-item>
               </template>
 
               <div class="menu-group-label">其他</div>
@@ -413,7 +417,8 @@ import request from '../api'
 import {
   User, Lock, QuestionFilled, SwitchButton,
   SetUp, Histogram, Calendar, Upload,
-  DataAnalysis, Document, ChatLineSquare, Reading, Monitor, Grid, Box, Connection
+  DataAnalysis, Document, ChatLineSquare, Reading, Monitor, Grid, Box, Connection,
+  Setting
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
