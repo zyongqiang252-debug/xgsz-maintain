@@ -430,13 +430,21 @@ function goHome() {
   if (route.path !== '/dashboard') router.push('/dashboard')
 }
 
-// 菜单跳转：不用 el-menu 自带的 router 模式（偶发不触发），改为显式处理
+// 菜单跳转：不用 el-menu 自带的 router 模式（偶发不触发），改为显式处理。
+// 兜底：SPA 路由 600ms 内没落地（懒加载卡住/异常）就直接整页跳转，保证点了必到。
 function onMenuSelect(index) {
   if (!index || typeof index !== 'string') return
   if (index === route.path) return
-  router.push(index).catch((e) => {
-    console.warn('[Menu] 跳转失败:', index, e && e.message)
-  })
+  let landed = false
+  router.push(index)
+    .then(() => { landed = true })
+    .catch((e) => { console.warn('[Menu] SPA 跳转失败:', index, e && e.message) })
+  setTimeout(() => {
+    if (!landed && route.path !== index) {
+      console.warn('[Menu] SPA 跳转未生效，改为整页跳转:', index)
+      window.location.assign(index)
+    }
+  }, 600)
 }
 
 const activeMenu = computed(() => {
