@@ -23,7 +23,8 @@ _DOC_CHAR_LIMIT = 500    # 单文档送打字符上限：cross-encoder 的判定
                          # 标题+正文开头，截短既提速又防服务端注意力矩阵爆内存
 _CHUNK_SIZE = 8          # 每次 HTTP 调用的文档数：分块控制服务端单批内存峰值
 
-_HTTP = httpx.Client(timeout=_TIMEOUT)
+# trust_env=False：同上，内网服务不走环境代理，避免 NO_PROXY 解析异常
+_HTTP = httpx.Client(timeout=_TIMEOUT, trust_env=False)
 _fail_count = 0
 _cooldown_until = 0.0
 

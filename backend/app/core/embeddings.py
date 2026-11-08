@@ -19,7 +19,9 @@ from app.core.config import settings
 _SERVER_URL = settings.EMBEDDING_SERVER_URL.rstrip("/")
 _TIMEOUT = 30.0          # 单次编码请求超时（CPU 批量编码可能较慢）
 _RETRIES = 2             # 失败重试次数
-_HTTP = httpx.Client(timeout=_TIMEOUT)
+# trust_env=False：忽略环境里的 HTTP(S)_PROXY/NO_PROXY。
+# 内网 Embedding 服务不该走代理，且部分 NO_PROXY 写法（如 [::1]）会让 httpx 解析报 Invalid port。
+_HTTP = httpx.Client(timeout=_TIMEOUT, trust_env=False)
 
 _AVAIL_CACHE = {"ok": False, "checked_at": 0.0}
 _AVAIL_TTL_OK = 30.0     # 可用时 30 秒复检一次

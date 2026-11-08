@@ -1,9 +1,41 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 from pathlib import Path
+import os as _os
 
 # .env 文件绝对路径：backend/.env
 _ENV_FILE = str(Path(__file__).resolve().parent.parent.parent / ".env")
+
+
+def _sanitize_no_proxy() -> None:
+    """清理 NO_PROXY 里 httpx 解析不了的条目。
+
+    某些环境（如 DSH / 部分代理软件）会把 NO_PROXY 写成
+    ``localhost,127.0.0.1,::1,[::1]``。httpx 在解析 ``[::1]`` 这种带方括号
+    的条目时会抛 ``InvalidURL: Invalid port: ':1]'``，导致任何 httpx 客户端
+    创建即失败（后端直接起不来）。这里在导入阶段去掉方括号形式的条目，
+    保留等价的 ``::1``。
+    """
+    for key in ("NO_PROXY", "no_proxy"):
+        raw = _os.environ.get(key)
+        if not raw:
+            continue
+        keep = []
+        for part in raw.split(","):
+            p = part.strip()
+            if not p:
+                continue
+            if p.startswith("[") and p.endswith("]"):
+                # [::1] -> ::1，httpx 能正确解析
+                p = p[1:-1]
+                if not p:
+                    continue
+            if p not in keep:
+                keep.append(p)
+        _os.environ[key] = ",".join(keep)
+
+
+_sanitize_no_proxy()
 
 
 class Settings(BaseSettings):

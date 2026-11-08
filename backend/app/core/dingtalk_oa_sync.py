@@ -666,7 +666,6 @@ def _apply_approved_schedules(db: Session, lr: LeaveRequest, pi_id: str) -> None
             )
 
     # 排班写入：先查旧的对应日期/班次 → 如果有冲突直接覆盖（LEAVE 优先）
-    from app.models.duty_schedule import DutySchedule, ShiftType
 
     LEAVE_TYPE_VAL = "LEAVE"
     SUBSTITUTE_TYPE_VAL = "SUBSTITUTE"

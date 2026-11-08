@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.core.security import get_current_user, require_supervisor, require_admin
 from app.core.notification import notification_service
 from app.models.work_order import WorkOrder, WorkOrderStatus
+from app.models.leave_request import LeaveRequest, LeaveRequestStatus
 from app.models.user import User, UserRole
 from app.agents.ticket_agent import ticket_agent
 from app.agents.inventory_tools import query_inventory

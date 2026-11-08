@@ -919,6 +919,7 @@ def dingtalk_bind_by_credential(req: DingTalkBindByCredentialRequest, db: Sessio
 
     user_info = session.get("user_info", {})
     dt_userid = user_info.get("userid")
+    dt_union_id = user_info.get("union_id") or user_info.get("unionid") or ""
     if not dt_userid:
         raise HTTPException(status_code=400, detail="钉钉用户信息缺失")
 

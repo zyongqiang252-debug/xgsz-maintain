@@ -130,7 +130,6 @@ def get_device_maintenance_summary(device_id: int, db: Session = Depends(get_db)
     """查询设备近6个月维修次数和最近一次故障摘要"""
     from datetime import datetime, timedelta
     from sqlalchemy import desc
-    from app.models.work_order import WorkOrder
 
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:

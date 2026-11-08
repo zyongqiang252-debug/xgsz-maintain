@@ -1,0 +1,30 @@
+# Ruff：只做 lint 与 import 排序，暂不强制格式化（避免一次性改动 2 万行）
+# 想启用格式化：把 [format] 段取消注释，然后 `ruff format backend/app`
+line-length = 110
+target-version = "py312"
+exclude = ["backend/alembic/versions", "backend/.venv", "**/__pycache__"]
+
+[lint]
+select = [
+  "E",   # pycodestyle 错误
+  "F",   # pyflakes（未使用变量/导入）
+  "I",   # import 排序
+  "B",   # bugbear（可变默认参数等坑）
+  "UP",  # pyupgrade（用新语法）
+  "C4",  # comprehensions
+  "SIM", # 简化建议
+]
+ignore = [
+  "E501",  # 行宽交给编辑器
+  "B008",  # FastAPI 的 Depends() 默认值属正常写法
+  "E402",  # main.py 里延迟导入路由是有意的
+  "SIM105", # contextlib.suppress 不强制
+]
+
+[lint.per-file-ignores]
+"backend/tools/*" = ["E501"]
+"backend/alembic/*" = ["E501", "F401"]
+
+# [format]
+# quote-style = "double"
+# indent-style = "space"
