@@ -290,8 +290,10 @@ const sendBindCode = async () => {
     const res = await request.post('/auth/send-code', { phone: phoneForm.phone, scene: 'bind' })
     if (res.sms_enabled) {
       ElMessage.success('验证码已发送，请注意查收短信')
+    } else if (res.code) {
+      ElMessage.success(`验证码已发送（本机 Mock：${res.code}）`)
     } else {
-      ElMessage.success(`验证码已发送（Mock: ${res.code}）`)
+      ElMessage.warning('本机未接入短信服务：验证码已写入后端控制台日志（搜索 [Auth][Mock]）')
     }
   } catch (e) {
     const detail = e?.response?.data?.detail
@@ -312,33 +314,28 @@ const handleBindPhone = async () => {
   }
   phoneBinding.value = true
   try {
-    // 通过后端验证验证码
-    await request.post('/auth/verify-code', {
+    // 真正调用后端绑定（原来只改了 localStorage，刷新就没了）
+    const res = await request.post('/auth/bind-phone', {
       phone: phoneForm.phone,
       code: phoneForm.code,
-      scene: 'bind',
     })
+    phoneBound.value = true
+    boundPhone.value = res.phone || phoneForm.phone
+    phoneBindTime.value = new Date().toLocaleString('zh-CN')
+    localStorage.setItem('phone_bind_info', JSON.stringify({ phone: boundPhone.value, bind_time: phoneBindTime.value }))
+    const user = localStorage.getItem('current_user')
+    if (user) {
+      const u = JSON.parse(user)
+      u.phone = boundPhone.value
+      localStorage.setItem('current_user', JSON.stringify(u))
+    }
+    ElMessage.success('手机号绑定成功')
   } catch (e) {
     const detail = e?.response?.data?.detail
-    ElMessage.error(typeof detail === 'string' ? detail : '验证码错误')
+    ElMessage.error(typeof detail === 'string' ? detail : '绑定失败')
+  } finally {
     phoneBinding.value = false
-    return
   }
-  // 保存绑定信息
-  const now = new Date().toLocaleString('zh-CN')
-  phoneBound.value = true
-  boundPhone.value = phoneForm.phone
-  phoneBindTime.value = now
-  localStorage.setItem('phone_bind_info', JSON.stringify({ phone: phoneForm.phone, bind_time: now }))
-  // 同步更新 current_user
-  const user = localStorage.getItem('current_user')
-  if (user) {
-    const u = JSON.parse(user)
-    u.phone = phoneForm.phone
-    localStorage.setItem('current_user', JSON.stringify(u))
-  }
-  ElMessage.success('手机号绑定成功')
-  phoneBinding.value = false
 }
 
 // ===== 修改密码 =====
@@ -373,13 +370,22 @@ const handleChangePassword = async () => {
   const valid = await pwdFormRef.value.validate().catch(() => false)
   if (!valid) return
   pwdChanging.value = true
-  setTimeout(() => {
-    pwdChanging.value = false
+  try {
+    // 真正调用后端改密（原来只弹了个成功提示，密码根本没变）
+    await request.post('/auth/change-password', {
+      old_password: pwdForm.old_password,
+      new_password: pwdForm.new_password,
+    })
     ElMessage.success('密码修改成功，下次登录请使用新密码')
     pwdForm.old_password = ''
     pwdForm.new_password = ''
     pwdForm.confirm_password = ''
-  }, 800)
+  } catch (e) {
+    const detail = e?.response?.data?.detail
+    ElMessage.error(typeof detail === 'string' ? detail : '修改失败')
+  } finally {
+    pwdChanging.value = false
+  }
 }
 
 // 验证码修改密码
@@ -411,8 +417,10 @@ const sendPwdResetCode = async () => {
     const res = await request.post('/auth/send-code', { phone: boundPhone.value, scene: 'reset_password' })
     if (res.sms_enabled) {
       ElMessage.success('验证码已发送，请注意查收短信')
+    } else if (res.code) {
+      ElMessage.success(`验证码已发送（本机 Mock：${res.code}）`)
     } else {
-      ElMessage.success(`验证码已发送（Mock: ${res.code}）`)
+      ElMessage.warning('本机未接入短信服务：验证码已写入后端控制台日志（搜索 [Auth][Mock]）')
     }
   } catch (e) {
     const detail = e?.response?.data?.detail

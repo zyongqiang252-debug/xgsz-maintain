@@ -105,9 +105,15 @@ class DingTalkRegisterRequest(BaseModel):
 
 
 class BindPhoneRequest(BaseModel):
-    user_id: int
+    # 保留 user_id 仅为兼容旧前端调用；服务端一律以登录身份为准，忽略该字段
+    user_id: Optional[int] = None
     phone: str
     code: str
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
 
 
 class PasswordLoginRequest(BaseModel):
@@ -1037,8 +1043,9 @@ def dingtalk_unbind(
 
 
 @router.post("/bind-phone", summary="绑定手机号")
-def bind_phone(req: BindPhoneRequest, db: Session = Depends(get_db)):
-    """已登录用户绑定手机号"""
+def bind_phone(req: BindPhoneRequest, db: Session = Depends(get_db),
+               current_user: User = Depends(get_current_user)):
+    """已登录用户绑定手机号（绑定对象＝当前登录用户，不接受前端指定 user_id）"""
     stored = _verify_codes.get(req.phone)
     if not stored:
         raise HTTPException(status_code=400, detail="请先获取验证码")
@@ -1053,16 +1060,48 @@ def bind_phone(req: BindPhoneRequest, db: Session = Depends(get_db)):
     _verify_codes.pop(req.phone, None)
 
     # 检查手机号是否已被其他账号绑定
-    existing = db.query(User).filter(User.phone == req.phone, User.id != req.user_id).first()
+    existing = db.query(User).filter(User.phone == req.phone, User.id != current_user.id).first()
     if existing:
         raise HTTPException(status_code=400, detail="该手机号已被其他账号绑定")
 
-    user = db.query(User).filter(User.id == req.user_id).first()
+    user = db.query(User).filter(User.id == current_user.id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
     user.phone = req.phone
     db.commit()
+    db.refresh(user)
 
     logger.info(f"[Auth] 手机号绑定成功: user={user.real_name}, phone={req.phone}")
-    return {"message": "手机号绑定成功", "phone": req.phone}
+    return {
+        "message": "手机号绑定成功",
+        "phone": user.phone,
+        "user_id": user.id,
+        "real_name": user.real_name,
+    }
+
+
+@router.post("/change-password", summary="修改密码（校验原密码）")
+def change_password(req: ChangePasswordRequest, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
+    """已登录用户用原密码修改自己的密码"""
+    if not req.new_password or len(req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="新密码长度至少 6 位")
+    if req.new_password == req.old_password:
+        raise HTTPException(status_code=400, detail="新密码不能与原密码相同")
+
+    h = str(current_user.password_hash or "")
+    if h.startswith("$2"):
+        try:
+            ok = verify_password(req.old_password, h)
+        except Exception:
+            ok = False
+    else:
+        ok = (h == hashlib.sha256(req.old_password.encode()).hexdigest())
+    if not ok:
+        raise HTTPException(status_code=400, detail="原密码错误")
+
+    current_user.password_hash = hash_password(req.new_password)
+    db.commit()
+    logger.info(f"[Auth] 密码修改成功: user={current_user.id}")
+    return {"message": "密码修改成功，请使用新密码登录"}
