@@ -229,7 +229,7 @@
           <el-table-column prop="device" label="设备/浏览器" min-width="200" />
           <el-table-column label="状态" width="80">
             <template #default="{ row }">
-              <span :style="{ color: row.status === '成功' ? '#00B42A' : '#F53F3F' }">{{ row.status }}</span>
+              <span :style="{ color: row.success ? '#00B42A' : '#F53F3F' }">{{ row.status }}</span>
             </template>
           </el-table-column>
         </el-table>
@@ -664,16 +664,33 @@ const unbindDingTalk = async () => {
   } catch { /* 取消 */ }
 }
 
-// ===== 登录记录 =====
-const loginHistory = ref([
-  { time: '2026-07-30 14:30:22', ip: '192.168.1.100', device: 'Chrome / Windows 10', status: '成功' },
-  { time: '2026-07-30 08:15:05', ip: '192.168.1.100', device: 'Chrome / Windows 10', status: '成功' },
-  { time: '2026-07-29 17:42:18', ip: '10.0.0.56', device: '钉钉 / Android 14', status: '成功' },
-  { time: '2026-07-29 09:00:00', ip: '192.168.1.105', device: 'Firefox / Windows 10', status: '失败' },
-  { time: '2026-07-28 16:20:33', ip: '192.168.1.100', device: 'Chrome / Windows 10', status: '成功' },
-])
+// ===== 登录记录（真实审计数据）=====
+const loginHistory = ref([])
+
+const simplifyUA = (ua) => {
+  if (!ua) return '-'
+  const browser = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : '浏览器'
+  const os = /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Mac OS/.test(ua) ? 'macOS' : '未知系统'
+  return browser + ' / ' + os
+}
+
+const loadLoginLogs = async () => {
+  try {
+    const res = await request.get('/users/login-logs', { params: { limit: 10 } })
+    loginHistory.value = (res.items || []).map((it) => ({
+      time: (it.created_at || '').replace('T', ' ').slice(0, 19),
+      ip: it.ip || '-',
+      device: simplifyUA(it.user_agent) + (it.login_type === 'code' ? ' · 验证码登录' : (it.login_type === 'dingtalk' ? ' · 钉钉' : '')),
+      status: it.success ? '成功' : ('失败(' + (it.reason || '') + ')'),
+      success: it.success,
+    }))
+  } catch (e) {
+    loginHistory.value = []
+  }
+}
 
 onMounted(() => {
+  loadLoginLogs()
   loadPhoneBind()
   loadDingTalkConfig()
 })

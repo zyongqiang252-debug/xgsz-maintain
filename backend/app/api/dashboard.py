@@ -76,6 +76,50 @@ def dashboard_stats(
         WorkOrder.created_at.desc()
     ).limit(6).all()
 
+    # ===== 管理指标：MTTR / 故障分布 / 备件消耗 / 维修员工作量 / 满意度 / 成本 =====
+    from sqlalchemy import case
+    from app.models.stock_movement import StockMovement
+
+    finished = db.query(WorkOrder).filter(
+        WorkOrder.resolved_at.isnot(None)
+    ).all()
+    mttr_hours = 0.0
+    if finished:
+        spans = []
+        for w in finished:
+            base = w.first_response_at or w.created_at
+            if base and w.resolved_at:
+                spans.append((w.resolved_at - base).total_seconds() / 3600.0)
+        if spans:
+            mttr_hours = round(sum(spans) / len(spans), 2)
+
+    overdue_count = db.query(func.count(WorkOrder.id)).filter(
+        WorkOrder.sla_status == "OVERDUE"
+    ).scalar() or 0
+
+    fault_top = db.query(
+        func.coalesce(WorkOrder.fault_category, "未分类").label("k"),
+        func.count(WorkOrder.id).label("n"),
+    ).group_by("k").order_by(func.count(WorkOrder.id).desc()).limit(10).all()
+
+    parts_top = db.query(
+        StockMovement.part_name.label("k"),
+        func.sum(StockMovement.quantity).label("n"),
+        func.sum(StockMovement.amount).label("amt"),
+    ).filter(StockMovement.movement_type == "OUT").group_by(StockMovement.part_name) \
+     .order_by(func.sum(StockMovement.quantity).desc()).limit(10).all()
+
+    tech_rows = db.query(
+        WorkOrder.technician_id,
+        func.count(WorkOrder.id).label("n"),
+        func.coalesce(func.sum(WorkOrder.work_hours), 0).label("hours"),
+    ).filter(WorkOrder.technician_id.isnot(None)).group_by(WorkOrder.technician_id) \
+     .order_by(func.count(WorkOrder.id).desc()).limit(10).all()
+    users_map = {u.id: u.real_name for u in db.query(User).all()}
+
+    sat = db.query(func.avg(WorkOrder.satisfaction_score), func.count(WorkOrder.satisfaction_score)).first()
+    cost_sum = db.query(func.coalesce(func.sum(WorkOrder.total_cost), 0)).scalar() or 0
+
     return {
         "total_orders": total_orders,
         "today_orders": today_orders,
@@ -91,4 +135,15 @@ def dashboard_stats(
         "low_stock_items": [{c.name: getattr(s, c.name) for c in s.__table__.columns} for s in low_stock],
         "out_of_stock_items": [{c.name: getattr(s, c.name) for c in s.__table__.columns} for s in out_of_stock],
         "recent_orders": [_wo_to_dict(w) for w in recent_orders],
+        # 新增管理指标
+        "mttr_hours": mttr_hours,
+        "overdue_count": overdue_count,
+        "fault_top": [{"name": k, "count": n} for k, n in fault_top],
+        "parts_top": [{"name": k, "quantity": round(float(n or 0), 2), "amount": round(float(a or 0), 2)}
+                      for k, n, a in parts_top],
+        "technician_workload": [{"name": users_map.get(tid, f"#{tid}"), "orders": n,
+                                 "hours": round(float(h or 0), 1)} for tid, n, h in tech_rows],
+        "satisfaction_avg": round(float(sat[0] or 0), 2) if sat and sat[0] else 0,
+        "satisfaction_count": sat[1] if sat else 0,
+        "total_cost": round(float(cost_sum), 2),
     }

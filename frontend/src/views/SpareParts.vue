@@ -4,7 +4,10 @@
       <h2 class="page-title">库存管理</h2>
       <div class="header-actions">
         <el-button v-if="canManage" @click="importDialog.visible = true">进货单导入</el-button>
+        <div style="display:flex;gap:8px">
+        <el-button :loading="exporting" @click="handleExport">导出 Excel</el-button>
         <el-button v-if="canManage" type="primary" @click="$router.push('/spare-parts/new')">新增备件</el-button>
+      </div>
       </div>
     </div>
 
@@ -245,6 +248,7 @@
 import { ref, onMounted, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api'
+import { downloadFile } from '../utils/download'
 
 // 备件台账维护权限：仅管理员/主管可增删改，维修员只读
 const canManage = computed(() => {
@@ -437,6 +441,21 @@ onMounted(() => {
   // 预填一行进货单
   addImportRow()
 })
+
+// ===== 导出 Excel =====
+const exporting = ref(false)
+const handleExport = async () => {
+  exporting.value = true
+  try {
+    await downloadFile('/export/spare-parts.xlsx', {}, '备件台账.xlsx')
+    ElMessage.success('已开始下载')
+  } catch (e) {
+    ElMessage.error('导出失败')
+  } finally {
+    exporting.value = false
+  }
+}
+
 </script>
 
 <style scoped>

@@ -139,7 +139,9 @@ app.include_router(dispatch.router, tags=["派工管理"])
 app.include_router(dingtalk_mock_router, tags=["钉钉扫码模拟"])
 app.include_router(work_order_imports_router, prefix="/api/v1/work-order-imports", tags=["历史工单导入"])
 from app.api.system_settings import router as system_settings_router  # noqa: E402
+from app.api.export import router as export_router  # noqa: E402
 app.include_router(system_settings_router, prefix="/api/v1/system-settings", tags=["系统设置"])
+app.include_router(export_router, prefix="/api/v1/export", tags=["报表导出"])
 
 # ============================================================
 # MCP Server（Streamable HTTP）：仅本机可访问，可配置 API Key

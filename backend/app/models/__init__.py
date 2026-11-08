@@ -18,6 +18,7 @@ from app.models.notification import Notification
 from app.models.manual_code import ManualCodeEntry
 from app.models.work_order_import import WorkOrderImportBatch, WorkOrderImportItem
 from app.models.stock_movement import StockMovement
+from app.models.login_log import LoginLog
 
 __all__ = [
     "Device", "WorkOrder", "WorkOrderStatus",
@@ -37,4 +38,5 @@ __all__ = [
     "ManualCodeEntry",
     "WorkOrderImportBatch", "WorkOrderImportItem",
     "StockMovement",
+    "LoginLog",
 ]

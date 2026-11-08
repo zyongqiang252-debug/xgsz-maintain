@@ -121,6 +121,26 @@ class PasswordLoginRequest(BaseModel):
     password: str
 
 
+def _log_login(db: Session, request, user, success: bool, reason: str = "",
+               login_type: str = "password", username: str = "") -> None:
+    """写登录审计（失败不影响登录流程）"""
+    try:
+        from app.models.login_log import LoginLog
+        ip = _client_ip(request) or ""
+        ua = (request.headers.get("user-agent") or "")[:500] if request else ""
+        db.add(LoginLog(
+            user_id=getattr(user, "id", None),
+            username=username or getattr(user, "username", "") or "",
+            real_name=getattr(user, "real_name", "") or "",
+            login_type=login_type, success=bool(success),
+            reason=(reason or "")[:200], ip=ip, user_agent=ua,
+        ))
+        db.commit()
+        if not success:
+            logger.warning(f"[Auth] 登录失败: {username} ip={ip} 原因={reason}")
+    except Exception as e:
+        logger.warning(f"[Auth] 写登录日志失败: {e}")
+
 @router.post("/send-code", summary="发送短信验证码")
 def send_sms_code(req: SendCodeRequest, request: Request):
     """
@@ -185,7 +205,7 @@ def send_sms_code(req: SendCodeRequest, request: Request):
 
 
 @router.post("/login-by-code", summary="手机号+验证码登录")
-def login_by_code(req: LoginByCodeRequest, db: Session = Depends(get_db)):
+def login_by_code(req: LoginByCodeRequest, request: Request, db: Session = Depends(get_db)):
     """
     手机号 + 验证码登录：
     1. 校验验证码
@@ -231,6 +251,7 @@ def login_by_code(req: LoginByCodeRequest, db: Session = Depends(get_db)):
     db.commit()
 
     logger.info(f"[Auth] 手机号登录成功: {req.phone}, user={user.real_name}")
+    _log_login(db, request, user, True, "", "code", req.phone)
     return {
         "id": user.id,
         "username": user.username,
@@ -248,7 +269,7 @@ def login_by_code(req: LoginByCodeRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login-by-password", summary="用户名/手机号+密码登录")
-def login_by_password(req: PasswordLoginRequest, db: Session = Depends(get_db)):
+def login_by_password(req: PasswordLoginRequest, request: Request, db: Session = Depends(get_db)):
     """
     用户名/手机号 + 密码登录
     """
@@ -257,8 +278,10 @@ def login_by_password(req: PasswordLoginRequest, db: Session = Depends(get_db)):
         (User.username == req.username) | (User.phone == req.username)
     ).first()
     if not user:
+        _log_login(db, request, None, False, "用户不存在", "password", req.username)
         raise HTTPException(status_code=400, detail="用户名或密码错误")
     if not user.is_active:
+        _log_login(db, request, user, False, "账号已禁用", "password", req.username)
         raise HTTPException(status_code=403, detail="账号已被禁用")
 
     # 验证密码：bcrypt 优先；兼容历史无盐 sha256，并在命中后自动升级为 bcrypt
@@ -273,6 +296,7 @@ def login_by_password(req: PasswordLoginRequest, db: Session = Depends(get_db)):
         legacy_sha256 = (user.password_hash == hashlib.sha256(req.password.encode()).hexdigest())
         ok = legacy_sha256
     if not ok:
+        _log_login(db, request, user, False, "密码错误", "password", req.username)
         raise HTTPException(status_code=400, detail="用户名或密码错误")
 
     if legacy_sha256:
@@ -287,6 +311,7 @@ def login_by_password(req: PasswordLoginRequest, db: Session = Depends(get_db)):
     db.commit()
 
     logger.info(f"[Auth] 密码登录成功: {req.username}, user={user.real_name}")
+    _log_login(db, request, user, True, "", "password", req.username)
     return {
         "id": user.id,
         "username": user.username,

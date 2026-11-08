@@ -69,6 +69,33 @@ def list_users(
     return {"total": total, "items": rows, "page": page, "page_size": page_size}
 
 
+@router.get("/login-logs", summary="登录审计记录（管理员）")
+def list_login_logs(
+    limit: int = Query(20, ge=1, le=200),
+    only_failed: bool = Query(False),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    from app.models.login_log import LoginLog
+    q = db.query(LoginLog)
+    if only_failed:
+        q = q.filter(LoginLog.success.is_(False))
+    rows = q.order_by(LoginLog.created_at.desc(), LoginLog.id.desc()).limit(limit).all()
+    return {
+        "items": [{
+            "id": r.id,
+            "username": r.username,
+            "real_name": r.real_name,
+            "login_type": r.login_type,
+            "success": bool(r.success),
+            "reason": r.reason,
+            "ip": r.ip,
+            "user_agent": r.user_agent,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        } for r in rows]
+    }
+
+
 @router.get("/{user_id}", response_model=UserResponse, summary="获取用户详情（带缓存）")
 def get_user(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     cache_key = f"user:{user_id}"

@@ -2,7 +2,10 @@
   <div class="page">
     <div class="page-header">
       <h2 class="page-title">维修报表</h2>
-      <el-button type="primary" @click="$router.push('/work-orders/new')">新建工单</el-button>
+      <div style="display:flex;gap:8px">
+        <el-button :loading="exporting" @click="handleExport">导出 Excel</el-button>
+        <el-button type="primary" @click="$router.push('/work-orders/new')">新建工单</el-button>
+      </div>
     </div>
 
     <el-card class="filter-card" shadow="never">
@@ -143,6 +146,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api'
+import { downloadFile } from '../utils/download'
 import { workOrderTransition } from '../api/supervisor'
 import dayjs from 'dayjs'
 
@@ -334,6 +338,24 @@ onMounted(() => {
     .catch(() => {})
   fetchData()
 })
+
+// ===== 导出 Excel =====
+const exporting = ref(false)
+const handleExport = async () => {
+  exporting.value = true
+  try {
+    const params = {}
+    if (statusFilter.value) params.status = statusFilter.value
+    if (keyword.value) params.keyword = keyword.value
+    await downloadFile('/export/work-orders.xlsx', params, '工单.xlsx')
+    ElMessage.success('已开始下载')
+  } catch (e) {
+    ElMessage.error('导出失败')
+  } finally {
+    exporting.value = false
+  }
+}
+
 </script>
 
 <style scoped>
