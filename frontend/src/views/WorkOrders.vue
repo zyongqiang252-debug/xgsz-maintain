@@ -55,6 +55,14 @@
               </div>
               <div class="action-row progress-row" v-if="canOperateProgress(row)">
                 <el-button
+                  v-if="row.status === 'DRAFT'"
+                  size="small"
+                  type="primary"
+                  :disabled="!isCreatedByMe(row) && !isAdmin"
+                  :loading="transitionLoading[`${row.id}_SUBMITTED`]"
+                  @click="handleTransition(row, 'SUBMITTED')"
+                >提交报修</el-button>
+                <el-button
                   v-if="row.status === 'ASSIGNED'"
                   size="small"
                   type="primary"
@@ -156,7 +164,7 @@ const isAssignedTech = (row) => {
   if (!tid) return false
   return tid === currentUser.id
 }
-const canOperateProgress = (row) => isAssignedTech(row)
+const canOperateProgress = (row) => isAssignedTech(row) || row.status === 'DRAFT'
 const transitionLoading = ref({})
 
 const handleTransition = async (row, toStatus, source = 'TECH_PROGRESS') => {

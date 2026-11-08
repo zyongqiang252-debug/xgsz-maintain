@@ -255,20 +255,27 @@ def login_by_password(req: PasswordLoginRequest, db: Session = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=403, detail="账号已被禁用")
 
-    # 验证密码（主流 sha256；兼容历史 bcrypt 存储的密码，如用户管理页创建的用户）
+    # 验证密码：bcrypt 优先；兼容历史无盐 sha256，并在命中后自动升级为 bcrypt
     import hashlib
-    pwd_hash = hashlib.sha256(req.password.encode()).hexdigest()
-    if user.password_hash != pwd_hash:
-        if user.password_hash.startswith("$2"):
-            try:
-                if not verify_password(req.password, user.password_hash):
-                    raise HTTPException(status_code=400, detail="用户名或密码错误")
-            except HTTPException:
-                raise
-            except Exception:
-                raise HTTPException(status_code=400, detail="用户名或密码错误")
-        else:
-            raise HTTPException(status_code=400, detail="用户名或密码错误")
+    legacy_sha256 = False
+    if user.password_hash and str(user.password_hash).startswith("$2"):
+        try:
+            ok = verify_password(req.password, user.password_hash)
+        except Exception:
+            ok = False
+    else:
+        legacy_sha256 = (user.password_hash == hashlib.sha256(req.password.encode()).hexdigest())
+        ok = legacy_sha256
+    if not ok:
+        raise HTTPException(status_code=400, detail="用户名或密码错误")
+
+    if legacy_sha256:
+        try:
+            user.password_hash = hash_password(req.password)
+            db.commit()
+            logger.info(f"[Auth] 密码哈希已升级为 bcrypt: user={user.id}")
+        except Exception as e:
+            logger.warning(f"[Auth] 密码哈希升级失败（不影响本次登录）: {e}")
 
     user.last_login_at = time.strftime("%Y-%m-%d %H:%M:%S")
     db.commit()
@@ -910,6 +917,15 @@ def dingtalk_bind_by_credential(req: DingTalkBindByCredentialRequest, db: Sessio
             bcrypt_ok = False
     if not (sha_ok or bcrypt_ok):
         raise HTTPException(status_code=400, detail="密码错误")
+
+    # 与密码登录一致：sha256 命中后顺带升级为 bcrypt
+    if sha_ok:
+        try:
+            user.password_hash = hash_password(req.password)
+            db.commit()
+            logger.info(f"[Auth] 绑定流程中密码哈希已升级为 bcrypt: user={user.id}")
+        except Exception as e:
+            logger.warning(f"[Auth] 绑定流程密码哈希升级失败（不影响本次绑定）: {e}")
 
     # 冲突检测：该钉钉账号是否已被其他用户绑定
     existing_dt = db.query(User).filter(

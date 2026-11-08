@@ -301,8 +301,9 @@ def update_work_order(work_order_id: int, data: WorkOrderUpdate, db: Session = D
         if key in ("technician_id", "created_by"):
             continue
         setattr(work_order, key, val)
-    if work_order.status == WorkOrderStatus.DRAFT and any([work_order.fault_description, work_order.device_id]):
-        work_order.status = WorkOrderStatus.IN_PROGRESS
+    # 修复：保存草稿不再偷偷把 DRAFT 改成 IN_PROGRESS。
+    # 状态推进统一走 /transition（提交报修 → 派工 → 接单 → 到场 → 检查 → 维修），
+    # 否则编辑一次就跳过五个状态，状态机形同虚设。
     db.commit()
     db.refresh(work_order)
     return work_order
@@ -384,6 +385,12 @@ def complete_work_order(work_order_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="工单不存在")
     if work_order.status == WorkOrderStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="工单已完成")
+    # 修复：只有维修中的工单才能提交完成，避免 DRAFT/SUBMITTED 直接跳到 COMPLETED 跳过整个状态机
+    if work_order.status != WorkOrderStatus.IN_PROGRESS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"仅「维修中」的工单可提交完成，当前状态：{work_order.status.value if hasattr(work_order.status, 'value') else work_order.status}",
+        )
 
     # 1. AI 标准化分析
     wo_data = {

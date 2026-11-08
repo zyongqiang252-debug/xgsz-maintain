@@ -230,7 +230,7 @@ def main():
 
     step("A-12 进度日志全链路留痕", progress)
 
-    # ================= 生命周期 B：表单直通 =================
+    # ================= 生命周期 B：状态机不再被编辑"偷偷跳变" =================
     wo2 = {}
 
     def form_flow():
@@ -245,19 +245,25 @@ def main():
             "work_hours": 1.0,
         }, timeout=30)
         d2 = j(r2)
-        return r2.status_code == 200, {"after_put_state": d2.get("status")}
+        return r2.status_code == 200 and d2.get("status") == "DRAFT", {"after_put_state": d2.get("status")}
 
-    ok_b, det_b = step("B-1 新建后表单保存（观察是否自动跳到 IN_PROGRESS）", form_flow)
-    if ok_b:
-        report["notes"].append(
-            f"工单 PUT 编辑会把 DRAFT 直接置为 {det_b.get('after_put_state')}（上游原有逻辑，见 work_orders.py:306），"
-            "跳过 提交/派工/接单/到场/检查 五个状态，UI 上表现为「填完表单即处理中」")
+    step("B-1 保存草稿后仍为 DRAFT（不再自动跳 IN_PROGRESS）", form_flow)
 
-    step("B-2 流转 ARCHIVING", lambda: (lambda r: (r.status_code == 200, {"state": j(r).get("status")}))(
-        s.post(API + f"/work-orders/{wo2['id']}/transition", json={"to_status": "ARCHIVING"}, timeout=30)))
+    def complete_blocked():
+        r = s.post(API + f"/work-orders/{wo2['id']}/complete", timeout=60)
+        return r.status_code == 400, {"status": r.status_code, "detail": j(r).get("detail")}
 
-    step("B-3 归档完成", lambda: (lambda r: (r.status_code == 200, {"state": j(r).get("status")}))(
-        s.post(API + f"/work-orders/{wo2['id']}/archive-complete", timeout=60)))
+    step("B-2 未推进状态直接提交完成被拒", complete_blocked)
+
+    step("B-3 提交报修 SUBMITTED", lambda: (lambda r: (r.status_code == 200 and j(r).get("status") == "SUBMITTED",
+                                                       {"state": j(r).get("status")}))(
+        s.post(API + f"/work-orders/{wo2['id']}/transition", json={"to_status": "SUBMITTED"}, timeout=30)))
+
+    def cleanup_b():
+        r = s.delete(API + f"/work-orders/{wo2['id']}", timeout=30)
+        return r.status_code == 200, {"status": r.status_code}
+
+    step("B-4 清理测试工单", cleanup_b)
 
     # ================= 检索 / 知识 =================
     def hybrid_search():

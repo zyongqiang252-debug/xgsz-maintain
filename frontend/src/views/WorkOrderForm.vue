@@ -538,7 +538,10 @@
             <el-button type="warning" :loading="analyzing" @click="handleAnalyze">
               {{ analyzing ? 'AI 校验中...' : 'AI 校验' }}
             </el-button>
-            <el-button type="success" :loading="submitting" @click="handleSubmit" :disabled="!canSubmit">
+            <el-button v-if="isNew || form.status === 'DRAFT'" type="primary" :loading="submitting" @click="handleSubmitReport">
+              {{ submitting ? '提交中...' : '提交报修' }}
+            </el-button>
+            <el-button v-else-if="form.status === 'IN_PROGRESS'" type="success" :loading="submitting" @click="handleSubmit" :disabled="!canSubmit">
               {{ submitting ? '提交中...' : '确认提交' }}
             </el-button>
           </template>
@@ -549,6 +552,9 @@
                   ? `归档校验通过（完成度 ${Math.round(archiveCheckResult.completeness * 100)}%），可点击「归档完成」`
                   : `归档完成度不足（${Math.round(archiveCheckResult.completeness * 100)}%），缺失：${(archiveCheckResult.missing_fields || []).join('、')}`)
               : '请先点击「工单归档」完成校验，再点击「归档完成」' }}
+        </p>
+        <p v-else-if="['SUBMITTED','ASSIGNED','ACCEPTED','ARRIVED','INSPECTING'].includes(form.status) && !isNew" class="submit-hint">
+          当前工单已提交，等待派工 / 维修推进：请在「维修报表」或「派工中心」按流程操作（派工 → 接单 → 到场 → 检查 → 开始维修），进入「维修中」后才能提交完成
         </p>
         <p v-else-if="!canSubmit && !isNew" class="submit-hint">
           {{ entryMode === 'error_code'
@@ -1437,6 +1443,27 @@ const handleSaveDraft = async () => {
     ElMessage.success('草稿已保存')
   } catch { /* error handled in saveForm */ }
   finally { saving.value = false }
+}
+
+// 提交报修：保存后把 DRAFT → SUBMITTED（不再依赖后端"保存即改状态"的隐式行为）
+const handleSubmitReport = async () => {
+  submitting.value = true
+  try {
+    const res = await saveForm()
+    const id = (res && res.id) || route.params.id || form.id
+    await request.post(`/work-orders/${id}/transition`, {
+      to_status: 'SUBMITTED',
+      remark: '提交报修',
+      source: 'WEB',
+    })
+    ElMessage.success('已提交报修，等待主管派工')
+    form.status = 'SUBMITTED'
+    router.push('/work-orders')
+  } catch (e) {
+    const msg = (e && e.response && e.response.data && (e.response.data.detail || e.response.data.message))
+      || (e && e.message) || '未知错误'
+    ElMessage.error('提交报修失败：' + msg)
+  } finally { submitting.value = false }
 }
 
 const handleCreateFaultCode = async () => {
