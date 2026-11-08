@@ -83,3 +83,28 @@ cd backend
 
 - `backend/.env` 不在版本库里（`.gitignore` 已排除），需从备份复制；`SECRET_KEY` 现在是本地值，上线前必须换
 - `%LOCALAPPDATA%\xgsz-runtime` 不在版本库里，换机器要重新跑 `tools\fetch_pg.py` + `initdb`
+
+## 七、推送到 GitHub
+
+本机 `git` 直连 GitHub 会失败（schannel 握手 + 连接被重置），但**走本地代理可以**：
+
+```powershell
+# 先确认代理在跑（Clash 默认 7897）
+Test-NetConnection 127.0.0.1 -Port 7897
+
+# git 手动推（把 <TOKEN> 换成自己的 PAT）
+git -c http.proxy=http://127.0.0.1:7897 push https://<TOKEN>@github.com/zyongqiang252-debug/xgsz-maintain.git master
+```
+
+推荐用脚本（自动判断有无写权限，没有就 fork 到自己账号再推）：
+
+```powershell
+# token 存到 C:\Users\<你>\gh_token.txt（文件里只放一行 ghp_xxx）
+cd backend
+.venv\Scripts\python.exe ..\tools\push_to_github.py --dry-run     # 只看要推什么
+.venv\Scripts\python.exe ..\tools\push_to_github.py --delete-token-file
+```
+
+PAT 权限：
+- classic：勾 `repo`
+- fine-grained：Repository access 选该仓库，Contents = Read and write（看不到该仓库说明你不是协作者，需先 fork）
