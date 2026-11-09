@@ -124,6 +124,10 @@ class WorkOrderCreate(BaseModel):
     fault_code: Optional[str] = None
     device_error_code: Optional[str] = None
     log_text: Optional[str] = None
+    gpu_index: Optional[str] = None
+    fault_device_sn: Optional[str] = None
+    service_mode: Optional[str] = None
+    need_rma: Optional[bool] = None
     fault_description: str
     fault_category: Optional[str] = None
     fault_phenomenon_type: Optional[str] = None
@@ -157,6 +161,10 @@ class WorkOrderUpdate(BaseModel):
     fault_code: Optional[str] = None
     device_error_code: Optional[str] = None
     log_text: Optional[str] = None
+    gpu_index: Optional[str] = None
+    fault_device_sn: Optional[str] = None
+    service_mode: Optional[str] = None
+    need_rma: Optional[bool] = None
     fault_description: Optional[str] = None
     fault_category: Optional[str] = None
     fault_phenomenon_type: Optional[str] = None
@@ -191,6 +199,10 @@ class WorkOrderResponse(BaseModel):
     device_name: Optional[str] = None
     fault_code: Optional[str]
     device_error_code: Optional[str] = None
+    gpu_index: Optional[str] = None
+    fault_device_sn: Optional[str] = None
+    service_mode: Optional[str] = None
+    need_rma: Optional[bool] = None
     fault_description: str
     fault_category: Optional[str] = None
     fault_phenomenon_type: Optional[str] = None

@@ -61,6 +61,12 @@
           <el-descriptions-item label="设备类型">{{ form.device_type || '-' }}</el-descriptions-item>
           <el-descriptions-item label="设备位置">{{ form.location || '-' }}</el-descriptions-item>
           <el-descriptions-item label="故障分类">{{ form.fault_phenomenon_type || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="故障 GPU">{{ form.gpu_index || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="故障件 SN">{{ form.fault_device_sn || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="服务方式">
+            {{ { REMOTE: '远程处理', SITE: '现场处理', RMA: '返厂维修' }[form.service_mode] || '-' }}
+            <el-tag v-if="form.need_rma" size="small" type="warning" style="margin-left:6px">需返厂</el-tag>
+          </el-descriptions-item>
           <el-descriptions-item label="技术员">{{ technicianName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="故障现象" :span="2">
             <pre class="detail-pre">{{ form.fault_phenomenon || '-' }}</pre>
@@ -401,7 +407,28 @@
                 <el-button size="small" type="warning" style="float:right" @click="askAI('fault')">AI 分析故障</el-button>
               </div>
               <el-form-item label="故障描述" required>
-                <el-input v-model="form.fault_description" type="textarea" :rows="3" placeholder="描述故障现象，如：电机启动后出现周期性金属摩擦异响" />
+                <el-input v-model="form.fault_description" type="textarea" :rows="3" placeholder="如：训练任务报 CUDA error，nvidia-smi 中 GPU3 消失，dmesg 出现 Xid 79" />
+              </el-form-item>
+
+              <el-form-item label="故障 GPU">
+                <el-select v-model="form.gpu_index" clearable filterable allow-create placeholder="选择或输入，如 GPU3 / 0-7" style="width: 100%">
+                  <el-option v-for="i in 8" :key="i" :label="`GPU${i - 1}`" :value="`GPU${i - 1}`" />
+                  <el-option label="整机 / 非单卡故障" value="整机" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="故障件 SN">
+                <el-input v-model="form.fault_device_sn" placeholder="出故障的 GPU 卡 / 内存条 / 电源模块序列号" />
+              </el-form-item>
+              <el-form-item label="服务方式">
+                <el-radio-group v-model="form.service_mode">
+                  <el-radio label="REMOTE">远程处理</el-radio>
+                  <el-radio label="SITE">现场处理</el-radio>
+                  <el-radio label="RMA">返厂维修</el-radio>
+                </el-radio-group>
+              </el-form-item>
+              <el-form-item label="需要返厂">
+                <el-switch v-model="form.need_rma" />
+                <span class="hint" style="margin-left:8px">勾选后会标记为需 RMA 的工单</span>
               </el-form-item>
             </div>
 
@@ -932,6 +959,11 @@ const form = reactive({
   fault_category: '',
   fault_phenomenon_type: '',
   fault_phenomenon: '',
+  // GPU 维修专有字段
+  gpu_index: '',
+  fault_device_sn: '',
+  service_mode: '',
+  need_rma: false,
   fault_code: [],
   device_error_code: '',
   log_text: '',
