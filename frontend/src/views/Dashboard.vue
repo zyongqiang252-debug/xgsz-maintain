@@ -2,6 +2,9 @@
   <div class="dashboard">
     <div class="page-header">
       <h2 class="page-title">数据驾驶舱</h2>
+      <div style="display:flex;gap:8px">
+        <el-button :loading="exportingAll" @click="exportAll">一键导出全部数据</el-button>
+      </div>
     </div>
 
     <!-- 统计卡片 -->
@@ -212,7 +215,9 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import request from '../api'
+import { downloadFile } from '../utils/download'
 import dayjs from 'dayjs'
 
 const stats = ref({
@@ -275,6 +280,20 @@ const fetchStats = async () => {
 }
 
 const fetchRecentOrders = async () => {} // 已合并到 fetchStats
+
+
+const exportingAll = ref(false)
+const exportAll = async () => {
+  exportingAll.value = true
+  try {
+    await downloadFile('/export/all.xlsx', {}, '全量数据.xlsx')
+    ElMessage.success('已开始下载（含工单/设备/备件/流水/知识/保养/点检）')
+  } catch (e) {
+    ElMessage.error('导出失败')
+  } finally {
+    exportingAll.value = false
+  }
+}
 
 onMounted(() => { fetchStats() })
 </script>

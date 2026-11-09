@@ -142,6 +142,8 @@ from app.api.system_settings import router as system_settings_router  # noqa: E4
 from app.api.export import router as export_router  # noqa: E402
 app.include_router(system_settings_router, prefix="/api/v1/system-settings", tags=["系统设置"])
 app.include_router(export_router, prefix="/api/v1/export", tags=["报表导出"])
+from app.api.export_all import router as export_all_router  # noqa: E402
+app.include_router(export_all_router, prefix="/api/v1/export", tags=["一键导出"])
 from app.api.maintenance import router as maintenance_router  # noqa: E402
 from app.api.inspections import router as inspections_router  # noqa: E402
 app.include_router(maintenance_router, prefix="/api/v1/maintenance", tags=["保养计划"])

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import require_supervisor
+from app.models.device import Device
 from app.models.knowledge import KnowledgeItem
 from app.models.spare_part import SparePart
 from app.models.stock_movement import StockMovement
@@ -146,3 +147,16 @@ def export_stock_movements(db: Session = Depends(get_db)):
     headers = ["时间", "类型", "备件编码", "备件名称", "数量", "变动前", "变动后",
                "单价", "金额", "工单ID", "操作人", "备注"]
     return _xlsx("出入库流水", headers, data)
+
+
+@router.get("/devices.xlsx", summary="导出服务器台账（Excel）")
+def export_devices(db: Session = Depends(get_db)):
+    rows = db.query(Device).order_by(Device.device_code).all()
+    data = [[d.device_code, d.device_name, d.device_type or "", d.model or "", d.serial_no or "",
+             d.room or "", d.rack_no or "", d.rack_unit or "", d.bmc_ip or "", d.business_ip or "",
+             d.gpu_model or "", d.gpu_count or "", d.driver_version or "", d.cuda_version or "",
+             d.firmware_version or "", d.alert_level or "", d.run_status or ""] for d in rows]
+    headers = ["设备编码", "名称", "类型", "整机型号", "序列号SN", "机房", "机柜", "U位",
+               "BMC IP", "业务 IP", "GPU 型号", "GPU 数量", "驱动版本", "CUDA", "固件版本",
+               "告警级别", "运行状态"]
+    return _xlsx("服务器台账", headers, data)

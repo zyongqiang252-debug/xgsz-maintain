@@ -11,6 +11,7 @@
               <el-option label="已过期" value="DEPRECATED" />
             </el-select>
             <el-button type="primary" @click="handleSearch" class="action-btn">查询</el-button>
+            <el-button :loading="exporting" @click="handleExport" class="action-btn">导出 Excel</el-button>
             <el-button class="action-btn secondary-btn" @click="handleReset">重置</el-button>
           </div>
         </el-card>
@@ -88,6 +89,7 @@
 import { ref, onMounted, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import request from '../api'
+import { downloadFile } from '../utils/download'
 import dayjs from 'dayjs'
 
 const list = ref([])
@@ -133,6 +135,20 @@ const handleDedupCheck = async (row) => {
     dedupDialog.visible = true
   } catch { /* handled */ }
   finally { row._checking = false }
+}
+
+
+const exporting = ref(false)
+const handleExport = async () => {
+  exporting.value = true
+  try {
+    await downloadFile('/export/knowledge.xlsx', {}, '知识库.xlsx')
+    ElMessage.success('已开始下载')
+  } catch (e) {
+    ElMessage.error('导出失败')
+  } finally {
+    exporting.value = false
+  }
 }
 
 onMounted(() => { fetchData() })</script>

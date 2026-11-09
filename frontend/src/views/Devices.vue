@@ -4,6 +4,7 @@
       <h2 class="page-title">服务器监控</h2>
       <div class="header-actions">
         <el-tag v-if="autoRefresh" type="success" effect="light" round>实时刷新中 (15s)</el-tag>
+        <el-button :loading="exporting" @click="handleExport">导出</el-button>
         <el-button @click="handleToggleRefresh" :type="autoRefresh ? 'warning' : 'success'">
           {{ autoRefresh ? '停止刷新' : '开启实时刷新' }}
         </el-button>
@@ -159,6 +160,7 @@
 import { ref, onMounted, onBeforeUnmount, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api'
+import { downloadFile } from '../utils/download'
 import dayjs from 'dayjs'
 import QrcodeVue from 'qrcode.vue'
 
@@ -179,6 +181,20 @@ const typeFilter = ref('')
 const statusFilter = ref('')
 const hasFaultFilter = ref(null)
 const deviceTypeOptions = ref([])
+
+const exporting = ref(false)
+const handleExport = async () => {
+  exporting.value = true
+  try {
+    await downloadFile('/export/devices.xlsx', {}, '服务器台账.xlsx')
+    ElMessage.success('已开始下载')
+  } catch (e) {
+    ElMessage.error('导出失败')
+  } finally {
+    exporting.value = false
+  }
+}
+
 const page = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
