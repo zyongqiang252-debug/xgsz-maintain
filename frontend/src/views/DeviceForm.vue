@@ -9,33 +9,87 @@
         <el-tab-pane label="基础信息" name="basic">
           <el-form :model="form" label-width="120px" style="max-width: 800px">
             <el-form-item label="设备编码" required>
-              <el-input v-model="form.device_code" placeholder="如 EQ-001" />
+              <el-input v-model="form.device_code" placeholder="如 GPU-SRV-001" />
             </el-form-item>
             <el-form-item label="设备名称" required>
-              <el-input v-model="form.device_name" placeholder="如 主电机" />
+              <el-input v-model="form.device_name" placeholder="如 计算集群 01 号节点" />
             </el-form-item>
-            <el-form-item label="外部系统关联ID">
-              <el-input v-model="form.ext_system_id" placeholder="对接外部监控系统时绑定的唯一ID" />
+            <el-form-item label="序列号 SN">
+              <el-input v-model="form.serial_no" placeholder="整机序列号" />
             </el-form-item>
             <el-form-item label="设备类型">
               <el-select v-model="form.device_type" clearable filterable placeholder="选择设备类型" style="width: 100%">
                 <el-option v-for="d in deviceTypeOptions" :key="d.value" :label="d.label" :value="d.value" />
               </el-select>
             </el-form-item>
-            <el-form-item label="型号">
-              <el-input v-model="form.model" placeholder="如 Y2-280S-4" />
+            <el-form-item label="整机型号">
+              <el-input v-model="form.model" placeholder="如 DGX H100（8×H100）" />
             </el-form-item>
             <el-form-item label="制造商">
-              <el-input v-model="form.manufacturer" placeholder="如 西门子" />
+              <el-input v-model="form.manufacturer" placeholder="如 NVIDIA / 浪潮 / 华为" />
             </el-form-item>
-            <el-form-item label="位置">
-              <el-input v-model="form.location" placeholder="如 A车间-1号生产线" />
+
+            <el-divider content-position="left">机房与网络</el-divider>
+            <el-form-item label="机房">
+              <el-input v-model="form.room" placeholder="如 机房A" />
             </el-form-item>
+            <el-form-item label="机柜号">
+              <el-input v-model="form.rack_no" placeholder="如 A03" />
+            </el-form-item>
+            <el-form-item label="U 位">
+              <el-input v-model="form.rack_unit" placeholder="如 U12-U19" />
+            </el-form-item>
+            <el-form-item label="位置描述">
+              <el-input v-model="form.location" placeholder="如 机房A / 机柜A03 / U12-U19" />
+            </el-form-item>
+            <el-form-item label="BMC 带外 IP">
+              <el-input v-model="form.bmc_ip" placeholder="如 10.10.20.31" />
+            </el-form-item>
+            <el-form-item label="业务网 IP">
+              <el-input v-model="form.business_ip" placeholder="如 10.10.30.31" />
+            </el-form-item>
+
+            <el-divider content-position="left">GPU 与固件</el-divider>
+            <el-form-item label="GPU 型号">
+              <el-input v-model="form.gpu_model" placeholder="如 H100 80G SXM5" />
+            </el-form-item>
+            <el-form-item label="GPU 数量">
+              <el-input-number v-model="form.gpu_count" :min="0" :max="64" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="GPU 序列号">
+              <el-input v-model="form.gpu_serial" type="textarea" :rows="3" placeholder="多张卡时每行一个 SN" />
+            </el-form-item>
+            <el-form-item label="驱动版本">
+              <el-input v-model="form.driver_version" placeholder="如 550.54.15" />
+            </el-form-item>
+            <el-form-item label="CUDA 版本">
+              <el-input v-model="form.cuda_version" placeholder="如 12.4" />
+            </el-form-item>
+            <el-form-item label="固件/BMC 版本">
+              <el-input v-model="form.firmware_version" placeholder="如 BMC 1.08 / GPU VBIOS 96.00.89" />
+            </el-form-item>
+            <el-form-item label="CPU 型号">
+              <el-input v-model="form.cpu_model" placeholder="如 Intel Xeon 8480+" />
+            </el-form-item>
+            <el-form-item label="内存(GB)">
+              <el-input-number v-model="form.memory_gb" :min="0" :max="8192" :step="64" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="操作系统">
+              <el-input v-model="form.os_version" placeholder="如 Ubuntu 22.04 LTS" />
+            </el-form-item>
+            <el-form-item label="所属项目">
+              <el-input v-model="form.project" placeholder="如 XX 大模型训练集群" />
+            </el-form-item>
+
+            <el-divider />
             <el-form-item label="采购日期">
               <el-date-picker v-model="form.purchase_date" type="date" placeholder="选择日期" style="width: 100%" />
             </el-form-item>
             <el-form-item label="保修到期">
               <el-date-picker v-model="form.warranty_expiry" type="date" placeholder="选择日期" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="外部系统关联ID">
+              <el-input v-model="form.ext_system_id" placeholder="对接外部监控系统时绑定的唯一ID" />
             </el-form-item>
             <el-form-item label="备注">
               <el-input v-model="form.remark" type="textarea" :rows="2" placeholder="备注信息" />
@@ -149,6 +203,23 @@ const form = ref({
   model: '',
   manufacturer: '',
   location: '',
+  // GPU 服务器专有字段
+  serial_no: '',
+  room: '',
+  rack_no: '',
+  rack_unit: '',
+  bmc_ip: '',
+  business_ip: '',
+  gpu_model: '',
+  gpu_count: 8,
+  gpu_serial: '',
+  driver_version: '',
+  cuda_version: '',
+  firmware_version: '',
+  cpu_model: '',
+  memory_gb: 0,
+  os_version: '',
+  project: '',
   purchase_date: null,
   warranty_expiry: null,
   remark: '',

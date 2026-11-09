@@ -17,6 +17,24 @@ class Device(BaseModel):
     warranty_expiry = Column(Date)
     remark = Column(Text)
 
+    # ========== GPU 服务器专有字段 ==========
+    serial_no = Column(String(100), index=True, comment="设备序列号 SN")
+    room = Column(String(50), index=True, comment="机房")
+    rack_no = Column(String(50), comment="机柜号")
+    rack_unit = Column(String(50), comment="U 位（如 U12-U19）")
+    bmc_ip = Column(String(50), comment="BMC/带外管理 IP")
+    business_ip = Column(String(50), comment="业务网 IP")
+    gpu_model = Column(String(100), comment="GPU 型号（如 H100 80G SXM5）")
+    gpu_count = Column(Integer, comment="GPU 数量")
+    gpu_serial = Column(Text, comment="各卡序列号（换行分隔）")
+    driver_version = Column(String(50), comment="驱动版本")
+    cuda_version = Column(String(50), comment="CUDA 版本")
+    firmware_version = Column(String(100), comment="固件/BMC 版本")
+    cpu_model = Column(String(100), comment="CPU 型号")
+    memory_gb = Column(Integer, comment="内存容量 GB")
+    os_version = Column(String(100), comment="操作系统版本")
+    project = Column(String(100), comment="所属项目/客户")
+
     # ========== 设备监控字段（预留，后续接外部故障上报系统） ==========
     # 运行状态：证据驱动四态，缺证据用 UNKNOWN（避免瞎猜为 ONLINE）
     # ONLINE 在线正常 / OFFLINE 离线 / ALARM 告警仍运行 / FAULT 故障停机 / UNKNOWN 未知

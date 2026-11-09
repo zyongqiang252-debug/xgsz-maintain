@@ -161,7 +161,7 @@
               <div class="menu-group-label">基础数据</div>
               <el-menu-item index="/devices">
                 <el-icon><Monitor /></el-icon>
-                <template #title>设备监控</template>
+                <template #title>服务器监控</template>
               </el-menu-item>
 
               <el-menu-item index="/maintenance">
@@ -219,7 +219,7 @@
               <div class="menu-group-label">基础数据</div>
               <el-menu-item index="/devices">
                 <el-icon><Monitor /></el-icon>
-                <template #title>设备监控</template>
+                <template #title>服务器监控</template>
               </el-menu-item>
               <el-menu-item index="/maintenance">
                 <el-icon><Tools /></el-icon>

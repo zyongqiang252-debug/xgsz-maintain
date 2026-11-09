@@ -1,7 +1,7 @@
 <template>
   <div class="page">
     <div class="page-header">
-      <h2 class="page-title">设备监控</h2>
+      <h2 class="page-title">服务器监控</h2>
       <div class="header-actions">
         <el-tag v-if="autoRefresh" type="success" effect="light" round>实时刷新中 (15s)</el-tag>
         <el-button @click="handleToggleRefresh" :type="autoRefresh ? 'warning' : 'success'">
@@ -48,7 +48,7 @@
     <!-- 设备监控列表 -->
     <el-card class="table-card" shadow="never">
       <el-table :data="list" v-loading="loading" stripe row-class-name="mon-row">
-        <el-table-column label="设备" min-width="200">
+        <el-table-column label="设备" min-width="170">
           <template #default="{ row }">
             <div class="device-cell">
               <div class="device-name-row">
@@ -65,10 +65,24 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="model" label="型号" width="110" />
-        <el-table-column prop="manufacturer" label="制造商" width="110" />
-        <el-table-column prop="location" label="位置" width="120" show-overflow-tooltip />
-        <el-table-column label="故障标签" min-width="170">
+        <el-table-column label="序列号 SN" width="138" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span :class="{ muted: !row.serial_no }">{{ row.serial_no || '—' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="GPU 配置" width="140" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span v-if="row.gpu_model">{{ row.gpu_model }}<span v-if="row.gpu_count"> × {{ row.gpu_count }}</span></span>
+            <span v-else class="muted">{{ row.model || '—' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="机房 / 机柜" width="132" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ row.room || '-' }}<span v-if="row.rack_no"> / {{ row.rack_no }}</span><span v-if="row.rack_unit"> / {{ row.rack_unit }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="manufacturer" label="厂商" width="78" show-overflow-tooltip />
+        <el-table-column label="故障标签" min-width="130">
           <template #default="{ row }">
             <div v-if="row.fault_tags && row.fault_tags.length > 0" class="fault-tags">
               <el-tag
@@ -89,12 +103,12 @@
             <span v-else class="dim">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态原因" min-width="140" show-overflow-tooltip>
+        <el-table-column label="状态原因" min-width="110" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="status-reason">{{ row.status_reason || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="!isPureSupervisor" label="操作" width="270">
+        <el-table-column v-if="!isPureSupervisor" label="操作" width="240">
           <template #default="{ row }">
             <div class="action-group">
               <el-button link type="primary" @click="$router.push(`/devices/${row.id}`)">编辑</el-button>
@@ -388,4 +402,5 @@ const copyQrUrl = async () => {
 .qr-url { font-size:11px; color:#C9CDD4; word-break:break-all; text-align:center; }
 .qr-alert { width: 100%; margin: 4px 0; }
 .qr-hint { font-size: 12px; color: #86909C; }
+.muted { color: #C9CDD4; }
 </style>
