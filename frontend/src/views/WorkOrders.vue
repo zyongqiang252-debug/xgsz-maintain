@@ -55,7 +55,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="fault_description" label="故障描述" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="fault_description" label="故障描述" min-width="170" show-overflow-tooltip />
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
             <span class="status-tag" :class="'status-' + row.status">{{ statusLabel(row.status) }}</span>
@@ -85,25 +85,23 @@
         <el-table-column prop="created_at" label="创建时间" width="130">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="290">
+        <el-table-column label="操作" width="230">
           <template #default="{ row }">
             <div class="col-actions">
               <div class="action-row">
                 <el-button link type="primary" @click="$router.push(`/work-orders/${row.id}`)">查看</el-button>
-                <el-button
-                  v-if="['SUBMITTED', 'ASSIGNED'].includes(row.status) && isSupervisor"
-                  size="small" type="primary" @click="openDispatch(row)"
-                >{{ row.status === 'ASSIGNED' ? '改派' : '派工' }}</el-button>
-                <el-button
-                  v-if="row.status === 'SUBMITTED' && isTechnician"
-                  size="small" type="primary" :loading="claiming === row.id" @click="claimTask(row)"
-                >领取</el-button>
-                <el-button
-                  v-if="row.status === 'ASSIGNED' && isAssignedTech(row)"
-                  size="small" plain @click="openDispatch(row)"
-                >转派</el-button>
-                <el-button v-if="!isSupervisor" link type="warning" :disabled="['COMPLETED', 'ARCHIVED'].includes(row.status) || (!isCreatedByMe(row) && !isAdmin && !isAssignedTech(row))" @click="$router.push(`/work-orders/${row.id}?edit=1`)">编辑</el-button>
-                <el-button v-if="!isSupervisor" link type="danger" :disabled="['COMPLETED', 'ARCHIVED'].includes(row.status) || (!isCreatedByMe(row) && !isAdmin)" @click="handleDelete(row)">删除</el-button>
+                <el-dropdown v-if="hasMoreActions(row)" trigger="click" @command="(cmd) => onRowCommand(cmd, row)">
+                  <el-button link type="primary">更多<el-icon style="margin-left:2px"><ArrowDown /></el-icon></el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item v-if="rowActionText(row)" command="dispatch" :disabled="claiming === row.id">
+                        {{ rowActionText(row) }}
+                      </el-dropdown-item>
+                      <el-dropdown-item v-if="!isSupervisor" command="edit" :disabled="!canEditRow(row)">编辑</el-dropdown-item>
+                      <el-dropdown-item v-if="!isSupervisor" command="delete" :disabled="!canDeleteRow(row)" divided>删除</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </div>
               <div class="action-row progress-row" v-if="canOperateProgress(row)">
                 <el-button
@@ -210,6 +208,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import request from '../api'
 import { downloadFile } from '../utils/download'
 import { workOrderTransition } from '../api/supervisor'
@@ -265,6 +264,38 @@ const dispatchConfirmText = computed(() => {
   if (isSelfDispatch.value) return '确认转派'
   return dispatch.row?.status === 'ASSIGNED' ? '确认改派' : '确认派工'
 })
+const canEditRow = (row) =>
+  !['COMPLETED', 'ARCHIVED'].includes(row.status) &&
+  (isCreatedByMe(row) || isAdmin || isAssignedTech(row))
+
+const canDeleteRow = (row) =>
+  !['COMPLETED', 'ARCHIVED'].includes(row.status) &&
+  (isCreatedByMe(row) || isAdmin)
+
+// 一行里可能存在的「非主操作」动作文案：派工/改派/领取/转派
+const rowActionText = (row) => {
+  if (['SUBMITTED', 'ASSIGNED'].includes(row.status) && isSupervisor) {
+    return row.status === 'ASSIGNED' ? '改派' : '派工'
+  }
+  if (row.status === 'SUBMITTED' && isTechnician) return '领取'
+  if (row.status === 'ASSIGNED' && isAssignedTech(row)) return '转派'
+  return ''
+}
+
+const hasMoreActions = (row) =>
+  !!rowActionText(row) || (!isSupervisor && (canEditRow(row) || canDeleteRow(row)))
+
+const onRowCommand = (cmd, row) => {
+  if (cmd === 'edit') {
+    router.push(`/work-orders/${row.id}?edit=1`)
+  } else if (cmd === 'delete') {
+    handleDelete(row)
+  } else if (cmd === 'dispatch') {
+    if (row.status === 'SUBMITTED' && isTechnician) claimTask(row)
+    else openDispatch(row)
+  }
+}
+
 const claiming = ref(null)
 // 维修员主动领取（抢单）
 const claimTask = async (row) => {
@@ -346,6 +377,10 @@ const list = ref([])
 const loading = ref(false)
 const keyword = ref('')
 const statusFilter = ref('')
+const orderTypeFilter = ref('')
+const alertLevelFilter = ref('')
+const ORDER_TYPE_LABEL = { REPAIR: '报修', MAINTENANCE: '保养', INSPECTION: '点检', IMPORT: '导入' }
+const orderTypeLabel = (t) => ORDER_TYPE_LABEL[(t || 'REPAIR').toUpperCase()] || t
 const deviceTypeFilter = ref('')
 const dateRange = ref(null)
 const page = ref(1)
