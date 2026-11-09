@@ -55,7 +55,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="fault_description" label="故障描述" min-width="170" show-overflow-tooltip />
+        <el-table-column prop="fault_description" label="故障描述" min-width="150" show-overflow-tooltip />
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
             <span class="status-tag" :class="'status-' + row.status">{{ statusLabel(row.status) }}</span>
@@ -82,10 +82,10 @@
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="130">
+        <el-table-column prop="created_at" label="创建时间" width="152">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="230">
+        <el-table-column label="操作" width="250">
           <template #default="{ row }">
             <div class="col-actions">
               <div class="action-row">
@@ -561,8 +561,9 @@ const handleExport = async () => {
 .wo-table :deep(.el-button.is-link) { padding: 0 2px; height: auto; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
 .col-actions { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
-.action-row { display: contents; }
-.progress-row { display: contents; }
+/* 查看/更多靠左对齐；主操作推到最右，避免每行按钮位置忽左忽右 */
+.action-row { display: flex; align-items: center; gap: 2px; }
+.progress-row { display: flex; align-items: center; margin-left: auto; }
 
 .status-tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; }
 .status-DRAFT { background: #F2F3F5; color: #4E5969; }
