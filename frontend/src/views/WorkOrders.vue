@@ -12,12 +12,18 @@
       <div class="filter-bar">
         <el-input v-model="keyword" placeholder="搜索工单编号/故障描述" clearable class="filter-input" @clear="handleSearch" @keyup.enter="handleSearch" />
         <el-select v-model="statusFilter" placeholder="工单状态" clearable class="filter-select" @change="handleSearch">
-          <el-option label="草稿" value="DRAFT" />
-          <el-option label="维修中" value="IN_PROGRESS" />
-          <el-option label="待归档" value="ARCHIVING" />
-          <el-option label="已归档" value="ARCHIVED" />
-          <el-option label="已完成" value="COMPLETED" />
+          <el-option v-for="opt in statusOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
         </el-select>
+        <el-popover placement="bottom-start" :width="360" trigger="hover" popper-class="status-help-pop">
+          <template #reference>
+            <el-icon class="status-help-icon" title="工单状态说明"><QuestionFilled /></el-icon>
+          </template>
+          <div class="status-help-title">工单状态说明（按流转顺序）</div>
+          <div class="status-help-row" v-for="opt in statusOptions" :key="opt.value">
+            <span class="status-tag" :class="'status-' + opt.value">{{ opt.label }}</span>
+            <span class="status-help-desc">{{ opt.desc }}</span>
+          </div>
+        </el-popover>
         <el-select v-model="orderTypeFilter" placeholder="工单类型" clearable class="filter-select" @change="handleSearch">
           <el-option label="报修工单" value="REPAIR" />
           <el-option label="保养工单" value="MAINTENANCE" />
@@ -225,7 +231,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown } from '@element-plus/icons-vue'
+import { ArrowDown, QuestionFilled } from '@element-plus/icons-vue'
 import request from '../api'
 import { downloadFile } from '../utils/download'
 import { workOrderTransition } from '../api/supervisor'
@@ -417,6 +423,20 @@ const dateRange = ref(null)
 const page = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
+
+const statusOptions = [
+  { value: 'DRAFT', label: '草稿', desc: '已建单未提交，可修改或删除' },
+  { value: 'SUBMITTED', label: '待派工', desc: '已提交报修，等待主管派单或维修员领取' },
+  { value: 'ASSIGNED', label: '已派单', desc: '已指派维修员，等待对方接受（可改派）' },
+  { value: 'ACCEPTED', label: '已接单', desc: '维修员已接受任务，尚未到现场' },
+  { value: 'ARRIVED', label: '已到场', desc: '维修员已到达机房/现场' },
+  { value: 'INSPECTING', label: '检查中', desc: '正在排查故障、定位根因' },
+  { value: 'IN_PROGRESS', label: '维修中', desc: '已开始处理（换件、返厂、调试等）' },
+  { value: 'ARCHIVING', label: '待归档', desc: '维修完成，等待补齐 6 项归档字段后归档' },
+  { value: 'ARCHIVED', label: '已归档', desc: '已归档结案，只读，可打印 PDF' },
+  { value: 'COMPLETED', label: '已完成', desc: '历史状态，等同于处理完毕待归档' },
+  { value: 'REJECTED', label: '已退回', desc: '派单被退回或工单作废' },
+]
 
 const statusMap = {
   DRAFT: '草稿',
@@ -613,4 +633,17 @@ const handleExport = async () => {
 .status-COMPLETED { background: #E8F8EE; color: #00B42A; }
 .filter-date { width: 240px; }
 .ellipsis-1 { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+.status-help-icon {
+  font-size: 16px;
+  color: var(--ui-text-3, #86909C);
+  cursor: help;
+  margin-left: -4px;
+  transition: color .15s;
+}
+.status-help-icon:hover { color: var(--color-primary, #0FC6C2); }
+.status-help-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #1D2129; }
+.status-help-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.status-help-desc { font-size: 12px; color: #4E5969; line-height: 1.5; }
+
 </style>
