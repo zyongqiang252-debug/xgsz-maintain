@@ -8,6 +8,7 @@ T = TypeVar("T")
 # ==================== 设备 ====================
 class DeviceCreate(BaseModel):
     device_code: str = Field(..., max_length=50)
+    alert_level: Optional[str] = None
     device_name: str = Field(..., max_length=200)
     device_type: Optional[str] = None
     model: Optional[str] = None
@@ -42,6 +43,7 @@ class DeviceCreate(BaseModel):
 
 class DeviceUpdate(BaseModel):
     device_name: Optional[str] = None
+    alert_level: Optional[str] = None
     device_type: Optional[str] = None
     model: Optional[str] = None
     manufacturer: Optional[str] = None
@@ -77,6 +79,7 @@ class DeviceUpdate(BaseModel):
 
 class DeviceResponse(BaseModel):
     id: int
+    alert_level: Optional[str] = None
     device_code: str
     device_name: str
     device_type: Optional[str]
@@ -243,6 +246,7 @@ class WorkOrderResponse(BaseModel):
     first_response_at: Optional[datetime] = None
     resolved_at: Optional[datetime] = None
     sla_status: Optional[str] = None
+    alert_level: Optional[str] = None  # 由优先级/SLA 推导的 P0~P3
     satisfaction_score: Optional[int] = None
     satisfaction_comment: Optional[str] = None
     feedback_at: Optional[datetime] = None

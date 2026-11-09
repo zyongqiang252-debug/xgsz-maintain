@@ -8,6 +8,7 @@ from datetime import date, datetime
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.services import sla as sla_service
+from app.core import alert_level as AL
 from app.models.work_order import WorkOrder, WorkOrderStatus
 from app.models.device import Device
 from app.models.spare_part import SparePart
@@ -292,7 +293,7 @@ def create_work_order(data: WorkOrderCreate, db: Session = Depends(get_db), curr
     db.refresh(work_order)
     logger.info(f"[WorkOrder] 创建草稿: {work_order.work_order_no}")
     _notify_wo(work_order, "created", actor=current_user.real_name)
-    return work_order
+    return _build_work_order_response(work_order, db)
 
 
 @router.put("/{work_order_id}", response_model=WorkOrderResponse, summary="更新工单（逐步填写）")
@@ -333,7 +334,7 @@ def update_work_order(work_order_id: int, data: WorkOrderUpdate, db: Session = D
         logger.warning(f"[WorkOrder] 成本重算失败（忽略）: {e}")
     db.commit()
     db.refresh(work_order)
-    return work_order
+    return _build_work_order_response(work_order, db)
 
 
 @router.post("/{work_order_id}/analyze", response_model=TicketAnalysisResponse, summary="AI 分析工单")
@@ -1381,6 +1382,7 @@ def create_work_order_from_dispatch(
             title=f"新工单派工通知",
             content=f"工单 {work_order_no} 已派发给您，设备：{device_desc}，故障：{(data.fault_description or '')[:60]}",
             work_order_id=work_order.id,
+            level=AL.from_priority(getattr(work_order, 'priority', None)),
         )
         logger.info(f"[Notification] 站内通知已写入: 工单{work_order_no} → 维修员#{data.technician_id}")
     except Exception as e:
@@ -1416,6 +1418,11 @@ def create_work_order_from_dispatch(
 
 def _build_work_order_response(work_order: WorkOrder, db: Session) -> WorkOrderResponse:
     resp = WorkOrderResponse.model_validate(work_order)
+    # 告警级别：优先级映射；SLA 超时升到 P0
+    lv = AL.from_priority(getattr(work_order, 'priority', None))
+    if getattr(work_order, 'sla_status', None) == 'OVERDUE':
+        lv = 'P0'
+    resp.alert_level = lv
     if work_order.created_by:
         creator = db.query(User).filter(User.id == work_order.created_by).first()
         resp.created_by_employee_id = creator.employee_id if creator else None

@@ -41,6 +41,7 @@ class Device(BaseModel):
     run_status = Column(String(20), default="UNKNOWN", comment="运行状态 ONLINE/OFFLINE/ALARM/FAULT/UNKNOWN")
     last_heartbeat = Column(TIMESTAMP, comment="最后心跳时间")
     fault_tags = Column(JSONB, comment="故障标签数组 [{'code','name','level'}]")
+    alert_level = Column(String(8), index=True, comment="告警级别 P0/P1/P2/P3（取故障标签最高级别）")
     ext_system_id = Column(String(100), comment="外部监控系统关联ID（唯一）")
     status_source = Column(String(50), comment="状态来源：manual 手动/external 外部系统/auto 自动推断")
     status_reason = Column(String(200), comment="状态原因/证据说明（证据链，便于反推）")

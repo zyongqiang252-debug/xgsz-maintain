@@ -39,10 +39,18 @@
     <el-card class="table-card" shadow="never">
       <el-table :data="list" v-loading="loading" stripe class="wo-table">
         <el-table-column prop="work_order_no" label="工单编号" width="168" show-overflow-tooltip />
-        <el-table-column prop="fault_description" label="故障描述" min-width="190" show-overflow-tooltip />
+        <el-table-column prop="fault_description" label="故障描述" min-width="150" show-overflow-tooltip />
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
             <span class="status-tag" :class="'status-' + row.status">{{ statusLabel(row.status) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="级别" width="86" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.alert_level" size="small" :type="alertLevelMeta(row.alert_level).type" effect="plain">
+              {{ row.alert_level }}
+            </el-tag>
+            <span v-else class="muted">—</span>
           </template>
         </el-table-column>
         <el-table-column label="时效" width="110" align="center">
@@ -58,7 +66,7 @@
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="145">
+        <el-table-column prop="created_at" label="创建时间" width="130">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="290">
@@ -341,6 +349,14 @@ const statusMap = {
   COMPLETED: '已完成',
   REJECTED: '已退回',
 }
+
+const LEVELS = {
+  P0: { label: '严重', type: 'danger' },
+  P1: { label: '重要', type: 'warning' },
+  P2: { label: '一般', type: 'warning' },
+  P3: { label: '提示', type: 'info' },
+}
+const alertLevelMeta = (lv) => LEVELS[(lv || 'P2').toUpperCase()] || LEVELS.P2
 
 const statusLabel = (s) => statusMap[s] || s
 const formatTime = (t) => t ? dayjs(t).format('YYYY-MM-DD HH:mm') : '-'

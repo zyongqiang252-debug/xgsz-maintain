@@ -9,6 +9,7 @@ class Notification(BaseModel):
 
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     type = Column(String(50), nullable=False, default="work_order")  # work_order / system
+    level = Column(String(8), nullable=False, default="P2", index=True, comment="告警级别 P0~P3")
     title = Column(String(200), nullable=False)
     content = Column(Text, nullable=False)
     work_order_id = Column(Integer, nullable=True, index=True)  # 关联工单（可选）

@@ -139,11 +139,11 @@
                     :key="i"
                     class="fault-item"
                   >
-                    <el-select v-model="t.level" size="small" style="width: 100px">
-                      <el-option label="INFO" value="INFO" />
-                      <el-option label="WARNING" value="WARNING" />
-                      <el-option label="ERROR" value="ERROR" />
-                      <el-option label="CRITICAL" value="CRITICAL" />
+                    <el-select v-model="t.level" size="small" style="width: 120px">
+                      <el-option label="P0 严重" value="P0" />
+                      <el-option label="P1 重要" value="P1" />
+                      <el-option label="P2 一般" value="P2" />
+                      <el-option label="P3 提示" value="P3" />
                     </el-select>
                     <el-input v-model="t.code" size="small" placeholder="编码" style="width: 120px" />
                     <el-input v-model="t.name" size="small" placeholder="名称" style="width: 160px" />
@@ -241,7 +241,7 @@ watch(
   },
   { immediate: true }
 )
-const addFault = () => faultList.value.push({ level: 'WARNING', code: '', name: '', message: '', triggered_at: new Date().toISOString() })
+const addFault = () => faultList.value.push({ level: 'P2', code: '', name: '', message: '', triggered_at: new Date().toISOString() })
 
 const monitorExtraRaw = ref('')
 const monitorExtraInvalid = ref(false)

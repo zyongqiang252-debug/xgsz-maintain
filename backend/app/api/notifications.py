@@ -8,12 +8,14 @@
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import case as sa_case
 from typing import List, Optional
 from loguru import logger
 from datetime import datetime
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core import alert_level as AL
 from app.models.user import User
 from app.models.notification import Notification
 
@@ -35,6 +37,7 @@ def list_notifications(
     page: int = 1,
     page_size: int = 20,
     unread_only: bool = False,
+    level: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -47,10 +50,14 @@ def list_notifications(
     query = db.query(Notification).filter(Notification.user_id == current_user.id)
     if unread_only:
         query = query.filter(Notification.is_read == False)
+    if level:
+        query = query.filter(Notification.level == AL.normalize(level))
 
     total = query.count()
     items = (
-        query.order_by(Notification.created_at.desc())
+        query.order_by(Notification.is_read.asc(),
+                         sa_case({'P0': 0, 'P1': 1, 'P2': 2, 'P3': 3}, value=Notification.level, else_=4),
+                         Notification.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
@@ -61,6 +68,7 @@ def list_notifications(
             {
                 "id": n.id,
                 "type": n.type,
+                "level": n.level or "P2",
                 "title": n.title,
                 "content": n.content,
                 "work_order_id": n.work_order_id,
@@ -106,7 +114,8 @@ def mark_all_read(current_user: User = Depends(get_current_user), db: Session = 
 # ============================================================
 # 供其他模块调用的辅助函数（不依赖登录态）
 # ============================================================
-def create_notification(db: Session, user_id: int, type: str, title: str, content: str, work_order_id: int = None) -> Notification:
+def create_notification(db: Session, user_id: int, type: str, title: str, content: str,
+                        work_order_id: int = None, level: str = None) -> Notification:
     """供其他模块调用的创建通知辅助函数（不需要登录态）"""
     notif = Notification(
         user_id=user_id,
@@ -114,6 +123,7 @@ def create_notification(db: Session, user_id: int, type: str, title: str, conten
         title=title,
         content=content,
         work_order_id=work_order_id,
+        level=AL.normalize(level, default=("P3" if type == "system" else "P2")),
         is_read=False,
     )
     db.add(notif)

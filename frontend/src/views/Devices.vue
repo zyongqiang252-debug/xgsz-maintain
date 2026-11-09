@@ -36,6 +36,9 @@
         <el-select v-model="statusFilter" placeholder="运行状态" clearable class="filter-select" @change="handleSearch">
           <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
+        <el-select v-model="levelFilter" placeholder="告警级别" clearable class="filter-select" @change="handleSearch">
+          <el-option v-for="lv in levelOptions" :key="lv.value" :label="lv.label" :value="lv.value" />
+        </el-select>
         <el-select v-model="hasFaultFilter" placeholder="故障标签" clearable class="filter-select" @change="handleSearch">
           <el-option label="有故障" :value="true" />
           <el-option label="无故障" :value="false" />
@@ -48,7 +51,7 @@
     <!-- 设备监控列表 -->
     <el-card class="table-card" shadow="never">
       <el-table :data="list" v-loading="loading" stripe row-class-name="mon-row">
-        <el-table-column label="设备" min-width="170">
+        <el-table-column label="设备" min-width="200">
           <template #default="{ row }">
             <div class="device-cell">
               <div class="device-name-row">
@@ -65,24 +68,31 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="序列号 SN" width="138" show-overflow-tooltip>
+        <el-table-column label="级别" width="92" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.alert_level" size="small" :type="levelMeta(row.alert_level).type" effect="plain">
+              {{ row.alert_level }} {{ levelMeta(row.alert_level).label }}
+            </el-tag>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="序列号 SN" width="140" show-overflow-tooltip>
           <template #default="{ row }">
             <span :class="{ muted: !row.serial_no }">{{ row.serial_no || '—' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="GPU 配置" width="140" show-overflow-tooltip>
+        <el-table-column label="GPU 配置" width="136" show-overflow-tooltip>
           <template #default="{ row }">
-            <span v-if="row.gpu_model">{{ row.gpu_model }}<span v-if="row.gpu_count"> × {{ row.gpu_count }}</span></span>
-            <span v-else class="muted">{{ row.model || '—' }}</span>
+            <span v-if="row.gpu_model" class="ell">{{ row.gpu_model }}<span v-if="row.gpu_count"> × {{ row.gpu_count }}</span></span>
+            <span v-else class="muted ell">{{ row.model || '—' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="机房 / 机柜" width="132" show-overflow-tooltip>
+        <el-table-column label="机房 / 机柜" width="128" show-overflow-tooltip>
           <template #default="{ row }">
-            {{ row.room || '-' }}<span v-if="row.rack_no"> / {{ row.rack_no }}</span><span v-if="row.rack_unit"> / {{ row.rack_unit }}</span>
+            <span class="ell">{{ row.room || '-' }}<span v-if="row.rack_no"> / {{ row.rack_no }}</span><span v-if="row.rack_unit"> / {{ row.rack_unit }}</span></span>
           </template>
         </el-table-column>
-        <el-table-column prop="manufacturer" label="厂商" width="70" show-overflow-tooltip />
-        <el-table-column label="故障标签" min-width="130">
+        <el-table-column label="故障标签" min-width="170">
           <template #default="{ row }">
             <div v-if="row.fault_tags && row.fault_tags.length > 0" class="fault-tags">
               <el-tag
@@ -103,19 +113,14 @@
             <span v-else class="dim">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态原因" min-width="110" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span class="status-reason">{{ row.status_reason || '-' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="!isPureSupervisor" label="操作" width="220">
+        <el-table-column v-if="!isPureSupervisor" label="操作" width="248">
           <template #default="{ row }">
             <div class="action-group">
               <el-button link type="primary" @click="$router.push(`/devices/${row.id}`)">编辑</el-button>
               <el-button size="small" plain @click="openQr(row)">二维码</el-button>
               <el-button
                 v-if="row.fault_tags && row.fault_tags.length"
-                size="small" type="success" @click="handleClearFaults(row)"
+                link type="success" @click="handleClearFaults(row)"
               >清故障</el-button>
               <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
             </div>
@@ -160,6 +165,16 @@ import QrcodeVue from 'qrcode.vue'
 const list = ref([])
 const loading = ref(false)
 const keyword = ref('')
+const LEVELS = {
+  P0: { label: '严重', type: 'danger' },
+  P1: { label: '重要', type: 'warning' },
+  P2: { label: '一般', type: 'warning' },
+  P3: { label: '提示', type: 'info' },
+}
+const levelOptions = Object.entries(LEVELS).map(([value, v]) => ({ value, label: `${value} ${v.label}` }))
+const levelFilter = ref('')
+const levelMeta = (lv) => LEVELS[(lv || 'P2').toUpperCase()] || LEVELS.P2
+
 const typeFilter = ref('')
 const statusFilter = ref('')
 const hasFaultFilter = ref(null)
@@ -208,8 +223,9 @@ const statCards = [
 ]
 
 const faultTagType = (lvl) => {
-  const m = { CRITICAL: 'danger', ERROR: 'danger', WARNING: 'warning', INFO: 'info' }
-  return m[(lvl || 'WARNING').toUpperCase()] || 'warning'
+  const m = { P0: 'danger', P1: 'warning', P2: 'warning', P3: 'info',
+              CRITICAL: 'danger', ERROR: 'danger', WARNING: 'warning', INFO: 'info' }
+  return m[(lvl || 'P2').toUpperCase()] || 'warning'
 }
 
 const formatDate = (d) => d ? dayjs(d).format('YYYY-MM-DD') : '-'
@@ -380,9 +396,9 @@ const copyQrUrl = async () => {
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
 
 .device-cell { display: flex; flex-direction: column; gap: 4px; }
-.device-name-row { display: flex; align-items: center; gap: 8px; }
+.device-name-row { min-width: 0; flex-wrap: nowrap; display: flex; align-items: center; gap: 8px; }
 .status-tag { font-size: 12px; padding: 0 8px; height: 22px; line-height: 20px; }
-.device-name { font-weight: 600; color: var(--color-text-primary); font-size: 14px; }
+.device-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; font-weight: 600; color: var(--color-text-primary); font-size: 14px; }
 .device-meta { color: #6B7280; font-size: 12px; display: flex; align-items: center; gap: 6px; }
 .device-meta .code { font-family: ui-monospace, monospace; }
 .device-meta .sep { color: #D1D5DB; }
@@ -403,4 +419,5 @@ const copyQrUrl = async () => {
 .qr-alert { width: 100%; margin: 4px 0; }
 .qr-hint { font-size: 12px; color: #86909C; }
 .muted { color: #C9CDD4; }
+.ell { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

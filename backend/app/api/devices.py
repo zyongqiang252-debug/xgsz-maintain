@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core import alert_level as AL
 from app.models.device import Device
 from app.models.work_order import WorkOrder
 from app.models.user import User
@@ -13,6 +14,27 @@ from app.schemas import DeviceCreate, DeviceUpdate, DeviceResponse, PaginatedRes
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 VALID_RUN_STATUS = ("ONLINE", "OFFLINE", "ALARM", "FAULT", "UNKNOWN")
+
+
+
+def _norm_fault_tags(tags):
+    """故障标签级别统一成 P0~P3"""
+    out = []
+    for t in tags or []:
+        if not isinstance(t, dict):
+            continue
+        item = dict(t)
+        item["level"] = AL.normalize(item.get("level"))
+        out.append(item)
+    return out
+
+
+def _compute_alert_level(tags):
+    """取故障标签里最高的级别；无标签则无级别"""
+    if not tags:
+        return None
+    levels = [t.get("level") for t in tags if isinstance(t, dict)]
+    return AL.highest(levels)
 
 
 def _ensure_not_pure_supervisor(current_user: User):
@@ -33,6 +55,7 @@ def list_devices(
     device_type: Optional[str] = None,
     run_status: Optional[str] = None,
     has_fault: Optional[bool] = None,
+    alert_level: Optional[str] = Query(None, description="按告警级别筛选 P0~P3"),
     keyword: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -42,6 +65,8 @@ def list_devices(
         query = query.filter(Device.device_type == device_type)
     if run_status:
         query = query.filter(Device.run_status == run_status.upper())
+    if alert_level:
+        query = query.filter(Device.alert_level == AL.normalize(alert_level))
     if has_fault is True:
         query = query.filter(Device.fault_tags.isnot(None))
     elif has_fault is False:
@@ -51,6 +76,8 @@ def list_devices(
             Device.device_name.ilike(f"%{keyword}%") |
             Device.device_code.ilike(f"%{keyword}%")
         )
+    from sqlalchemy import case as sa_case
+    level_order = sa_case({'P0': 0, 'P1': 1, 'P2': 2, 'P3': 3}, value=Device.alert_level, else_=4)
     total = query.count()
     # 按故障/告警优先排序：FAULT > ALARM > OFFLINE > UNKNOWN > ONLINE
     status_order = case(
@@ -83,7 +110,11 @@ def create_device(
     existing = db.query(Device).filter(Device.device_code == data.device_code).first()
     if existing:
         raise HTTPException(status_code=400, detail="设备编码已存在")
-    device = Device(**data.model_dump())
+    payload = data.model_dump()
+    if payload.get('fault_tags'):
+        payload['fault_tags'] = _norm_fault_tags(payload['fault_tags'])
+    payload['alert_level'] = _compute_alert_level(payload.get('fault_tags'))
+    device = Device(**payload)
     db.add(device)
     db.commit()
     db.refresh(device)
@@ -101,7 +132,12 @@ def update_device(
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="设备不存在")
-    for key, val in data.model_dump(exclude_unset=True).items():
+    updates = data.model_dump(exclude_unset=True)
+    # 故障标签级别归一，并重算设备告警级别
+    if "fault_tags" in updates:
+        updates["fault_tags"] = _norm_fault_tags(updates["fault_tags"])
+        updates["alert_level"] = _compute_alert_level(updates["fault_tags"])
+    for key, val in updates.items():
         setattr(device, key, val)
     db.commit()
     db.refresh(device)
