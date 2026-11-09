@@ -4,6 +4,9 @@
       <el-tab-pane label="全部工单" name="list" lazy>
         <component :is="WorkOrders" />
       </el-tab-pane>
+      <el-tab-pane v-if="isTechnician" label="我的工单" name="mine" lazy>
+        <component :is="WorkOrders" default-mine="assigned" />
+      </el-tab-pane>
       <el-tab-pane v-if="canSupervise" label="进度看板" name="progress" lazy>
         <component :is="Progress" />
       </el-tab-pane>
@@ -36,7 +39,7 @@ const isAdmin = currentUser.role === 'ADMIN'
 const canSupervise = currentUser.role === 'SUPERVISOR' || isAdmin
 const isTechnician = currentUser.role === 'TECHNICIAN'
 
-const VALID = ['list', 'dispatch', 'progress', 'import']
+const VALID = ['list', 'mine', 'progress', 'import', 'dispatch']
 const tab = ref(VALID.includes(route.query.tab) ? String(route.query.tab) : 'list')
 
 const onTabChange = (name) => {

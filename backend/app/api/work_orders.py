@@ -48,6 +48,7 @@ def list_work_orders(
     page_size: int = Query(10, ge=1, le=100),
     status: Optional[str] = None,
     status_group: Optional[str] = Query(None, description="状态分组：DRAFT/SUBMITTED/PROCESSING/ARCHIVING/ARCHIVED/REJECTED"),
+    mine: Optional[str] = Query(None, description="我的工单：assigned(派给我) / processing(我在处理) / created(我报修) / completed(我完成)"),
     keyword: Optional[str] = None,
     device_type: Optional[str] = Query(None, description="设备类型筛选"),
     date_from: Optional[date] = Query(None, description="创建日期起始"),
@@ -64,6 +65,25 @@ def list_work_orders(
         statuses = SG.statuses_of(status_group)
         if statuses:
             query = query.filter(WorkOrder.status.in_(statuses))
+    if mine:
+        me = current_user.id
+        if mine == "assigned":
+            # 派给我的（含待接受/处理中，排除已归档）
+            query = query.filter(WorkOrder.technician_id == me)
+            query = query.filter(WorkOrder.status.notin_([
+                WorkOrderStatus.ARCHIVED.value, WorkOrderStatus.COMPLETED.value]))
+        elif mine == "processing":
+            query = query.filter(WorkOrder.technician_id == me)
+            query = query.filter(WorkOrder.status.in_([
+                WorkOrderStatus.ASSIGNED.value, WorkOrderStatus.ACCEPTED.value,
+                WorkOrderStatus.ARRIVED.value, WorkOrderStatus.INSPECTING.value,
+                WorkOrderStatus.IN_PROGRESS.value, WorkOrderStatus.ARCHIVING.value]))
+        elif mine == "created":
+            query = query.filter(WorkOrder.created_by == me)
+        elif mine == "completed":
+            query = query.filter(WorkOrder.technician_id == me)
+            query = query.filter(WorkOrder.status.in_([
+                WorkOrderStatus.COMPLETED.value, WorkOrderStatus.ARCHIVED.value]))
     elif status:
         query = query.filter(WorkOrder.status == status)
     if sla_status:

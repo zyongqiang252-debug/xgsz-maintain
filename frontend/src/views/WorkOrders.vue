@@ -51,6 +51,14 @@
       </div>
     </el-card>
 
+    <!-- 我的工单快捷筛选（技术员） -->
+    <div v-if="isTechnician" class="status-chips mine-chips">
+      <span class="chips-label">我的：</span>
+      <span v-for="m in mineOptions" :key="m.value"
+            class="chip" :class="{ active: mineFilter === m.value }"
+            @click="pickMine(m.value)">{{ m.label }}</span>
+    </div>
+
     <!-- 状态快捷筛选：默认「全部」，含历史已归档 -->
     <div class="status-chips">
       <span class="chip" :class="{ active: !statusFilter }" @click="pickStatus('')">全部</span>
@@ -237,6 +245,9 @@
 </template>
 
 <script setup>
+const props = defineProps({
+  defaultMine: { type: String, default: '' },
+})
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -423,6 +434,7 @@ const handleFinishRepair = async (row) => {
 const list = ref([])
 const loading = ref(false)
 const keyword = ref('')
+const mineFilter = ref(props.defaultMine || '')
 const statusFilter = ref('')
 const orderTypeFilter = ref('')
 const alertLevelFilter = ref('')
@@ -512,6 +524,7 @@ const fetchData = async () => {
   try {
     const params = { page: page.value, page_size: pageSize.value }
     if (keyword.value) params.keyword = keyword.value
+    if (mineFilter.value) params.mine = mineFilter.value
     if (statusFilter.value) params.status_group = statusFilter.value
     if (orderTypeFilter.value) params.order_type = orderTypeFilter.value
     if (alertLevelFilter.value) params.alert_level = alertLevelFilter.value
@@ -541,6 +554,20 @@ const saveFilter = () => {
   }
   if (page.value > 1) data.page = page.value
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+}
+
+// 我的工单视图（技术员）
+const mineOptions = [
+  { value: '', label: '全部' },
+  { value: 'assigned', label: '派给我的' },
+  { value: 'processing', label: '我在处理' },
+  { value: 'created', label: '我报修的' },
+  { value: 'completed', label: '我完成的' },
+]
+const pickMine = (val) => {
+  mineFilter.value = val
+  page.value = 1
+  fetchData()
 }
 
 const pickStatus = (val) => {
@@ -683,5 +710,10 @@ const handleExport = async () => {
   color: #0B9B98; font-weight: 600;
 }
 .status-chips .chips-hint { font-size: 12px; color: #9AA1AC; margin-left: 4px; }
+
+
+.mine-chips { margin-bottom: 8px; }
+.mine-chips .chips-label { font-size: 13px; color: #4E5969; margin-right: 2px; }
+.mine-chips .chip.active { background: rgba(52,145,250,.12); border-color: #3491FA; color: #2478D9; }
 
 </style>
