@@ -66,8 +66,13 @@ def list_work_orders(
         if statuses:
             query = query.filter(WorkOrder.status.in_(statuses))
     if mine:
+        from sqlalchemy import or_
         me = current_user.id
-        if mine == "assigned":
+        if mine == "all":
+            # 我的：我创建的 或 派给我的（不区分状态）
+            query = query.filter(or_(WorkOrder.created_by == me,
+                                     WorkOrder.technician_id == me))
+        elif mine == "assigned":
             # 派给我的（含待接受/处理中，排除已归档）
             query = query.filter(WorkOrder.technician_id == me)
             query = query.filter(WorkOrder.status.notin_([

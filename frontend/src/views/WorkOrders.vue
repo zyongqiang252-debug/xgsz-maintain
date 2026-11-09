@@ -39,7 +39,7 @@
 
       <!-- 快捷筛选：我的 + 状态（放在查询卡片内，与筛选条件同一栏） -->
       <div class="quick-bar">
-        <template v-if="isTechnician">
+        <template v-if="isMineView">
           <span class="qb-label">我的</span>
           <div class="qb-group">
             <span v-for="m in mineOptions" :key="m.value"
@@ -426,7 +426,8 @@ const handleFinishRepair = async (row) => {
 const list = ref([])
 const loading = ref(false)
 const keyword = ref('')
-const mineFilter = ref(props.defaultMine || '')
+const isMineView = !!props.defaultMine
+const mineFilter = ref(props.defaultMine ? 'all' : '')
 const statusFilter = ref('')
 const orderTypeFilter = ref('')
 const alertLevelFilter = ref('')
@@ -517,7 +518,8 @@ const fetchData = async () => {
   try {
     const params = { page: page.value, page_size: pageSize.value }
     if (keyword.value) params.keyword = keyword.value
-    if (mineFilter.value) params.mine = mineFilter.value
+    if (isMineView) params.mine = mineFilter.value || 'all'
+    else if (mineFilter.value) params.mine = mineFilter.value
     if (statusFilter.value) params.status_group = statusFilter.value
     if (orderTypeFilter.value) params.order_type = orderTypeFilter.value
     if (alertLevelFilter.value) params.alert_level = alertLevelFilter.value
@@ -551,7 +553,7 @@ const saveFilter = () => {
 
 // 我的工单视图（技术员）
 const mineOptions = [
-  { value: '', label: '全部' },
+  { value: 'all', label: '全部' },
   { value: 'assigned', label: '派给我的' },
   { value: 'processing', label: '我在处理' },
   { value: 'created', label: '我报修的' },
@@ -581,6 +583,7 @@ const onRowClick = (row, column, event) => {
 const handleReset = () => {
   keyword.value = ''
   statusFilter.value = ''
+  mineFilter.value = isMineView ? 'all' : ''
   orderTypeFilter.value = ''
   alertLevelFilter.value = ''
   dateRange.value = null
