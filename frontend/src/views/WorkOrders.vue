@@ -37,17 +37,8 @@
         <el-button class="action-btn secondary-btn" @click="handleReset">重置</el-button>
       </div>
 
-      <!-- 快捷筛选：我的 + 状态（放在查询卡片内，与筛选条件同一栏） -->
+      <!-- 状态快捷筛选（独立一行，无「我的」分组） -->
       <div class="quick-bar">
-        <template v-if="isMineView">
-          <span class="qb-label">我的</span>
-          <div class="qb-group">
-            <span v-for="m in mineOptions" :key="m.value"
-                  class="chip" :class="{ active: mineFilter === m.value }"
-                  @click="pickMine(m.value)">{{ m.label }}</span>
-          </div>
-          <span class="qb-divider"></span>
-        </template>
         <span class="qb-label">状态</span>
         <div class="qb-group">
           <span class="chip" :class="{ active: !statusFilter }" @click="pickStatus('')">全部</span>
@@ -427,7 +418,6 @@ const list = ref([])
 const loading = ref(false)
 const keyword = ref('')
 const isMineView = !!props.defaultMine
-const mineFilter = ref(props.defaultMine ? 'all' : '')
 const statusFilter = ref('')
 const orderTypeFilter = ref('')
 const alertLevelFilter = ref('')
@@ -518,8 +508,7 @@ const fetchData = async () => {
   try {
     const params = { page: page.value, page_size: pageSize.value }
     if (keyword.value) params.keyword = keyword.value
-    if (isMineView) params.mine = mineFilter.value || 'all'
-    else if (mineFilter.value) params.mine = mineFilter.value
+    if (isMineView) params.mine = 'all'   // 我的工单：只看自己（我建的 + 派给我的）
     if (statusFilter.value) params.status_group = statusFilter.value
     if (orderTypeFilter.value) params.order_type = orderTypeFilter.value
     if (alertLevelFilter.value) params.alert_level = alertLevelFilter.value
@@ -552,18 +541,6 @@ const saveFilter = () => {
 }
 
 // 我的工单视图（技术员）
-const mineOptions = [
-  { value: 'all', label: '全部' },
-  { value: 'assigned', label: '派给我的' },
-  { value: 'processing', label: '我在处理' },
-  { value: 'created', label: '我报修的' },
-  { value: 'completed', label: '我完成的' },
-]
-const pickMine = (val) => {
-  mineFilter.value = val
-  page.value = 1
-  fetchData()
-}
 
 const pickStatus = (val) => {
   statusFilter.value = val
@@ -583,7 +560,6 @@ const onRowClick = (row, column, event) => {
 const handleReset = () => {
   keyword.value = ''
   statusFilter.value = ''
-  mineFilter.value = isMineView ? 'all' : ''
   orderTypeFilter.value = ''
   alertLevelFilter.value = ''
   dateRange.value = null
@@ -649,7 +625,7 @@ const handleExport = async () => {
 .page-title { font-size: 20px; font-weight: 600; color: var(--color-text-primary); }
 .filter-card { margin-bottom: 14px; }
 .filter-bar { display: flex; gap: 8px; flex-wrap: nowrap; align-items: center; }
-.filter-bar :deep(.el-date-editor) { flex: 1; min-width: 240px; }
+.filter-bar :deep(.el-date-editor) { flex: 0 0 232px; width: 232px; }
 .filter-input { width: 200px; }
 .filter-select { width: 128px; }
 .action-btn { flex-shrink: 0; }
@@ -673,7 +649,7 @@ const handleExport = async () => {
 .status-ARCHIVING { background: #FFF7E8; color: #FF8800; }
 .status-ARCHIVED { background: #E8F8EE; color: #00B42A; }
 .status-COMPLETED { background: #E8F8EE; color: #00B42A; }
-.filter-date { width: 240px; }
+
 .ellipsis-1 { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 .status-help-icon {
@@ -689,32 +665,22 @@ const handleExport = async () => {
 .status-help-desc { font-size: 12px; color: #4E5969; line-height: 1.5; }
 
 
-/* 快捷筛选：嵌在查询卡片内的一行 */
+/* 状态快捷筛选（独立一行，嵌在查询卡片内） */
 .quick-bar {
   display: flex; align-items: center; flex-wrap: wrap;
   gap: 8px 10px;
   margin: 12px 0 0;
   padding: 10px 0 0;
   border-top: 1px dashed #EDEFF3;
-  background: transparent;
-  border-radius: 0;
-  box-shadow: none;
 }
-.qb-label {
-  font-size: 12.5px; color: #86909C; font-weight: 500;
-  flex-shrink: 0;
-}
+.qb-label { font-size: 12.5px; color: #86909C; font-weight: 500; flex-shrink: 0; }
 .qb-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.qb-divider {
-  width: 1px; height: 16px; background: #EDEFF3;
-  margin: 0 4px; flex-shrink: 0;
-}
 .quick-bar .chip {
   padding: 3px 11px; border-radius: 13px;
   font-size: 12.5px; line-height: 1.5;
   color: #4E5969; cursor: pointer;
   background: #F7F8FA; border: 1px solid transparent;
-  transition: all .16s;
+  transition: all .16s; white-space: nowrap;
 }
 .quick-bar .chip:hover { background: #fff; border-color: #0FC6C2; color: #0FC6C2; }
 .quick-bar .chip.active {
@@ -722,10 +688,14 @@ const handleExport = async () => {
   border-color: rgba(15,198,194,.45);
   color: #0B9B98; font-weight: 600;
 }
-.quick-bar .qb-help {
-  font-size: 14px; color: #C9CDD4; cursor: help;
-  transition: color .15s;
-}
+.quick-bar .qb-help { font-size: 14px; color: #C9CDD4; cursor: help; transition: color .15s; }
 .quick-bar .qb-help:hover { color: #0FC6C2; }
+
+/* 输入控件恢复原宽度 */
+.filter-input { width: 200px !important; }
+.filter-select { width: 128px !important; }
+.filter-bar { gap: 8px !important; flex-wrap: nowrap; }
+.filter-bar :deep(.el-date-editor) { flex: 1; min-width: 240px; }
+.filter-date { width: auto !important; }
 
 </style>
