@@ -51,7 +51,7 @@
     </el-card>
 
     <el-card class="table-card" shadow="never">
-      <el-table :data="list" stripe class="wo-table">
+      <el-table :data="list" stripe class="wo-table" @row-click="onRowClick">
         <el-table-column label="工单编号" width="176" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="wo-no">{{ row.work_order_no }}</span>
@@ -510,6 +510,14 @@ const saveFilter = () => {
 }
 
 const handleSearch = () => { page.value = 1; fetchData() }
+
+// 整行点击查看详情；点在操作按钮/下拉上时不跳转
+const onRowClick = (row, column, event) => {
+  const el = event?.target
+  if (el?.closest?.('.col-actions, button, a, .el-dropdown')) return
+  if (window.getSelection?.()?.toString()) return // 用户正在选文字
+  router.push(`/work-orders/${row.id}`)
+}
 const handleReset = () => {
   keyword.value = ''
   statusFilter.value = ''
@@ -587,6 +595,8 @@ const handleExport = async () => {
 .muted { color: #C9CDD4; }
 /* 表格统一行高，避免按钮把行撑高 */
 .wo-table :deep(.el-table__cell) { padding: 8px 0; }
+.wo-table :deep(.el-table__row) { cursor: pointer; }
+.wo-table :deep(.el-table__row td:last-child) { cursor: default; }
 .wo-table :deep(.el-button.is-link) { padding: 0 2px; height: auto; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
 .col-actions { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
