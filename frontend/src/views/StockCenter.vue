@@ -1,13 +1,13 @@
 <template>
   <div class="merged-page">
-    <el-tabs v-model="tab" class="merged-tabs" @tab-change="onTabChange">
+    <el-tabs v-model="tab" class="merged-tabs" :class="{ 'hide-tabbar': singleTab }" @tab-change="onTabChange">
       <el-tab-pane label="备件台账" name="parts" lazy>
         <component :is="SpareParts" />
       </el-tab-pane>
-      <el-tab-pane label="仓库库存" name="warehouse" lazy>
+      <el-tab-pane v-if="FEATURES.warehouse" label="仓库库存" name="warehouse" lazy>
         <component :is="Warehouse" />
       </el-tab-pane>
-      <el-tab-pane label="出入库流水" name="movements" lazy>
+      <el-tab-pane v-if="FEATURES.stockMovements" label="出入库流水" name="movements" lazy>
         <component :is="StockMovements" />
       </el-tab-pane>
     </el-tabs>
@@ -15,7 +15,8 @@
 </template>
 
 <script setup>
-import { ref, defineAsyncComponent } from 'vue'
+import { ref, computed, defineAsyncComponent } from 'vue'
+import { FEATURES } from '../config/features'
 import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
@@ -25,8 +26,17 @@ const SpareParts = defineAsyncComponent(() => import('./SpareParts.vue'))
 const Warehouse = defineAsyncComponent(() => import('./Warehouse.vue'))
 const StockMovements = defineAsyncComponent(() => import('./StockMovements.vue'))
 
-const VALID = ['parts', 'warehouse', 'movements']
-const tab = ref(VALID.includes(route.query.tab) ? String(route.query.tab) : 'parts')
+const VALID_ALL = ['parts', 'warehouse', 'movements']
+const VISIBLE_TABS = VALID_ALL.filter((t) => {
+  if (t === 'warehouse') return FEATURES.warehouse
+  if (t === 'movements') return FEATURES.stockMovements
+  return true
+})
+const VALID = VISIBLE_TABS
+const singleTab = computed(() => !FEATURES.warehouse && !FEATURES.stockMovements)
+
+const DEFAULT_TAB = 'parts'
+const tab = ref(VALID.includes(String(route.query.tab)) ? String(route.query.tab) : VALID[0])
 
 const onTabChange = (name) => {
   router.replace({ path: '/stock', query: { tab: name } })
@@ -49,4 +59,5 @@ const onTabChange = (name) => {
   padding: 0;
   min-height: 32px;
 }
+.merged-tabs.hide-tabbar :deep(.el-tabs__header) { display: none; }
 </style>

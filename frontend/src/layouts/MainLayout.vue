@@ -169,17 +169,17 @@
                 <el-icon><Document /></el-icon>
                 <template #title>工单中心</template>
               </el-menu-item>
-              <el-menu-item index="/devices">
+              <el-menu-item v-if="FEATURES.deviceMonitor" index="/devices">
                 <el-icon><Monitor /></el-icon>
                 <template #title>服务器监控</template>
               </el-menu-item>
-              <el-menu-item index="/maintenance">
+              <el-menu-item v-if="FEATURES.maintenance" index="/maintenance">
                 <el-icon><Tools /></el-icon>
                 <template #title>保养与点检</template>
               </el-menu-item>
 
               <div class="menu-group-label">管理与个人</div>
-              <el-menu-item index="/supervisor/schedule">
+              <el-menu-item v-if="FEATURES.schedule" index="/supervisor/schedule">
                 <el-icon><Calendar /></el-icon>
                 <template #title>排班管理</template>
               </el-menu-item>
@@ -200,11 +200,11 @@
                 <el-icon><Document /></el-icon>
                 <template #title>工单中心</template>
               </el-menu-item>
-              <el-menu-item index="/devices">
+              <el-menu-item v-if="FEATURES.deviceMonitor" index="/devices">
                 <el-icon><Monitor /></el-icon>
                 <template #title>服务器监控</template>
               </el-menu-item>
-              <el-menu-item index="/maintenance">
+              <el-menu-item v-if="FEATURES.maintenance" index="/maintenance">
                 <el-icon><Tools /></el-icon>
                 <template #title>保养与点检</template>
               </el-menu-item>
@@ -226,7 +226,7 @@
               </el-menu-item>
 
               <div class="menu-group-label">管理与个人</div>
-              <el-menu-item v-if="isSupervisor" index="/supervisor/schedule">
+              <el-menu-item v-if="(isSupervisor) && FEATURES.schedule" index="/supervisor/schedule">
                 <el-icon><Calendar /></el-icon>
                 <template #title>排班管理</template>
               </el-menu-item>
@@ -235,8 +235,8 @@
                 <template #title>系统管理</template>
               </el-menu-item>
               <el-menu-item index="/me">
-                <el-icon><User /></el-icon>
-                <template #title>我的</template>
+                <el-icon><Bell /></el-icon>
+                <template #title>通知中心</template>
               </el-menu-item>
             </template>
           </el-menu>
@@ -261,13 +261,13 @@
                 <el-menu-item index="/orders">
                   <el-icon><Document /></el-icon>
                 </el-menu-item>
-                <el-menu-item index="/devices">
+                <el-menu-item v-if="FEATURES.deviceMonitor" index="/devices">
                   <el-icon><Monitor /></el-icon>
                 </el-menu-item>
-                <el-menu-item index="/maintenance">
+                <el-menu-item v-if="FEATURES.maintenance" index="/maintenance">
                   <el-icon><Tools /></el-icon>
                 </el-menu-item>
-                <el-menu-item index="/supervisor/schedule">
+                <el-menu-item v-if="FEATURES.schedule" index="/supervisor/schedule">
                   <el-icon><Calendar /></el-icon>
                 </el-menu-item>
                 <el-menu-item index="/leave">
@@ -282,10 +282,10 @@
                 <el-menu-item index="/orders">
                   <el-icon><Document /></el-icon>
                 </el-menu-item>
-                <el-menu-item index="/devices">
+                <el-menu-item v-if="FEATURES.deviceMonitor" index="/devices">
                   <el-icon><Monitor /></el-icon>
                 </el-menu-item>
-                <el-menu-item index="/maintenance">
+                <el-menu-item v-if="FEATURES.maintenance" index="/maintenance">
                   <el-icon><Tools /></el-icon>
                 </el-menu-item>
                 <el-menu-item index="/knowledge-center">
@@ -297,14 +297,14 @@
                 <el-menu-item index="/dict">
                   <el-icon><Grid /></el-icon>
                 </el-menu-item>
-                <el-menu-item v-if="isSupervisor" index="/supervisor/schedule">
+                <el-menu-item v-if="(isSupervisor) && FEATURES.schedule" index="/supervisor/schedule">
                   <el-icon><Calendar /></el-icon>
                 </el-menu-item>
                 <el-menu-item v-if="isAdmin" index="/sys">
                   <el-icon><Setting /></el-icon>
                 </el-menu-item>
                 <el-menu-item index="/me">
-                  <el-icon><User /></el-icon>
+                  <el-icon><Bell /></el-icon>
                 </el-menu-item>
               </template>
             </el-menu>
@@ -335,6 +335,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api'
+import { FEATURES } from '../config/features'
 import {
   User, Lock, QuestionFilled, SwitchButton,
   SetUp, Histogram, Calendar, Upload,

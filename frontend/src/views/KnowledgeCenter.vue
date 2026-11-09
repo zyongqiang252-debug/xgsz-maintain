@@ -7,7 +7,7 @@
       <el-tab-pane label="知识列表" name="list" lazy>
         <component :is="Knowledge" />
       </el-tab-pane>
-      <el-tab-pane label="服务器手册" name="manuals" lazy>
+      <el-tab-pane v-if="FEATURES.manuals" label="服务器手册" name="manuals" lazy>
         <component :is="ManualCodes" />
       </el-tab-pane>
     </el-tabs>
@@ -16,6 +16,7 @@
 
 <script setup>
 import { ref, defineAsyncComponent } from 'vue'
+import { FEATURES } from '../config/features'
 import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
@@ -25,8 +26,13 @@ const AiAssistant = defineAsyncComponent(() => import('./AiAssistant.vue'))
 const Knowledge = defineAsyncComponent(() => import('./Knowledge.vue'))
 const ManualCodes = defineAsyncComponent(() => import('./ManualCodes.vue'))
 
-const VALID = ['qa', 'list', 'manuals']
-const tab = ref(VALID.includes(route.query.tab) ? String(route.query.tab) : 'qa')
+const VALID_ALL = ['qa', 'list', 'manuals']
+const VISIBLE_TABS = VALID_ALL.filter((t) => {
+  if (t === 'manuals') return FEATURES.manuals
+  return true
+})
+const VALID = VISIBLE_TABS
+const tab = ref(VALID.includes(String(route.query.tab)) ? String(route.query.tab) : VALID[0])
 
 const onTabChange = (name) => {
   router.replace({ path: '/knowledge-center', query: { tab: name } })

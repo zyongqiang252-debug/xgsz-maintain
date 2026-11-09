@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { isHiddenRoute } from '../config/features'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -15,7 +16,7 @@ const router = createRouter({
         { path: 'dict', name: 'DictCenter', component: () => import('../views/DictCenter.vue'), meta: { title: '字典管理' } },
         { path: 'knowledge-center', name: 'KnowledgeCenter', component: () => import('../views/KnowledgeCenter.vue'), meta: { title: '知识中心' } },
         { path: 'sys', name: 'SysCenter', component: () => import('../views/SysCenter.vue'), meta: { title: '系统管理' } },
-        { path: 'me', name: 'MeCenter', component: () => import('../views/MeCenter.vue'), meta: { title: '我的' } },
+        { path: 'me', name: 'MeCenter', component: () => import('../views/MeCenter.vue'), meta: { title: '通知中心' } },
         { path: 'work-orders/new', name: 'WorkOrderCreate', component: () => import('../views/WorkOrderForm.vue'), meta: { title: '新建工单' } },
         { path: 'work-orders/:id', name: 'WorkOrderForm', component: () => import('../views/WorkOrderForm.vue'), meta: { title: '工单详情' } },
         { path: 'devices', name: 'Devices', component: () => import('../views/Devices.vue'), meta: { title: '设备监控' } },
@@ -79,6 +80,8 @@ const router = createRouter({
 
 // 全局导航守卫：未登录跳转登录页
 router.beforeEach((to, from, next) => {
+  // 功能开关：已隐藏的功能直接回驾驶舱
+  if (isHiddenRoute(to.path)) return next('/dashboard')
   if (!to.meta.noAuth) {
     const token = localStorage.getItem('auth_token')
     const user = localStorage.getItem('current_user')

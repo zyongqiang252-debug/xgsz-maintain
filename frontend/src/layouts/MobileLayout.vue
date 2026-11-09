@@ -27,7 +27,7 @@
         <el-icon class="tab-icon"><Tickets /></el-icon>
         <span class="tab-label">我的工单</span>
       </div>
-      <div class="tab-item" :class="{ active: route.path.startsWith('/m/leave') }" @click="$router.push('/m/leave')">
+      <div v-if="FEATURES.leave" class="tab-item" :class="{ active: route.path.startsWith('/m/leave') }" @click="$router.push('/m/leave')">
         <el-icon class="tab-icon"><Calendar /></el-icon>
         <span class="tab-label">请假</span>
       </div>
@@ -38,6 +38,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { FEATURES } from '../config/features'
 import { ArrowLeft, EditPen, Tickets, Calendar } from '@element-plus/icons-vue'
 
 const route = useRoute()
