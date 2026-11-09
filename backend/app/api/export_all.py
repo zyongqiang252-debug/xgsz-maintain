@@ -20,6 +20,7 @@ from app.models.spare_part import SparePart
 from app.models.stock_movement import StockMovement
 from app.models.user import User
 from app.models.work_order import WorkOrder
+from app.core import status_group as SG
 from app.services import excel_style as X
 
 router = APIRouter(tags=["一键导出"], dependencies=[Depends(require_supervisor)])
@@ -52,7 +53,7 @@ def export_all(db: Session = Depends(get_db)):
             "是否返厂", "故障描述", "故障大类", "维修员", "工时(h)", "人工成本", "备件成本", "总成本",
             "SLA", "满意度", "创建时间", "完成时间"],
            [[w.work_order_no,
-             STATUS_CN.get(w.status.value if hasattr(w.status, "value") else w.status, w.status),
+             SG.label_of(w.status),
              w.sla_status or "", w.priority or "", w.device_code or "", w.gpu_index or "",
              w.fault_device_sn or "", SERVICE_CN.get(w.service_mode or "", w.service_mode or ""),
              "是" if w.need_rma else ("否" if w.need_rma is False else ""),

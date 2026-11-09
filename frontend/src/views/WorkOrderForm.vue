@@ -38,8 +38,12 @@
               v-if="form.status === 'ASSIGNED' && isMyTask && !canDispatch"
               type="primary" plain size="small" @click="openDispatch"
             >转派</el-button>
+            <el-button
+              v-if="['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(form.status)"
+              type="primary" size="small" :loading="starting" @click="startProcessing"
+            >开始处理</el-button>
             <el-button size="small" :loading="printing" @click="printPdf">打印 / PDF</el-button>
-            <el-tag :type="statusTagType" size="large">{{ statusLabel }}</el-tag>
+            <el-tag :type="statusTagType" size="large">{{ statusGroupLabel }}</el-tag>
           </div>
         </div>
         <el-descriptions :column="2" border>
@@ -1282,6 +1286,13 @@ const statusMap = {
   ARRIVED: '已到达', INSPECTING: '检查中', IN_PROGRESS: '维修中',
   ARCHIVING: '待归档', ARCHIVED: '已归档', COMPLETED: '已完成', REJECTED: '已退回'
 }
+const GROUP_LABEL = {
+  DRAFT: '草稿', SUBMITTED: '待派工',
+  ASSIGNED: '处理中', ACCEPTED: '处理中', ARRIVED: '处理中', INSPECTING: '处理中', IN_PROGRESS: '处理中',
+  ARCHIVING: '待归档', COMPLETED: '待归档', ARCHIVED: '已归档', REJECTED: '已退回',
+}
+const statusGroupLabel = computed(() => GROUP_LABEL[form.status] || form.status || '')
+
 const statusLabel = computed(() => statusMap[form.status] || form.status || '-')
 const statusTagType = computed(() => {
   const map = {
@@ -1896,6 +1907,22 @@ const printPdf = async () => {
     ElMessage.error('PDF 生成失败')
   } finally {
     printing.value = false
+  }
+}
+
+
+const starting = ref(false)
+const startProcessing = async () => {
+  if (!form.id) return
+  starting.value = true
+  try {
+    await request.post(`/work-orders/${form.id}/start`)
+    ElMessage.success('已开始处理')
+    window.location.reload()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '操作失败')
+  } finally {
+    starting.value = false
   }
 }
 

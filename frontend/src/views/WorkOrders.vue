@@ -69,7 +69,7 @@
         <el-table-column prop="fault_description" label="故障描述" min-width="150" show-overflow-tooltip />
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
-            <span class="status-tag" :class="'status-' + row.status">{{ statusLabel(row.status) }}</span>
+            <span class="status-tag" :class="'status-' + (row.status_group || row.status)">{{ row.status_group_label || statusLabel(row.status) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="级别" width="86" align="center">
@@ -426,17 +426,13 @@ const total = ref(0)
 
 const statusOptions = [
   { value: 'DRAFT', label: '草稿', desc: '已建单未提交，可修改或删除' },
-  { value: 'SUBMITTED', label: '待派工', desc: '已提交报修，等待主管派单或维修员领取' },
-  { value: 'ASSIGNED', label: '已派单', desc: '已指派维修员，等待对方接受（可改派）' },
-  { value: 'ACCEPTED', label: '已接单', desc: '维修员已接受任务，尚未到现场' },
-  { value: 'ARRIVED', label: '已到场', desc: '维修员已到达机房/现场' },
-  { value: 'INSPECTING', label: '检查中', desc: '正在排查故障、定位根因' },
-  { value: 'IN_PROGRESS', label: '维修中', desc: '已开始处理（换件、返厂、调试等）' },
-  { value: 'ARCHIVING', label: '待归档', desc: '维修完成，等待补齐 6 项归档字段后归档' },
-  { value: 'ARCHIVED', label: '已归档', desc: '已归档结案，只读，可打印 PDF' },
-  { value: 'COMPLETED', label: '已完成', desc: '历史状态，等同于处理完毕待归档' },
+  { value: 'SUBMITTED', label: '待派工', desc: '已提交报修，等待派单或维修员领取' },
+  { value: 'PROCESSING', label: '处理中', desc: '已派单、已接单、已到场、检查中、维修中，统一视为处理中' },
+  { value: 'ARCHIVING', label: '待归档', desc: '维修完成，补齐 6 项归档字段后归档' },
+  { value: 'ARCHIVED', label: '已归档', desc: '已结案，只读，可打印 PDF' },
   { value: 'REJECTED', label: '已退回', desc: '派单被退回或工单作废' },
 ]
+
 
 const statusMap = {
   DRAFT: '草稿',
@@ -460,7 +456,15 @@ const LEVELS = {
 }
 const alertLevelMeta = (lv) => LEVELS[(lv || 'P2').toUpperCase()] || LEVELS.P2
 
-const statusLabel = (s) => statusMap[s] || s
+const GROUP_LABEL = {
+  DRAFT: '草稿',
+  SUBMITTED: '待派工',
+  ASSIGNED: '处理中', ACCEPTED: '处理中', ARRIVED: '处理中',
+  INSPECTING: '处理中', IN_PROGRESS: '处理中',
+  ARCHIVING: '待归档', COMPLETED: '待归档',
+  ARCHIVED: '已归档', REJECTED: '已退回',
+}
+const statusLabel = (s) => statusMap[s] || GROUP_LABEL[s] || s
 const formatTime = (t) => t ? dayjs(t).format('YYYY-MM-DD HH:mm') : '-'
 
 // ===== SLA 展示 =====
@@ -499,7 +503,7 @@ const fetchData = async () => {
   try {
     const params = { page: page.value, page_size: pageSize.value }
     if (keyword.value) params.keyword = keyword.value
-    if (statusFilter.value) params.status = statusFilter.value
+    if (statusFilter.value) params.status_group = statusFilter.value
     if (orderTypeFilter.value) params.order_type = orderTypeFilter.value
     if (alertLevelFilter.value) params.alert_level = alertLevelFilter.value
     if (dateRange.value) {

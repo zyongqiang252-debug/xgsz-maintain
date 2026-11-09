@@ -251,3 +251,6 @@ body { background: var(--ui-bg); }
 .status-ARCHIVED   { background: #F2F3F5; color: #86909C; }
 .status-COMPLETED  { background: rgba(0, 180, 42, .10); color: #009A29; }
 .status-REJECTED   { background: rgba(245, 63, 63, .10); color: #D32029; }
+
+/* ---------- 14. 6 个业务状态配色（分组版） ---------- */
+.status-PROCESSING  { background: rgba(52, 145, 250, .12); color: #2478D9; }

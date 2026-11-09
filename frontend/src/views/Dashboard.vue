@@ -112,7 +112,7 @@
           <el-table-column prop="fault_description" label="故障描述" min-width="132" show-overflow-tooltip />
           <el-table-column label="状态" width="86">
             <template #default="{ row }">
-              <span class="status-tag" :class="'status-' + row.status">{{ statusLabel(row.status) }}</span>
+              <span class="status-tag" :class="'status-' + (row.status_group || row.status)">{{ row.status_group_label || statusLabel(row.status) }}</span>
             </template>
           </el-table-column>
           <el-table-column label="级别" width="72" align="center">
@@ -228,17 +228,18 @@ const knowledgeContentTotal = computed(() => {
   return (stats.value.total_knowledge || 0) + (stats.value.total_manual_codes || 0)
 })
 
+// 对外 6 个业务状态（内部过程状态统一显示为「处理中」）
 const statusMap = {
   DRAFT: '草稿',
   SUBMITTED: '待派工',
-  ASSIGNED: '已派工',
-  ACCEPTED: '已接单',
-  ARRIVED: '已到场',
-  INSPECTING: '检查中',
-  IN_PROGRESS: '维修中',
+  ASSIGNED: '处理中',
+  ACCEPTED: '处理中',
+  ARRIVED: '处理中',
+  INSPECTING: '处理中',
+  IN_PROGRESS: '处理中',
   ARCHIVING: '待归档',
+  COMPLETED: '待归档',
   ARCHIVED: '已归档',
-  COMPLETED: '已完成',
   REJECTED: '已退回',
 }
 const statusLabel = (s) => statusMap[s] || s

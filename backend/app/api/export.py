@@ -18,6 +18,7 @@ from app.models.spare_part import SparePart
 from app.models.stock_movement import StockMovement
 from app.models.user import User
 from app.models.work_order import WorkOrder
+from app.core import status_group as SG
 from app.services import excel_style as X
 
 router = APIRouter(tags=["报表导出"], dependencies=[Depends(get_current_user)])
@@ -39,12 +40,8 @@ def _xlsx(title: str, headers, rows, formats=None, wrap_cols=None, widths=None) 
 
 
 def _status_cn(s) -> str:
-    return {
-        "DRAFT": "草稿", "SUBMITTED": "已提交", "ASSIGNED": "已派工", "ACCEPTED": "已接单",
-        "ARRIVED": "已到场", "INSPECTING": "检查中", "IN_PROGRESS": "维修中",
-        "ARCHIVING": "待归档", "ARCHIVED": "已归档", "COMPLETED": "已完成",
-        "REJECTED": "已退回",
-    }.get(s, s or "")
+    """导出统一用 6 个业务状态文案"""
+    return SG.label_of(s) if s else ""
 
 
 @router.get("/work-orders.xlsx", summary="导出工单（Excel）")

@@ -11,6 +11,7 @@ import io
 import os
 from datetime import datetime
 
+from app.core import status_group as SG
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import A4
@@ -160,8 +161,7 @@ def build_work_order_pdf(wo, technician_name=None, creator_name=None, progress_l
     st = _styles()
     buf = io.BytesIO()
 
-    status_raw = wo.status.value if hasattr(wo.status, "value") else wo.status
-    status_cn = STATUS_CN.get(status_raw, status_raw or "—")
+    status_cn = SG.label_of(wo.status)  # 对外只显示 6 个业务状态
     level_cn = LEVEL_CN.get(wo.alert_level or "P2", "P2 一般")
 
     # ---------- 页眉/页脚 ----------
@@ -313,7 +313,7 @@ def build_work_order_pdf(wo, technician_name=None, creator_name=None, progress_l
             to = to.value if hasattr(to, "value") else to
             rows.append([
                 Paragraph(_fmt(getattr(log, "created_at", None)), st["cell_sm"]),
-                Paragraph(STATUS_CN.get(to or "", to or "—"), st["cell_sm"]),
+                Paragraph(SG.label_of(to) if to else "—", st["cell_sm"]),
                 Paragraph(getattr(log, "operator_name", None) or "—", st["cell_sm"]),
                 Paragraph((getattr(log, "remark", None) or "—")[:80], st["cell_sm"]),
             ])

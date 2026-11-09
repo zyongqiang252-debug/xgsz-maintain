@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.services import sla as sla_service
 from app.core import alert_level as AL
+from app.core import status_group as SG
 from app.models.work_order import WorkOrder, WorkOrderStatus
 from app.models.device import Device
 from app.models.spare_part import SparePart
@@ -46,6 +47,7 @@ def list_work_orders(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     status: Optional[str] = None,
+    status_group: Optional[str] = Query(None, description="状态分组：DRAFT/SUBMITTED/PROCESSING/ARCHIVING/ARCHIVED/REJECTED"),
     keyword: Optional[str] = None,
     device_type: Optional[str] = Query(None, description="设备类型筛选"),
     date_from: Optional[date] = Query(None, description="创建日期起始"),
@@ -58,7 +60,11 @@ def list_work_orders(
     current_user: User = Depends(get_current_user),
 ):
     query = db.query(WorkOrder)
-    if status:
+    if status_group:
+        statuses = SG.statuses_of(status_group)
+        if statuses:
+            query = query.filter(WorkOrder.status.in_(statuses))
+    elif status:
         query = query.filter(WorkOrder.status == status)
     if sla_status:
         query = query.filter(WorkOrder.sla_status == sla_status.upper())
@@ -99,6 +105,8 @@ def list_work_orders(
         # 告警级别：优先级映射，SLA 超时升 P0
         d['alert_level'] = getattr(w, 'alert_level', None) or AL.from_priority(getattr(w, 'priority', None))
         d['order_type'] = getattr(w, 'order_type', None) or 'REPAIR'
+        d['status_group'] = SG.group_of(w.status)
+        d['status_group_label'] = SG.label_of(w.status)
         result_items.append(d)
     return {"total": total, "items": result_items, "page": page, "page_size": page_size}
 
@@ -237,6 +245,59 @@ def get_progress_board(
     }
 
 
+
+
+@router.post("/{work_order_id}/start", summary="一键开始处理（受理→到场→检查→维修中）")
+def start_processing(work_order_id: int, db: Session = Depends(get_db),
+                     current_user: User = Depends(get_current_user)):
+    """维修员接受任务后一键进入「维修中」，中间过程（接单/到场/检查）自动记录进度日志。
+
+    对外只体现 6 个业务状态中的「处理中」，减少点击次数；原始状态仍逐条留痕。
+    """
+    from app.models.work_order import WorkOrderStatus
+
+    wo = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
+    if not wo:
+        raise HTTPException(status_code=404, detail="工单不存在")
+
+    status_val = wo.status.value if wo.status else None
+    path = []
+    if status_val == WorkOrderStatus.SUBMITTED.value:
+        path = [WorkOrderStatus.ASSIGNED.value]
+    if status_val in (WorkOrderStatus.SUBMITTED.value, WorkOrderStatus.ASSIGNED.value):
+        path += [WorkOrderStatus.ACCEPTED.value, WorkOrderStatus.ARRIVED.value,
+                 WorkOrderStatus.INSPECTING.value, WorkOrderStatus.IN_PROGRESS.value]
+    elif status_val == WorkOrderStatus.ACCEPTED.value:
+        path = [WorkOrderStatus.ARRIVED.value, WorkOrderStatus.INSPECTING.value, WorkOrderStatus.IN_PROGRESS.value]
+    elif status_val == WorkOrderStatus.ARRIVED.value:
+        path = [WorkOrderStatus.INSPECTING.value, WorkOrderStatus.IN_PROGRESS.value]
+    elif status_val == WorkOrderStatus.INSPECTING.value:
+        path = [WorkOrderStatus.IN_PROGRESS.value]
+    elif status_val == WorkOrderStatus.IN_PROGRESS.value:
+        return {"id": wo.id, "status": status_val, "status_group": SG.group_of(status_val),
+                "message": "已在处理中"}
+    else:
+        raise HTTPException(status_code=400,
+                            detail=f"当前状态 {SG.label_of(status_val)} 不能开始处理")
+
+    prev = status_val
+    for nxt in path:
+        db.add(WorkOrderProgressLog(
+            work_order_id=wo.id, from_status=WorkOrderStatus(prev), to_status=WorkOrderStatus(nxt),
+            operator_id=current_user.id, operator_name=current_user.real_name,
+            source="WEB", remark="一键开始处理",
+        ))
+        prev = nxt
+    wo.status = WorkOrderStatus(prev)
+    if not wo.technician_id:
+        wo.technician_id = current_user.id
+    db.commit()
+    db.refresh(wo)
+    _notify_wo(wo, "in_progress", actor=current_user.real_name)
+    return {"id": wo.id, "status": prev, "status_group": SG.group_of(prev),
+            "status_group_label": SG.label_of(prev)}
+
+
 @router.get("/{work_order_id}/pdf", summary="导出单张工单 PDF")
 def export_work_order_pdf(work_order_id: int, db: Session = Depends(get_db),
                           current_user: User = Depends(get_current_user)):
@@ -270,6 +331,9 @@ def get_work_order(work_order_id: int, db: Session = Depends(get_db)):
     if not work_order:
         raise HTTPException(status_code=404, detail="工单不存在")
     resp = WorkOrderResponse.model_validate(work_order)
+    # 对外 6 状态分组（详情页与列表保持一致）
+    resp.status_group = SG.group_of(work_order.status)
+    resp.status_group_label = SG.label_of(work_order.status)
     # 设备信息（设备类型/名称）直接从关联设备返回，前端不依赖本地设备列表拼接
     if work_order.device:
         resp.device_type = work_order.device.device_type
@@ -1463,6 +1527,9 @@ def create_work_order_from_dispatch(
 
 def _build_work_order_response(work_order: WorkOrder, db: Session) -> WorkOrderResponse:
     resp = WorkOrderResponse.model_validate(work_order)
+    # 对外 6 状态分组
+    resp.status_group = SG.group_of(work_order.status)
+    resp.status_group_label = SG.label_of(work_order.status)
     # 告警级别：优先级映射；SLA 超时升到 P0
     lv = AL.from_priority(getattr(work_order, 'priority', None))
     if getattr(work_order, 'sla_status', None) == 'OVERDUE':
