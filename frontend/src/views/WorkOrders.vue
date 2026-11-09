@@ -149,38 +149,15 @@
                   :loading="transitionLoading[`${row.id}_SUBMITTED`]"
                   @click="handleTransition(row, 'SUBMITTED')"
                 >提交报修</el-button>
+                <!-- 已派单/已接单/已到场/检查中：一键进入处理中（中间步骤自动记入进度） -->
                 <el-button
-                  v-if="row.status === 'ASSIGNED'"
+                  v-if="['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(row.status)"
                   size="small"
                   type="primary"
                   :disabled="!isAssignedTech(row) && !isSupervisor"
-                  :loading="transitionLoading[`${row.id}_ACCEPTED`]"
-                  @click="handleTransition(row, 'ACCEPTED')"
-                >接受任务</el-button>
-                <el-button
-                  v-if="row.status === 'ACCEPTED'"
-                  size="small"
-                  type="primary"
-                  :disabled="!isAssignedTech(row) && !isSupervisor"
-                  :loading="transitionLoading[`${row.id}_ARRIVED`]"
-                  @click="handleTransition(row, 'ARRIVED')"
-                >已到达现场</el-button>
-                <el-button
-                  v-if="row.status === 'ARRIVED'"
-                  size="small"
-                  type="primary"
-                  :disabled="!isAssignedTech(row) && !isSupervisor"
-                  :loading="transitionLoading[`${row.id}_INSPECTING`]"
-                  @click="handleTransition(row, 'INSPECTING')"
-                >开始检查</el-button>
-                <el-button
-                  v-if="row.status === 'INSPECTING'"
-                  size="small"
-                  type="primary"
-                  :disabled="!isAssignedTech(row) && !isSupervisor"
-                  :loading="transitionLoading[`${row.id}_IN_PROGRESS`]"
-                  @click="handleTransition(row, 'IN_PROGRESS')"
-                >开始维修</el-button>
+                  :loading="startingId === row.id"
+                  @click="handleStart(row)"
+                >开始处理</el-button>
                 <el-button
                   v-if="row.status === 'IN_PROGRESS'"
                   size="small"
@@ -351,6 +328,21 @@ const onRowCommand = (cmd, row) => {
   } else if (cmd === 'dispatch') {
     if (row.status === 'SUBMITTED' && isTechnician) claimTask(row)
     else openDispatch(row)
+  }
+}
+
+const startingId = ref(null)
+// 一键开始处理：ASSIGNED/ACCEPTED/ARRIVED/INSPECTING → IN_PROGRESS
+const handleStart = async (row) => {
+  startingId.value = row.id
+  try {
+    await request.post(`/work-orders/${row.id}/start`)
+    ElMessage.success('已开始处理')
+    fetchData()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '操作失败')
+  } finally {
+    startingId.value = null
   }
 }
 

@@ -682,7 +682,7 @@
               : '请先点击「工单归档」完成校验，再点击「归档完成」' }}
         </p>
         <p v-else-if="['SUBMITTED','ASSIGNED','ACCEPTED','ARRIVED','INSPECTING'].includes(form.status) && !isNew" class="submit-hint">
-          当前工单已提交，等待派工 / 维修推进：请在「维修报表」或「派工中心」按流程操作（派工 → 接单 → 到场 → 检查 → 开始维修），进入「维修中」后才能提交完成
+          当前工单等待推进：主管先「派工」，维修员点右上角「开始处理」即可进入处理中（接单/到场/检查自动记录），完成后点「提交完成」
         </p>
         <p v-else-if="!canSubmit && !isNew" class="submit-hint">
           {{ entryMode === 'error_code'
