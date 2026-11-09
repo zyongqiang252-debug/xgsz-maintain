@@ -231,15 +231,6 @@ import EmptyState from '../components/EmptyState.vue'
 import TableSkeleton from '../components/TableSkeleton.vue'
 const router = useRouter()
 
-const flattenTree = (nodes, result = []) => {
-  for (const node of nodes) {
-    result.push({ label: node.name, value: node.name })
-    if (node.children && node.children.length > 0) flattenTree(node.children, result)
-  }
-  return result
-}
-const deviceTypeOptions = ref([])
-
 // 当前登录用户（用于权限判断：仅创建者或管理员可编辑）
 const currentUser = (() => {
   try {
@@ -421,7 +412,6 @@ const orderTypeFilter = ref('')
 const alertLevelFilter = ref('')
 const ORDER_TYPE_LABEL = { REPAIR: '报修', MAINTENANCE: '保养', INSPECTION: '点检', IMPORT: '导入' }
 const orderTypeLabel = (t) => ORDER_TYPE_LABEL[(t || 'REPAIR').toUpperCase()] || t
-const deviceTypeFilter = ref('')
 const dateRange = ref(null)
 const page = ref(1)
 const pageSize = ref(10)
@@ -489,7 +479,8 @@ const fetchData = async () => {
     const params = { page: page.value, page_size: pageSize.value }
     if (keyword.value) params.keyword = keyword.value
     if (statusFilter.value) params.status = statusFilter.value
-    if (deviceTypeFilter.value) params.device_type = deviceTypeFilter.value
+    if (orderTypeFilter.value) params.order_type = orderTypeFilter.value
+    if (alertLevelFilter.value) params.alert_level = alertLevelFilter.value
     if (dateRange.value) {
       params.date_from = dayjs(dateRange.value[0]).format('YYYY-MM-DD')
       params.date_to = dayjs(dateRange.value[1]).format('YYYY-MM-DD')
@@ -508,7 +499,8 @@ const saveFilter = () => {
   const data = {}
   if (keyword.value) data.keyword = keyword.value
   if (statusFilter.value) data.status = statusFilter.value
-  if (deviceTypeFilter.value) data.device_type = deviceTypeFilter.value
+  if (orderTypeFilter.value) data.order_type = orderTypeFilter.value
+  if (alertLevelFilter.value) data.alert_level = alertLevelFilter.value
   if (dateRange.value) {
     data.date_from = dayjs(dateRange.value[0]).format('YYYY-MM-DD')
     data.date_to = dayjs(dateRange.value[1]).format('YYYY-MM-DD')
@@ -546,17 +538,14 @@ onMounted(() => {
       const data = JSON.parse(raw)
       if (data.keyword) keyword.value = data.keyword
       if (data.status) statusFilter.value = data.status
-      if (data.device_type) deviceTypeFilter.value = data.device_type
+      if (data.order_type) orderTypeFilter.value = data.order_type
+      if (data.alert_level) alertLevelFilter.value = data.alert_level
       if (data.date_from && data.date_to) {
         dateRange.value = [new Date(data.date_from), new Date(data.date_to)]
       }
       if (data.page) page.value = data.page
     } catch { /* ignore bad data */ }
   }
-  // 拉取设备类型选项
-  request.get('/categories/', { params: { category_type: 'DEVICE_TYPE', page_size: 1000 } })
-    .then(res => { deviceTypeOptions.value = flattenTree(res.items || []) })
-    .catch(() => {})
   fetchData()
 })
 

@@ -285,6 +285,7 @@ const fetchData = async () => {
     if (keyword.value) params.keyword = keyword.value
     if (typeFilter.value) params.device_type = typeFilter.value
     if (statusFilter.value) params.run_status = statusFilter.value
+    if (levelFilter.value) params.alert_level = levelFilter.value
     if (hasFaultFilter.value != null) params.has_fault = hasFaultFilter.value
     const res = await request.get('/devices/', { params })
     list.value = res.items
@@ -297,7 +298,7 @@ const fetchAll = () => { fetchStats(); fetchData() }
 
 const handleSearch = () => { page.value = 1; fetchAll() }
 const handleReset = () => {
-  keyword.value = ''; typeFilter.value = ''; statusFilter.value = ''; hasFaultFilter.value = null
+  keyword.value = ''; typeFilter.value = ''; statusFilter.value = ''; hasFaultFilter.value = null; levelFilter.value = ''
   page.value = 1
   fetchAll()
 }
