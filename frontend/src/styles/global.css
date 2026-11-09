@@ -268,3 +268,16 @@ html,body,#app {
 .status-UNDER_REVIEW { background:#FFF3E8; color:#FF7D00; }
 .status-PUBLISHED { background:#E8F8EE; color:#00B42A; }
 .status-DEPRECATED { background:#FFECEC; color:#F53F3F; }
+
+/* ========================================
+   表格统一左对齐
+   成本/时效等列不再右对齐或居中，全站表头与单元格一律左对齐
+   ======================================== */
+.el-table th.el-table__cell,
+.el-table td.el-table__cell,
+.el-table th.el-table__cell.is-center,
+.el-table td.el-table__cell.is-center,
+.el-table th.el-table__cell.is-right,
+.el-table td.el-table__cell.is-right {
+  text-align: left;
+}
