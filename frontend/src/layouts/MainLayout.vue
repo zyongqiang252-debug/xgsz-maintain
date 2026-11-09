@@ -224,7 +224,7 @@
               </el-menu-item>
               <el-menu-item index="/me">
                 <el-icon><User /></el-icon>
-                <template #title>我的（请假 / 通知 / 帮助）</template>
+                <template #title>我的</template>
               </el-menu-item>
             </template>
           </el-menu>
