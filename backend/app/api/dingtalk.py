@@ -481,15 +481,15 @@ def sync_contacts(db: Session = Depends(get_db),
     )
 
 
-@router.get("/departments", summary="获取部门列表")
-def list_departments(current_user: User = Depends(get_current_user)):
+@router.get("/departments", summary="获取部门列表（管理员）")
+def list_departments(current_user: User = Depends(require_admin)):
     """获取钉钉部门列表（Mock/真实）"""
     return dingtalk.get_department_list()
 
 
-@router.get("/contacts", summary="获取用户列表")
+@router.get("/contacts", summary="获取用户列表（管理员）")
 def list_contacts(dept_id: int = Query(0, description="部门ID，0为全部"),
-                  current_user: User = Depends(get_current_user)):
+                  current_user: User = Depends(require_admin)):
     """获取钉钉用户列表"""
     return dingtalk.get_user_list(dept_id)
 
