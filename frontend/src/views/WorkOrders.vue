@@ -51,6 +51,15 @@
       </div>
     </el-card>
 
+    <!-- 状态快捷筛选：默认「全部」，含历史已归档 -->
+    <div class="status-chips">
+      <span class="chip" :class="{ active: !statusFilter }" @click="pickStatus('')">全部</span>
+      <span v-for="opt in statusOptions" :key="opt.value"
+            class="chip" :class="{ active: statusFilter === opt.value }"
+            @click="pickStatus(opt.value)">{{ opt.label }}</span>
+      <span class="chips-hint">默认展示全部工单（含历史已归档）</span>
+    </div>
+
     <!-- 首屏加载骨架 -->
     <el-card v-if="loading && !list.length" class="table-card" shadow="never">
       <TableSkeleton :rows="8" :cols="6" :widths="['16%','26%','10%','8%','12%','10%']" />
@@ -534,6 +543,12 @@ const saveFilter = () => {
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data))
 }
 
+const pickStatus = (val) => {
+  statusFilter.value = val
+  page.value = 1
+  fetchData()
+}
+
 const handleSearch = () => { page.value = 1; fetchData() }
 
 // 整行点击查看详情；点在操作按钮/下拉上时不跳转
@@ -649,5 +664,24 @@ const handleExport = async () => {
 .status-help-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #1D2129; }
 .status-help-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .status-help-desc { font-size: 12px; color: #4E5969; line-height: 1.5; }
+
+
+/* 状态快捷筛选 */
+.status-chips {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 8px; margin: 0 0 12px;
+}
+.status-chips .chip {
+  padding: 4px 12px; border-radius: 14px;
+  font-size: 13px; color: #4E5969; cursor: pointer;
+  background: #fff; border: 1px solid #E9EBF0;
+  transition: all .16s;
+}
+.status-chips .chip:hover { border-color: #0FC6C2; color: #0FC6C2; }
+.status-chips .chip.active {
+  background: rgba(15,198,194,.12); border-color: #0FC6C2;
+  color: #0B9B98; font-weight: 600;
+}
+.status-chips .chips-hint { font-size: 12px; color: #9AA1AC; margin-left: 4px; }
 
 </style>

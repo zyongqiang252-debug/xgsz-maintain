@@ -28,7 +28,7 @@
         </div>
         <div class="stat-content">
           <div class="stat-num">{{ stats.submitted }}</div>
-          <div class="stat-label">待派工</div>
+          <div class="stat-label">待派工（全部）</div>
         </div>
       </el-card>
 
@@ -38,7 +38,7 @@
         </div>
         <div class="stat-content">
           <div class="stat-num">{{ stats.assigned }}</div>
-          <div class="stat-label">待接受</div>
+          <div class="stat-label">待接受（全部）</div>
         </div>
       </el-card>
 
@@ -48,7 +48,7 @@
         </div>
         <div class="stat-content">
           <div class="stat-num">{{ stats.in_progress }}</div>
-          <div class="stat-label">进行中</div>
+          <div class="stat-label">处理中（全部）</div>
         </div>
       </el-card>
 
@@ -58,7 +58,7 @@
         </div>
         <div class="stat-content">
           <div class="stat-num">{{ stats.completed_today }}</div>
-          <div class="stat-label">已完成</div>
+          <div class="stat-label">已完成（近 7 天）</div>
         </div>
       </el-card>
     </div>
@@ -170,7 +170,7 @@
         <div class="col-header">
           <h3 class="col-title">
             <span class="col-indicator indicator-in-progress"></span>
-            进行中 ({{ boardData.in_progress.length }})
+            处理中 ({{ boardData.in_progress.length }})
           </h3>
         </div>
         <div class="col-body" v-loading="loading">
@@ -220,7 +220,7 @@
         <div class="col-header">
           <h3 class="col-title">
             <span class="col-indicator indicator-completed"></span>
-            已完成 ({{ boardData.completed.length }})
+            已完成 / 已归档（近 7 天）({{ boardData.completed.length }})
           </h3>
         </div>
         <div class="col-body" v-loading="loading">

@@ -173,13 +173,38 @@ def get_progress_board(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """一次性返回4列工单数据：待派工/待接受/进行中/已完成"""
-    today_start = datetime.combine(date.today(), datetime.min.time())
+    """一次性返回 4 列工单：待派工 / 待接受 / 处理中 / 已完成（近 7 天）
 
-    # 查询今天创建的工单
+    口径说明：前两列与「处理中」列统计**全部未完结工单**（不限创建日期），
+    与工单列表的分组筛选保持一致；「已完成」列展示近 7 天归档/完成的工单。
+    """
+    from datetime import timedelta
+
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    recent_cutoff = datetime.now() - timedelta(days=7)
+
+    open_statuses = [
+        WorkOrderStatus.SUBMITTED.value,
+        WorkOrderStatus.ASSIGNED.value,
+        WorkOrderStatus.ACCEPTED.value,
+        WorkOrderStatus.ARRIVED.value,
+        WorkOrderStatus.INSPECTING.value,
+        WorkOrderStatus.IN_PROGRESS.value,
+        WorkOrderStatus.ARCHIVING.value,
+    ]
+    done_statuses = [
+        WorkOrderStatus.COMPLETED.value,
+        WorkOrderStatus.ARCHIVED.value,
+    ]
+
+    from sqlalchemy import or_, and_
     work_orders = (
         db.query(WorkOrder)
-        .filter(WorkOrder.created_at >= today_start)
+        .filter(or_(
+            WorkOrder.status.in_(open_statuses),
+            and_(WorkOrder.status.in_(done_statuses),
+                 WorkOrder.updated_at >= recent_cutoff),
+        ))
         .order_by(WorkOrder.created_at.asc())
         .all()
     )
@@ -228,7 +253,9 @@ def get_progress_board(
             assigned_list.append(item)
         elif status_val in in_progress_statuses:
             in_progress_list.append(item)
-        elif status_val == WorkOrderStatus.COMPLETED.value:
+        elif status_val in (WorkOrderStatus.ARCHIVING.value,
+                            WorkOrderStatus.COMPLETED.value,
+                            WorkOrderStatus.ARCHIVED.value):
             completed_list.append(item)
 
     return {
