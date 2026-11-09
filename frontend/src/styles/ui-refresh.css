@@ -1,0 +1,253 @@
+/* ========================================
+   UI 2.0 — 统一视觉规范（在 global.css 之后加载）
+   目标：统一卡片/表格/统计卡/标签/空状态的视觉语言
+   ======================================== */
+
+/* ---------- 1. 设计令牌微调 ---------- */
+:root {
+  --ui-bg: #F4F6F9;
+  --ui-surface: #FFFFFF;
+  --ui-surface-2: #FAFBFC;
+  --ui-border: #E9EBF0;
+  --ui-border-strong: #DDE1E8;
+  --ui-text: #1D2129;
+  --ui-text-2: #4E5969;
+  --ui-text-3: #86909C;
+  --ui-radius: 10px;
+  --ui-radius-sm: 8px;
+  --ui-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 1px 3px rgba(16, 24, 40, .06);
+  --ui-shadow-hover: 0 4px 12px rgba(16, 24, 40, .08);
+  --ui-accent: #0FC6C2;
+  --ui-accent-soft: rgba(15, 198, 194, .10);
+}
+
+body { background: var(--ui-bg); }
+
+/* ---------- 2. 卡片：统一圆角/边框/内边距 ---------- */
+.el-card {
+  border-radius: var(--ui-radius) !important;
+  border-color: var(--ui-border) !important;
+  box-shadow: var(--ui-shadow) !important;
+}
+.el-card:hover { box-shadow: var(--ui-shadow-hover) !important; }
+.el-card__header {
+  padding: 14px 18px !important;
+  border-bottom: 1px solid var(--ui-border) !important;
+  font-weight: 600;
+}
+.el-card__body { padding: 18px !important; }
+
+/* ---------- 3. 表格 ---------- */
+.el-table {
+  --el-table-border-color: var(--ui-border);
+  --el-table-header-bg-color: var(--ui-surface-2);
+  --el-table-header-text-color: #6B7280;
+  --el-table-row-hover-bg-color: rgba(15, 198, 194, .055);
+  font-size: 13.5px;
+}
+.el-table th.el-table__cell {
+  font-weight: 600;
+  font-size: 12.5px;
+  letter-spacing: .02em;
+  height: 44px;
+  background: var(--ui-surface-2);
+}
+.el-table td.el-table__cell { height: 46px; }
+.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background: #FCFDFE;
+}
+.el-table__body tr:hover > td.el-table__cell { transition: background .12s; }
+/* 首列稍加强调 */
+.el-table__body td.el-table__cell:first-child { font-weight: 500; }
+
+/* ---------- 4. 统计卡（业务指标） ---------- */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.stat-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-shadow);
+  cursor: pointer;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s;
+  overflow: hidden;
+}
+.stat-item:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--ui-shadow-hover);
+  border-color: var(--ui-border-strong);
+}
+.stat-item__icon {
+  width: 44px; height: 44px;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 12px;
+  font-size: 20px;
+}
+.stat-item__body { min-width: 0; }
+.stat-item__value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -.01em;
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+.stat-item__label {
+  font-size: 13px;
+  color: var(--ui-text-2);
+  margin-top: 2px;
+}
+.stat-item__hint {
+  font-size: 12px;
+  color: var(--ui-text-3);
+  margin-top: 4px;
+}
+.stat-item__hint strong { color: var(--ui-text-2); font-weight: 600; }
+
+/* 图标配色 */
+.stat-item__icon.primary { background: var(--ui-accent-soft); color: var(--ui-accent); }
+.stat-item__icon.success { background: rgba(0, 180, 42, .10); color: #00B42A; }
+.stat-item__icon.warning { background: rgba(255, 125, 0, .10); color: #FF7D00; }
+.stat-item__icon.danger  { background: rgba(245, 63, 63, .10); color: #F53F3F; }
+.stat-item__icon.info    { background: rgba(52, 145, 250, .10); color: #3491FA; }
+.stat-item__icon.violet  { background: rgba(114, 46, 209, .10); color: #722ED1; }
+
+/* ---------- 5. 紧凑指标卡（设备状态这类小指标） ---------- */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+.metric-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  box-shadow: var(--ui-shadow);
+  cursor: pointer;
+  transition: transform .16s ease, box-shadow .16s ease;
+}
+.metric-item:hover { transform: translateY(-1px); box-shadow: var(--ui-shadow-hover); }
+.metric-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.metric-value {
+  font-size: 22px; font-weight: 700; line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text);
+}
+.metric-label { font-size: 12.5px; color: var(--ui-text-3); margin-top: 3px; }
+
+/* ---------- 6. 区块标题 ---------- */
+.section-block { margin-bottom: 20px; }
+.section-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.section-head__title {
+  font-size: 15px; font-weight: 600; color: var(--ui-text);
+  display: flex; align-items: center; gap: 8px;
+}
+.section-head__title::before {
+  content: ''; width: 3px; height: 14px; border-radius: 2px;
+  background: var(--ui-accent);
+}
+
+/* ---------- 7. 页面头部（支持副标题） ---------- */
+.page-header { margin-bottom: 18px; }
+.page-title { font-size: 19px; }
+.page-subtitle {
+  font-size: 12.5px; color: var(--ui-text-3);
+  margin-left: 14px; font-weight: 400;
+}
+
+/* ---------- 8. 软标签（告警级别 / 状态） ---------- */
+.soft-tag {
+  display: inline-flex; align-items: center;
+  height: 22px; padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px; font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.soft-tag--p0 { background: rgba(245, 63, 63, .10); color: #D32029; }
+.soft-tag--p1 { background: rgba(255, 125, 0, .12); color: #D25F00; }
+.soft-tag--p2 { background: rgba(255, 193, 7, .16); color: #B58A00; }
+.soft-tag--p3 { background: rgba(134, 144, 156, .14); color: #6B7280; }
+.soft-tag--ok { background: rgba(0, 180, 42, .10); color: #009A29; }
+
+/* ---------- 9. 空状态 ---------- */
+.empty-block {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 6px;
+  padding: 36px 16px;
+  color: var(--ui-text-3);
+  text-align: center;
+}
+.empty-block__icon {
+  width: 44px; height: 44px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--ui-surface-2);
+  color: #C9CDD4;
+  font-size: 20px;
+  margin-bottom: 2px;
+}
+.empty-block__title { font-size: 13px; color: var(--ui-text-2); }
+.empty-block__hint { font-size: 12px; color: var(--ui-text-3); }
+
+/* ---------- 10. 按钮/输入统一 ---------- */
+.el-button { font-weight: 500; border-radius: 8px; }
+.el-button--small { border-radius: 7px; }
+.el-button.is-link { font-weight: 500; }
+.el-input__wrapper, .el-select__wrapper { border-radius: 8px; }
+.el-pagination { margin-top: 18px; }
+.el-pagination.is-background .el-pager li { border-radius: 6px; }
+
+/* ---------- 11. 滚动条 ---------- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb {
+  background: #D6DAE2; border-radius: 8px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: #C2C8D2; background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- 12. 对话框/抽屉 ---------- */
+.el-dialog { border-radius: 14px !important; overflow: hidden; }
+.el-dialog__header { padding: 18px 22px 12px !important; margin-right: 0 !important; }
+.el-dialog__title { font-size: 16px !important; font-weight: 600 !important; }
+.el-dialog__body { padding: 8px 22px 18px !important; }
+.el-dialog__footer { padding: 0 22px 18px !important; }
+
+/* ---------- 13. 工单 11 状态配色（覆盖 global.css 的旧色板） ---------- */
+.status-tag {
+  display: inline-flex; align-items: center;
+  padding: 0 8px; height: 22px;
+  border-radius: 6px;
+  font-size: 12px; font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+.status-DRAFT      { background: #F2F3F5; color: #6B7280; }
+.status-SUBMITTED  { background: rgba(255, 125, 0, .12); color: #D25F00; }
+.status-ASSIGNED   { background: rgba(114, 46, 209, .10); color: #722ED1; }
+.status-ACCEPTED   { background: rgba(52, 145, 250, .10); color: #2478D9; }
+.status-ARRIVED    { background: rgba(15, 198, 194, .12); color: #0B9B98; }
+.status-INSPECTING { background: rgba(6, 182, 212, .12); color: #0E7490; }
+.status-IN_PROGRESS{ background: rgba(250, 140, 22, .14); color: #C2410C; }
+.status-ARCHIVING  { background: rgba(255, 193, 7, .18); color: #A16207; }
+.status-ARCHIVED   { background: #F2F3F5; color: #86909C; }
+.status-COMPLETED  { background: rgba(0, 180, 42, .10); color: #009A29; }
+.status-REJECTED   { background: rgba(245, 63, 63, .10); color: #D32029; }

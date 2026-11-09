@@ -647,7 +647,18 @@ watch(() => route.path, () => {
 .sidebar-menu :deep(.el-menu-item.is-active) {
   background: var(--color-sidebar-active-bg) !important;
   color: var(--color-sidebar-active-text) !important;
-  font-weight: 500;
+  font-weight: 600;
+  position: relative;
+}
+.sidebar-menu :deep(.el-menu-item.is-active)::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--color-primary);
 }
 .sidebar-menu :deep(.el-menu-item.is-active .el-icon) {
   color: var(--color-sidebar-active-text);
@@ -690,12 +701,12 @@ watch(() => route.path, () => {
 
 /* 分组标签 */
 .menu-group-label {
-  padding: 16px 20px 6px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-sidebar-group);
+  padding: 18px 22px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #A9B0BC;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 1px;
 }
 
 /* 折叠区域 */

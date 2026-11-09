@@ -14,17 +14,15 @@
     </div>
 
     <!-- 监控统计卡片 -->
-    <el-row :gutter="16" class="stats-row">
-      <el-col :xs="12" :sm="8" :md="4" v-for="s in statCards" :key="s.key">
-        <el-card shadow="never" class="stat-card" :class="`stat-${s.key}`" @click="handleStatClick(s)">
-          <div class="stat-icon" :style="{ background: s.bg, color: s.color }">{{ s.icon }}</div>
-          <div class="stat-content">
-            <div class="stat-label">{{ s.label }}</div>
-            <div class="stat-value" :style="{ color: s.color }">{{ stats[s.key] ?? 0 }}</div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <div class="metric-grid" style="margin-bottom: 16px">
+      <div v-for="s in statCards" :key="s.key" class="metric-item" @click="handleStatClick(s)">
+        <span class="metric-dot" :style="{ background: s.color }"></span>
+        <div>
+          <div class="metric-value">{{ stats[s.key] ?? 0 }}</div>
+          <div class="metric-label">{{ s.label }}</div>
+        </div>
+      </div>
+    </div>
 
     <!-- 筛选栏 -->
     <el-card class="filter-card" shadow="never">
@@ -56,7 +54,7 @@
           <template #default="{ row }">
             <div class="device-cell">
               <div class="device-name-row">
-                <el-tag size="small" :type="statusMeta[row.run_status]?.type ?? 'info'" effect="dark" round class="status-tag">
+                <el-tag size="small" :type="statusMeta[row.run_status]?.type ?? 'info'" effect="light" round class="status-tag">
                   {{ statusMeta[row.run_status]?.label ?? '未知' }}
                 </el-tag>
                 <span class="device-name">{{ row.device_name }}</span>
@@ -71,9 +69,9 @@
         </el-table-column>
         <el-table-column label="级别" width="92" align="center">
           <template #default="{ row }">
-            <el-tag v-if="row.alert_level" size="small" :type="levelMeta(row.alert_level).type" effect="plain">
+            <span v-if="row.alert_level" class="soft-tag" :class="'soft-tag--' + row.alert_level.toLowerCase()">
               {{ row.alert_level }} {{ levelMeta(row.alert_level).label }}
-            </el-tag>
+            </span>
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
@@ -114,16 +112,21 @@
             <span v-else class="dim">-</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="!isPureSupervisor" label="操作" width="248">
+        <el-table-column v-if="!isPureSupervisor" label="操作" width="212">
           <template #default="{ row }">
             <div class="action-group">
-              <el-button link type="primary" @click="$router.push(`/devices/${row.id}`)">编辑</el-button>
               <el-button size="small" plain @click="openQr(row)">二维码</el-button>
-              <el-button
-                v-if="row.fault_tags && row.fault_tags.length"
-                link type="success" @click="handleClearFaults(row)"
-              >清故障</el-button>
-              <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+              <el-dropdown trigger="click" @command="(cmd) => onRowCommand(cmd, row)">
+                <el-button link type="primary">更多<el-icon style="margin-left:2px"><ArrowDown /></el-icon></el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="edit">编辑</el-dropdown-item>
+                    <el-dropdown-item v-if="row.fault_tags && row.fault_tags.length"
+                                      command="clear">清故障</el-dropdown-item>
+                    <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
           </template>
         </el-table-column>
@@ -158,7 +161,9 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, reactive } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import request from '../api'
 import { downloadFile } from '../utils/download'
 import dayjs from 'dayjs'
@@ -306,6 +311,12 @@ const handleStatClick = (s) => {
   fetchData()
 }
 
+const onRowCommand = (cmd, row) => {
+  if (cmd === 'edit') router.push(`/devices/${row.id}`)
+  else if (cmd === 'clear') handleClearFaults(row)
+  else if (cmd === 'delete') handleDelete(row)
+}
+
 const handleDelete = async (row) => {
   try {
     await ElMessageBox.confirm(`确定删除设备「${row.device_name}」？`, '删除确认', { type: 'warning' })
@@ -325,6 +336,8 @@ const handleClearFaults = async (row) => {
 }
 
 const handleToggleRefresh = () => { autoRefresh.value = !autoRefresh.value }
+
+const router = useRouter()
 
 let timer = null
 onMounted(async () => {

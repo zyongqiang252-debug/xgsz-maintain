@@ -52,18 +52,25 @@
         <el-table-column prop="safety_stock" label="安全库存" width="76" align="right" />
         <el-table-column label="状态" width="72" align="center">
           <template #default="{ row }">
-            <span class="stock-status" :class="stockClass(row)">{{ stockLabel(row) }}</span>
+            <span class="soft-tag" :class="stockSoftClass(row)">{{ stockLabel(row) }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="unit_price" label="单价" width="96" align="right" />
         <el-table-column prop="location" label="存放位置" width="106" show-overflow-tooltip />
-        <el-table-column label="操作" width="258">
+        <el-table-column label="操作" width="196">
           <template #default="{ row }">
             <div class="action-group">
-              <el-button link type="primary" @click="$router.push(`/spare-parts/${row.id}`)">{{ canManage ? '编辑' : '查看' }}</el-button>
-              <el-button size="small" type="success" plain @click="openConsume(row)">领用</el-button>
-              <el-button link type="primary" @click="openMovements(row)">流水</el-button>
-              <el-button v-if="canManage" link type="danger" @click="handleDelete(row)">删除</el-button>
+              <el-button size="small" type="primary" plain @click="openConsume(row)">领用</el-button>
+              <el-dropdown trigger="click" @command="(cmd) => onRowCommand(cmd, row)">
+                <el-button link type="primary">更多<el-icon style="margin-left:2px"><ArrowDown /></el-icon></el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="edit">{{ canManage ? '编辑' : '查看' }}</el-dropdown-item>
+                    <el-dropdown-item command="movements">流水</el-dropdown-item>
+                    <el-dropdown-item v-if="canManage" command="delete" divided>删除</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
           </template>
         </el-table-column>
@@ -246,8 +253,12 @@
 <script setup>
 import { ref, onMounted, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
 import request from '../api'
 import { downloadFile } from '../utils/download'
+
+const router = useRouter()
 
 // 备件台账维护权限：仅管理员/主管可增删改，维修员只读
 const canManage = computed(() => {
@@ -310,6 +321,12 @@ const submitConsume = async () => {
   }
 }
 
+const onRowCommand = (cmd, row) => {
+  if (cmd === 'edit') router.push(`/spare-parts/${row.id}`)
+  else if (cmd === 'movements') openMovements(row)
+  else if (cmd === 'delete') handleDelete(row)
+}
+
 const openMovements = async (row) => {
   movement.partName = row.part_name
   movement.visible = true
@@ -344,6 +361,13 @@ const stockLabel = (row) => {
   if (row.stock_quantity <= row.safety_stock) return '紧张'
   return '充足'
 }
+const stockSoftClass = (row) => {
+  const s = stockClass(row)
+  if (s === 'stock-out') return 'soft-tag--p0'
+  if (s === 'stock-low') return 'soft-tag--p1'
+  return 'soft-tag--ok'
+}
+
 const stockClass = (row) => {
   if (row.stock_quantity <= 0) return 'stock-out'
   if (row.stock_quantity <= row.safety_stock) return 'stock-low'

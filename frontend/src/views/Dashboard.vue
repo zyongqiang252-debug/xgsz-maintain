@@ -8,105 +8,92 @@
     </div>
 
     <!-- 统计卡片 -->
-    <div class="stat-cards">
-      <el-card class="stat-card" shadow="never" @click="$router.push('/work-orders')">
-        <div class="stat-body">
-          <div class="stat-icon-box primary">
-            <el-icon :size="24"><Document /></el-icon>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value">{{ stats.total_orders }}</div>
-            <div class="stat-label">总工单数</div>
-            <div class="stat-extra">今日新增 <strong>{{ stats.today_orders }}</strong></div>
-          </div>
+    <div class="stat-grid">
+      <div class="stat-item" @click="$router.push('/work-orders')">
+        <div class="stat-item__icon primary"><el-icon><Document /></el-icon></div>
+        <div class="stat-item__body">
+          <div class="stat-item__value">{{ stats.total_orders }}</div>
+          <div class="stat-item__label">总工单数</div>
+          <div class="stat-item__hint">今日新增 <strong>{{ stats.today_orders }}</strong> 单</div>
         </div>
-      </el-card>
-      <el-card class="stat-card" shadow="never" @click="$router.push('/work-orders')">
-        <div class="stat-body">
-          <div class="stat-icon-box warning">
-            <el-icon :size="24"><WarningFilled /></el-icon>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value warning">{{ stats.pending_review }}</div>
-            <div class="stat-label">草稿工单</div>
-            <div class="stat-extra">需要处理</div>
-          </div>
+      </div>
+      <div class="stat-item" @click="$router.push('/work-orders?status=DRAFT')">
+        <div class="stat-item__icon warning"><el-icon><WarningFilled /></el-icon></div>
+        <div class="stat-item__body">
+          <div class="stat-item__value">{{ stats.pending_review }}</div>
+          <div class="stat-item__label">草稿工单</div>
+          <div class="stat-item__hint">待提交处理</div>
         </div>
-      </el-card>
-      <el-card class="stat-card" shadow="never" @click="$router.push('/knowledge')">
-        <div class="stat-body">
-          <div class="stat-icon-box success">
-            <el-icon :size="24"><Reading /></el-icon>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value">{{ knowledgeContentTotal }}</div>
-            <div class="stat-label">知识库内容</div>
-            <div class="stat-extra">知识 {{ stats.total_knowledge }} · 手册 {{ stats.total_manual_codes }}</div>
-          </div>
+      </div>
+      <div class="stat-item" @click="$router.push('/knowledge-center?tab=list')">
+        <div class="stat-item__icon success"><el-icon><Reading /></el-icon></div>
+        <div class="stat-item__body">
+          <div class="stat-item__value">{{ knowledgeContentTotal }}</div>
+          <div class="stat-item__label">知识库内容</div>
+          <div class="stat-item__hint">知识 {{ stats.total_knowledge }} · 手册 {{ stats.total_manual_codes }}</div>
         </div>
-      </el-card>
-      <el-card class="stat-card" shadow="never" @click="$router.push('/spare-parts')">
-        <div class="stat-body">
-          <div class="stat-icon-box" :class="stats.stock_alert > 0 ? 'danger' : 'info'">
-            <el-icon :size="24"><Box /></el-icon>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value" :class="stats.stock_alert > 0 ? 'danger' : ''">{{ stats.stock_alert }}</div>
-            <div class="stat-label">库存预警</div>
-            <div class="stat-extra">{{ stats.stock_alert > 0 ? `${stats.stock_alert} 项需补货` : '库存正常' }}</div>
-          </div>
+      </div>
+      <div class="stat-item" @click="$router.push('/stock?tab=parts')">
+        <div class="stat-item__icon" :class="stats.stock_alert > 0 ? 'danger' : 'info'">
+          <el-icon><Box /></el-icon>
         </div>
-      </el-card>
+        <div class="stat-item__body">
+          <div class="stat-item__value">{{ stats.stock_alert }}</div>
+          <div class="stat-item__label">库存预警</div>
+          <div class="stat-item__hint">{{ stats.stock_alert > 0 ? `${stats.stock_alert} 项需补货` : '库存正常' }}</div>
+        </div>
+      </div>
     </div>
 
     <!-- 设备监控行 -->
     <div class="section-block">
-      <div class="section-block-header">
-        <span class="section-block-title">设备监控概览</span>
-        <el-button size="small" text type="primary" @click="$router.push('/devices')">进入监控面板 →</el-button>
+      <div class="section-head">
+        <span class="section-head__title">设备监控概览</span>
+        <el-button size="small" text type="primary" @click="$router.push('/devices')">查看全部 →</el-button>
       </div>
-      <div class="monitor-cards">
-        <el-card class="mon-card shadow-none" @click="$router.push('/devices')">
-          <div class="mon-card-body">
-            <div class="mon-num" style="color:#2563EB">{{ stats.total_devices }}</div>
-            <div class="mon-lbl">设备总数</div>
+      <div class="metric-grid">
+        <div class="metric-item" @click="$router.push('/devices')">
+          <span class="metric-dot" style="background:#2563EB"></span>
+          <div>
+            <div class="metric-value">{{ stats.total_devices }}</div>
+            <div class="metric-label">设备总数</div>
           </div>
-        </el-card>
-        <el-card class="mon-card shadow-none mon-online" @click="$router.push('/devices?status=ONLINE')">
-          <div class="mon-card-body">
-            <div class="mon-dot" style="background:#10B981"></div>
-            <div class="mon-num" style="color:#059669">{{ dm.online }}</div>
-            <div class="mon-lbl">正常运行</div>
+        </div>
+        <div class="metric-item" @click="$router.push('/devices?status=ONLINE')">
+          <span class="metric-dot" style="background:#10B981"></span>
+          <div>
+            <div class="metric-value">{{ dm.online }}</div>
+            <div class="metric-label">正常运行</div>
           </div>
-        </el-card>
-        <el-card class="mon-card shadow-none mon-alarm" @click="$router.push('/devices?status=ALARM')">
-          <div class="mon-card-body">
-            <div class="mon-dot" style="background:#F59E0B"></div>
-            <div class="mon-num" style="color:#D97706">{{ dm.alarm }}</div>
-            <div class="mon-lbl">告警中</div>
+        </div>
+        <div class="metric-item" @click="$router.push('/devices?status=ALARM')">
+          <span class="metric-dot" style="background:#F59E0B"></span>
+          <div>
+            <div class="metric-value">{{ dm.alarm }}</div>
+            <div class="metric-label">告警中</div>
           </div>
-        </el-card>
-        <el-card class="mon-card shadow-none mon-fault" @click="$router.push('/devices?status=FAULT')">
-          <div class="mon-card-body">
-            <div class="mon-dot" style="background:#EF4444"></div>
-            <div class="mon-num" style="color:#DC2626">{{ dm.fault }}</div>
-            <div class="mon-lbl">故障停机</div>
+        </div>
+        <div class="metric-item" @click="$router.push('/devices?status=FAULT')">
+          <span class="metric-dot" style="background:#EF4444"></span>
+          <div>
+            <div class="metric-value">{{ dm.fault }}</div>
+            <div class="metric-label">故障停机</div>
           </div>
-        </el-card>
-        <el-card class="mon-card shadow-none mon-offline" @click="$router.push('/devices?status=OFFLINE')">
-          <div class="mon-card-body">
-            <div class="mon-dot" style="background:#6B7280"></div>
-            <div class="mon-num" style="color:#6B7280">{{ dm.offline }}</div>
-            <div class="mon-lbl">离线</div>
+        </div>
+        <div class="metric-item" @click="$router.push('/devices?status=OFFLINE')">
+          <span class="metric-dot" style="background:#94A3B8"></span>
+          <div>
+            <div class="metric-value">{{ dm.offline }}</div>
+            <div class="metric-label">离线</div>
           </div>
-        </el-card>
-        <el-card class="mon-card shadow-none mon-alarm" @click="$router.push('/devices?has_fault=true')">
-          <div class="mon-card-body">
-            <div class="mon-dot" style="background:#7C3AED"></div>
-            <div class="mon-num" style="color:#7C3AED">{{ dm.with_fault_tags }}</div>
-            <div class="mon-lbl">故障标签数</div>
+        </div>
+        <div class="metric-item" @click="$router.push('/devices?has_fault=true')">
+          <span class="metric-dot" style="background:#7C3AED"></span>
+          <div>
+            <div class="metric-value">{{ dm.with_fault_tags }}</div>
+            <div class="metric-label">故障标签</div>
           </div>
-        </el-card>
+        </div>
       </div>
     </div>
 
@@ -121,23 +108,21 @@
           </div>
         </template>
         <el-table :data="recentOrders" stripe size="small">
-          <el-table-column prop="work_order_no" label="工单编号" width="130" show-overflow-tooltip />
-          <el-table-column prop="fault_description" label="故障描述" min-width="120" show-overflow-tooltip />
-          <el-table-column label="状态" width="72">
+          <el-table-column prop="work_order_no" label="工单编号" width="134" show-overflow-tooltip />
+          <el-table-column prop="fault_description" label="故障描述" min-width="132" show-overflow-tooltip />
+          <el-table-column label="状态" width="86">
             <template #default="{ row }">
               <span class="status-tag" :class="'status-' + row.status">{{ statusLabel(row.status) }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="置信度" width="56">
+          <el-table-column label="级别" width="72" align="center">
             <template #default="{ row }">
-              <span v-if="row.confidence != null" style="font-size:12px;font-weight:600"
-                :style="{ color: row.confidence >= 0.8 ? '#00B42A' : '#86909C' }">
-                {{ (row.confidence * 100).toFixed(0) }}%
-              </span>
-              <span v-else style="color:#C9CDD4;font-size:12px">-</span>
+              <span v-if="row.alert_level" class="soft-tag"
+                    :class="'soft-tag--' + row.alert_level.toLowerCase()">{{ row.alert_level }}</span>
+              <span v-else style="color:#C9CDD4">—</span>
             </template>
           </el-table-column>
-          <el-table-column prop="created_at" label="创建时间" width="112">
+          <el-table-column prop="created_at" label="创建时间" width="100">
             <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
           </el-table-column>
         </el-table>
@@ -151,8 +136,10 @@
             <el-button size="small" text type="primary" @click="$router.push('/spare-parts')">查看全部</el-button>
           </div>
         </template>
-        <div v-if="alertItems.length === 0" style="text-align: center; padding: 40px 0; color: #86909C">
-          库存正常，暂无预警
+        <div class="empty-block" v-if="alertItems.length === 0">
+          <div class="empty-block__icon"><el-icon><Box /></el-icon></div>
+          <div class="empty-block__title">库存正常，暂无预警</div>
+          <div class="empty-block__hint">低于安全库存的备件会在这里提醒</div>
         </div>
         <div v-else class="alert-list">
           <div v-for="item in alertItems.slice(0, 8)" :key="item.id" class="alert-item">
@@ -243,11 +230,19 @@ const knowledgeContentTotal = computed(() => {
 
 const statusMap = {
   DRAFT: '草稿',
+  SUBMITTED: '待派工',
+  ASSIGNED: '已派工',
+  ACCEPTED: '已接单',
+  ARRIVED: '已到场',
+  INSPECTING: '检查中',
   IN_PROGRESS: '维修中',
+  ARCHIVING: '待归档',
+  ARCHIVED: '已归档',
   COMPLETED: '已完成',
+  REJECTED: '已退回',
 }
 const statusLabel = (s) => statusMap[s] || s
-const formatTime = (t) => t ? dayjs(t).format('YYYY-MM-DD HH:mm') : '-'
+const formatTime = (t) => t ? dayjs(t).format('MM-DD HH:mm') : '-'
 
 const fetchStats = async () => {
   try {
@@ -332,7 +327,7 @@ onMounted(() => { fetchStats() })
 .stat-extra { font-size: 12px; color: var(--color-text-tertiary); margin-top: 6px; }
 .stat-extra strong { color: var(--color-text-primary); }
 
-.dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+.dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; align-items: start; }
 
 .section-card { margin-bottom: 24px; }
 .section-header { display: flex; justify-content: space-between; align-items: center; }
