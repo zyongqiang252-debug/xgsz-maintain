@@ -8,7 +8,6 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -19,43 +18,23 @@ from app.models.spare_part import SparePart
 from app.models.stock_movement import StockMovement
 from app.models.user import User
 from app.models.work_order import WorkOrder
+from app.services import excel_style as X
 
 router = APIRouter(tags=["报表导出"], dependencies=[Depends(get_current_user)])
 
-_HEAD_FILL = PatternFill("solid", fgColor="0FC6C2")
-_HEAD_FONT = Font(bold=True, color="FFFFFF")
-
-
-def _xlsx(title: str, headers, rows) -> StreamingResponse:
+def _xlsx(title: str, headers, rows, formats=None, wrap_cols=None, widths=None) -> StreamingResponse:
+    """统一格式导出：标题行 + 品牌表头 + 斑马纹 + 冻结 + 筛选 + 打印设置"""
     wb = Workbook()
-    ws = wb.active
-    ws.title = title
-    ws.append(list(headers))
-    for c in ws[1]:
-        c.fill = _HEAD_FILL
-        c.font = _HEAD_FONT
-        c.alignment = Alignment(horizontal="center", vertical="center")
-    for r in rows:
-        ws.append(list(r))
-    # 列宽自适应（按内容长度，最多 40）
-    for i, col in enumerate(ws.columns, start=1):
-        width = max((len(str(c.value or "")) for c in col), default=8)
-        ws.column_dimensions[chr(64 + i) if i <= 26 else "A"].width = min(40, max(8, width + 2))
-    ws.freeze_panes = "A2"
+    wb.remove(wb.active)
+    X.add_sheet(wb, title, headers, rows, formats=formats, wrap_cols=wrap_cols, widths=widths)
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
     stamp = datetime.now().strftime("%Y%m%d%H%M")
-    # HTTP 头只能是 latin-1：中文名用 RFC 5987 的 filename* 传，另给一个 ASCII 兜底名
-    from urllib.parse import quote
     cn_name = f"{title}-{stamp}.xlsx"
     ascii_name = f"export-{stamp}.xlsx"
-    disp = f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(cn_name)}"
     return StreamingResponse(
-        buf,
+        io.BytesIO(X.workbook_bytes(wb)),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": disp},
+        headers=X.filename_headers(cn_name, ascii_name),
     )
 
 
@@ -110,7 +89,12 @@ def export_work_orders(
     headers = ["工单号", "状态", "设备编码", "故障描述", "故障分类", "优先级", "维修员", "位置",
                "根本原因", "解决方案", "工时(h)", "人工成本", "备件成本", "总成本",
                "SLA", "满意度", "创建时间", "完成时间"]
-    return _xlsx("工单", headers, data)
+    return _xlsx("工单", headers, data,
+                 formats={"工时(h)": "0.0", "人工成本": X.MONEY, "备件成本": X.MONEY,
+                          "总成本": X.MONEY, "满意度": X.INT},
+                 wrap_cols={"故障描述", "根本原因", "解决方案"},
+                 widths={"工单号": 20, "状态": 10, "设备编码": 16, "故障描述": 42,
+                         "根本原因": 32, "解决方案": 42, "创建时间": 18, "完成时间": 18})
 
 
 @router.get("/spare-parts.xlsx", summary="导出备件台账（Excel）")
@@ -121,7 +105,9 @@ def export_spare_parts(db: Session = Depends(get_db)):
              round((p.stock_quantity or 0) * (p.unit_price or 0), 2),
              p.location or "", p.supplier or ""] for p in rows]
     headers = ["编码", "名称", "规格型号", "单位", "库存", "安全库存", "单价", "库存金额", "存放位置", "供应商"]
-    return _xlsx("备件台账", headers, data)
+    return _xlsx("备件台账", headers, data,
+                 formats={"库存": X.INT, "安全库存": X.INT, "单价": X.MONEY, "库存金额": X.MONEY},
+                 widths={"编码": 16, "名称": 22, "规格型号": 26})
 
 
 @router.get("/knowledge.xlsx", summary="导出知识库（Excel）")
@@ -132,7 +118,9 @@ def export_knowledge(db: Session = Depends(get_db)):
              k.status.value if hasattr(k.status, "value") else (k.status or ""),
              k.created_at.strftime("%Y-%m-%d %H:%M") if k.created_at else ""] for k in rows]
     headers = ["ID", "标题", "设备类型", "故障码", "内容摘要", "状态", "创建时间"]
-    return _xlsx("知识库", headers, data)
+    return _xlsx("知识库", headers, data,
+                 wrap_cols={"内容摘要"},
+                 widths={"ID": 8, "标题": 34, "内容摘要": 60, "创建时间": 18})
 
 
 @router.get("/stock-movements.xlsx", summary="导出出入库流水（Excel）")
@@ -146,7 +134,10 @@ def export_stock_movements(db: Session = Depends(get_db)):
              m.work_order_id or "", m.operator_name or "", m.remark or ""] for m in rows]
     headers = ["时间", "类型", "备件编码", "备件名称", "数量", "变动前", "变动后",
                "单价", "金额", "工单ID", "操作人", "备注"]
-    return _xlsx("出入库流水", headers, data)
+    return _xlsx("出入库流水", headers, data,
+                 formats={"数量": X.INT, "变动前": X.INT, "变动后": X.INT,
+                          "单价": X.MONEY, "金额": X.MONEY},
+                 widths={"时间": 18, "备件编码": 16, "备件名称": 22})
 
 
 @router.get("/devices.xlsx", summary="导出服务器台账（Excel）")
@@ -159,4 +150,7 @@ def export_devices(db: Session = Depends(get_db)):
     headers = ["设备编码", "名称", "类型", "整机型号", "序列号SN", "机房", "机柜", "U位",
                "BMC IP", "业务 IP", "GPU 型号", "GPU 数量", "驱动版本", "CUDA", "固件版本",
                "告警级别", "运行状态"]
-    return _xlsx("服务器台账", headers, data)
+    return _xlsx("服务器台账", headers, data,
+                 formats={"GPU 数量": X.INT},
+                 widths={"设备编码": 16, "名称": 22, "序列号SN": 22, "BMC IP": 16,
+                         "业务 IP": 16, "GPU 型号": 20})

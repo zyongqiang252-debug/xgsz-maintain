@@ -9,7 +9,6 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -21,11 +20,9 @@ from app.models.spare_part import SparePart
 from app.models.stock_movement import StockMovement
 from app.models.user import User
 from app.models.work_order import WorkOrder
+from app.services import excel_style as X
 
 router = APIRouter(tags=["一键导出"], dependencies=[Depends(require_supervisor)])
-
-_HEAD_FILL = PatternFill("solid", fgColor="0FC6C2")
-_HEAD_FONT = Font(bold=True, color="FFFFFF")
 
 STATUS_CN = {
     "DRAFT": "草稿", "SUBMITTED": "待派工", "ASSIGNED": "已派单", "ACCEPTED": "已接单",
@@ -35,21 +32,10 @@ STATUS_CN = {
 SERVICE_CN = {"REMOTE": "远程处理", "SITE": "现场处理", "RMA": "返厂维修"}
 
 
-def _sheet(wb: Workbook, title: str, headers, rows):
-    ws = wb.create_sheet(title=title)
-    ws.append(list(headers))
-    for c in ws[1]:
-        c.fill = _HEAD_FILL
-        c.font = _HEAD_FONT
-        c.alignment = Alignment(horizontal="center", vertical="center")
-    for r in rows:
-        ws.append(list(r))
-    for i, col in enumerate(ws.columns, start=1):
-        width = max((len(str(c.value or "")) for c in col), default=8)
-        letter = ws.cell(row=1, column=i).column_letter
-        ws.column_dimensions[letter].width = min(40, max(8, width + 2))
-    ws.freeze_panes = "A2"
-    return ws
+def _sheet(wb: Workbook, title: str, headers, rows, formats=None, wrap_cols=None, widths=None):
+    """统一格式：标题 + 品牌表头 + 斑马纹 + 冻结 + 筛选 + 打印设置"""
+    return X.add_sheet(wb, title, headers, rows, formats=formats,
+                       wrap_cols=wrap_cols, widths=widths)
 
 
 @router.get("/all.xlsx", summary="一键导出全部数据（7 个 Sheet）")
@@ -75,7 +61,11 @@ def export_all(db: Session = Depends(get_db)):
              w.labor_cost or "", w.parts_cost or "", w.total_cost or "",
              w.sla_status or "", w.satisfaction_score or "",
              w.created_at.strftime("%Y-%m-%d %H:%M") if w.created_at else "",
-             w.resolved_at.strftime("%Y-%m-%d %H:%M") if w.resolved_at else ""] for w in orders])
+             w.resolved_at.strftime("%Y-%m-%d %H:%M") if w.resolved_at else ""] for w in orders],
+           formats={"工时(h)": "0.0", "人工成本": X.MONEY, "备件成本": X.MONEY, "总成本": X.MONEY,
+                    "满意度": X.INT},
+           wrap_cols={"故障描述"},
+           widths={"工单号": 20, "故障描述": 44, "创建时间": 18, "完成时间": 18})
 
     # 2) 设备（服务器台账）
     devices = db.query(Device).order_by(Device.device_code).all()
@@ -88,7 +78,9 @@ def export_all(db: Session = Depends(get_db)):
              d.bmc_ip or "", d.business_ip or "", d.gpu_model or "", d.gpu_count or "",
              d.driver_version or "", d.cuda_version or "", d.firmware_version or "",
              d.cpu_model or "", d.memory_gb or "", d.os_version or "",
-             d.alert_level or "", d.run_status or "", d.project or ""] for d in devices])
+             d.alert_level or "", d.run_status or "", d.project or ""] for d in devices],
+           formats={"GPU 数量": X.INT, "内存(GB)": X.INT},
+           widths={"设备编码": 16, "名称": 22, "序列号SN": 22, "BMC IP": 16, "业务 IP": 16})
 
     # 3) 备件
     parts = db.query(SparePart).order_by(SparePart.part_code).all()
@@ -97,7 +89,9 @@ def export_all(db: Session = Depends(get_db)):
            [[p.part_code, p.part_name, p.specification or "", p.unit or "",
              p.stock_quantity or 0, p.safety_stock or 0, p.unit_price or 0,
              round((p.stock_quantity or 0) * (p.unit_price or 0), 2),
-             p.device_type or "", p.location or "", p.supplier or ""] for p in parts])
+             p.device_type or "", p.location or "", p.supplier or ""] for p in parts],
+           formats={"库存": X.INT, "安全库存": X.INT, "单价": X.MONEY, "库存金额": X.MONEY},
+           widths={"编码": 16, "名称": 22, "规格": 26})
 
     # 4) 出入库流水
     moves = db.query(StockMovement).order_by(StockMovement.created_at.desc()).limit(20000).all()
@@ -107,7 +101,10 @@ def export_all(db: Session = Depends(get_db)):
            [[m.created_at.strftime("%Y-%m-%d %H:%M") if m.created_at else "",
              type_cn.get(m.movement_type, m.movement_type), m.part_code or "", m.part_name or "",
              m.quantity, m.before_qty, m.after_qty, m.unit_price, m.amount,
-             m.work_order_id or "", m.operator_name or "", m.remark or ""] for m in moves])
+             m.work_order_id or "", m.operator_name or "", m.remark or ""] for m in moves],
+           formats={"数量": X.INT, "变动前": X.INT, "变动后": X.INT,
+                    "单价": X.MONEY, "金额": X.MONEY},
+           widths={"时间": 18, "备件编码": 16, "备件名称": 22})
 
     # 5) 知识库
     kn = db.query(KnowledgeItem).order_by(KnowledgeItem.id.desc()).limit(10000).all()
@@ -116,7 +113,9 @@ def export_all(db: Session = Depends(get_db)):
            [[k.id, k.title or "", k.device_type or "", k.fault_code or "",
              k.status.value if hasattr(k.status, "value") else (k.status or ""),
              (k.content or "").replace("\n", " ")[:500],
-             k.created_at.strftime("%Y-%m-%d %H:%M") if k.created_at else ""] for k in kn])
+             k.created_at.strftime("%Y-%m-%d %H:%M") if k.created_at else ""] for k in kn],
+           wrap_cols={"内容摘要"},
+           widths={"标题": 34, "内容摘要": 60, "创建时间": 18})
 
     # 6) 保养计划
     plans = db.query(MaintenancePlan).order_by(MaintenancePlan.next_due_at).all()
