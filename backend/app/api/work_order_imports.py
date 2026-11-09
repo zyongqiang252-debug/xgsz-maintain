@@ -351,6 +351,7 @@ def confirm_item(
         fault_code=str(data.get("fault_code") or ""),
         fault_description=fault_description,
         fault_category=data.get("fault_category") or None,
+        order_type="IMPORT",
         fault_phenomenon_type=data.get("fault_phenomenon_type") or None,
         fault_phenomenon=data.get("fault_phenomenon") or None,
         gpu_index=(str(data.get("gpu_index")).strip() or None) if data.get("gpu_index") else None,

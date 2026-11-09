@@ -51,6 +51,8 @@ def list_work_orders(
     date_from: Optional[date] = Query(None, description="创建日期起始"),
     date_to: Optional[date] = Query(None, description="创建日期截止"),
     sla_status: Optional[str] = Query(None, description="SLA 状态筛：ON_TIME / AT_RISK / OVERDUE"),
+    order_type: Optional[str] = Query(None, description="工单类型：REPAIR/MAINTENANCE/INSPECTION/IMPORT"),
+    alert_level: Optional[str] = Query(None, description="告警级别：P0/P1/P2/P3"),
     overdue_only: bool = Query(False, description="只看超时工单"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -60,6 +62,10 @@ def list_work_orders(
         query = query.filter(WorkOrder.status == status)
     if sla_status:
         query = query.filter(WorkOrder.sla_status == sla_status.upper())
+    if order_type:
+        query = query.filter(WorkOrder.order_type == order_type.upper())
+    if alert_level:
+        query = query.filter(WorkOrder.alert_level == AL.normalize(alert_level))
     if overdue_only:
         query = query.filter(WorkOrder.sla_status == "OVERDUE")
     if keyword:
@@ -91,10 +97,8 @@ def list_work_orders(
         d['device_type'] = w.device.device_type if w.device else None
         d['device_name'] = w.device.device_name if w.device else None
         # 告警级别：优先级映射，SLA 超时升 P0
-        lv = AL.from_priority(getattr(w, 'priority', None))
-        if getattr(w, 'sla_status', None) == 'OVERDUE':
-            lv = 'P0'
-        d['alert_level'] = lv
+        d['alert_level'] = getattr(w, 'alert_level', None) or AL.from_priority(getattr(w, 'priority', None))
+        d['order_type'] = getattr(w, 'order_type', None) or 'REPAIR'
         result_items.append(d)
     return {"total": total, "items": result_items, "page": page, "page_size": page_size}
 
@@ -285,6 +289,11 @@ def create_work_order(data: WorkOrderCreate, db: Session = Depends(get_db), curr
         work_order.assignee_id = None
     if work_order.status not in (WorkOrderStatus.DRAFT, None):
         work_order.status = WorkOrderStatus.DRAFT
+    # 工单类型：显式传入优先，否则按来源推断（保养/点检自动建单已在各自模块设置）
+    if not getattr(work_order, "order_type", None):
+        work_order.order_type = "REPAIR"
+    # 告警级别：按优先级推导
+    work_order.alert_level = AL.from_priority(work_order.priority)
     # SLA：按优先级算出响应/修复截止时间
     try:
         resp_due, resv_due = sla_service.compute_due(work_order.priority or "MEDIUM")
@@ -490,6 +499,7 @@ def complete_work_order(work_order_id: int, db: Session = Depends(get_db)):
     try:
         sla_service.recompute_cost(work_order, db)
         sla_service.mark_overdue(work_order)
+        work_order.alert_level = "P0" if work_order.sla_status == "OVERDUE" else AL.from_priority(work_order.priority)  # 完成时刷新 alert_level
     except Exception as e:
         logger.warning(f"[WorkOrder] 完成时刷新 SLA/成本失败（忽略）: {e}")
     db.commit()
@@ -994,6 +1004,9 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
         if work_order.used_parts or work_order.work_hours:
             sla_service.recompute_cost(work_order, db)
         sla_service.mark_overdue(work_order)
+        # 告警级别随之刷新：优先级映射，SLA 超时升 P0
+        _lv = AL.from_priority(work_order.priority)
+        work_order.alert_level = "P0" if work_order.sla_status == "OVERDUE" else _lv
         db.commit()
     except Exception as e:
         logger.warning(f"[WorkOrder] SLA/成本刷新失败（忽略）: {e}")

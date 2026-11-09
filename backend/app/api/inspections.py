@@ -116,6 +116,8 @@ def create_record(data: RecordIn, db: Session = Depends(get_db),
             device_id=dev.id if dev else None, device_code=data.device_code,
             fault_description=f"点检异常：{desc}"[:500],
             fault_category="点检异常", priority="HIGH",
+            order_type="INSPECTION",
+            alert_level="P1",
             status=WorkOrderStatus.DRAFT,
             created_by=current_user.id, technician_id=current_user.id,
         )

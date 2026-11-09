@@ -122,6 +122,7 @@ class DeviceResponse(BaseModel):
 # ==================== 工单 ====================
 class WorkOrderCreate(BaseModel):
     work_order_no: Optional[str] = Field(None, max_length=50)
+    order_type: Optional[str] = None
     device_id: Optional[int] = None
     device_code: Optional[str] = None
     fault_code: Optional[str] = None
@@ -160,6 +161,7 @@ class WorkOrderCreate(BaseModel):
 
 class WorkOrderUpdate(BaseModel):
     device_id: Optional[int] = None
+    order_type: Optional[str] = None
     device_code: Optional[str] = None
     fault_code: Optional[str] = None
     device_error_code: Optional[str] = None
@@ -247,6 +249,7 @@ class WorkOrderResponse(BaseModel):
     resolved_at: Optional[datetime] = None
     sla_status: Optional[str] = None
     alert_level: Optional[str] = None  # 由优先级/SLA 推导的 P0~P3
+    order_type: Optional[str] = None  # REPAIR/MAINTENANCE/INSPECTION/IMPORT
     satisfaction_score: Optional[int] = None
     satisfaction_comment: Optional[str] = None
     feedback_at: Optional[datetime] = None

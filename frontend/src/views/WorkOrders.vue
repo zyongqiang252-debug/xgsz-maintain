@@ -18,8 +18,17 @@
           <el-option label="已归档" value="ARCHIVED" />
           <el-option label="已完成" value="COMPLETED" />
         </el-select>
-        <el-select v-model="deviceTypeFilter" placeholder="服务器类型" clearable class="filter-select" @change="handleSearch">
-          <el-option v-for="d in deviceTypeOptions" :key="d.value" :label="d.label" :value="d.value" />
+        <el-select v-model="orderTypeFilter" placeholder="工单类型" clearable class="filter-select" @change="handleSearch">
+          <el-option label="报修工单" value="REPAIR" />
+          <el-option label="保养工单" value="MAINTENANCE" />
+          <el-option label="点检工单" value="INSPECTION" />
+          <el-option label="导入工单" value="IMPORT" />
+        </el-select>
+        <el-select v-model="alertLevelFilter" placeholder="告警级别" clearable class="filter-select" @change="handleSearch">
+          <el-option label="P0 严重" value="P0" />
+          <el-option label="P1 重要" value="P1" />
+          <el-option label="P2 一般" value="P2" />
+          <el-option label="P3 提示" value="P3" />
         </el-select>
         <el-date-picker
           v-model="dateRange"
@@ -38,8 +47,15 @@
 
     <el-card class="table-card" shadow="never">
       <el-table :data="list" v-loading="loading" stripe class="wo-table">
-        <el-table-column prop="work_order_no" label="工单编号" width="168" show-overflow-tooltip />
-        <el-table-column prop="fault_description" label="故障描述" min-width="150" show-overflow-tooltip />
+        <el-table-column label="工单编号" width="176" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="wo-no">{{ row.work_order_no }}</span>
+            <el-tag v-if="row.order_type && row.order_type !== 'REPAIR'" size="small" effect="plain" style="margin-left:4px">
+              {{ orderTypeLabel(row.order_type) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="fault_description" label="故障描述" min-width="140" show-overflow-tooltip />
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
             <span class="status-tag" :class="'status-' + row.status">{{ statusLabel(row.status) }}</span>
@@ -430,7 +446,8 @@ const handleSearch = () => { page.value = 1; fetchData() }
 const handleReset = () => {
   keyword.value = ''
   statusFilter.value = ''
-  deviceTypeFilter.value = ''
+  orderTypeFilter.value = ''
+  alertLevelFilter.value = ''
   dateRange.value = null
   page.value = 1
   sessionStorage.removeItem(STORAGE_KEY)
@@ -496,9 +513,10 @@ const handleExport = async () => {
 }
 .page-title { font-size: 20px; font-weight: 600; color: var(--color-text-primary); }
 .filter-card { margin-bottom: 16px; }
-.filter-bar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-.filter-input { width: 260px; }
-.filter-select { width: 150px; }
+.filter-bar { display: flex; gap: 8px; flex-wrap: nowrap; align-items: center; }
+.filter-bar :deep(.el-date-editor) { flex: 1; min-width: 240px; }
+.filter-input { width: 200px; }
+.filter-select { width: 128px; }
 .action-btn { flex-shrink: 0; }
 .secondary-btn { background: #fff; border-color: #d9d9d9; color: #333; }
 .table-card { min-height: 300px; overflow: hidden; }
