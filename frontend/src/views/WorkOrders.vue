@@ -111,77 +111,75 @@
         <el-table-column prop="created_at" label="创建时间" width="140">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="248">
+        <el-table-column label="操作" width="232" align="right" header-align="left">
           <template #default="{ row }">
-            <div class="col-actions">
-              <div class="action-row">
+            <div class="op-cell">
+              <div class="op-primary" v-if="hasPrimaryAction(row)">
                 <el-button
                   v-if="isSupervisor && ['SUBMITTED', 'ASSIGNED'].includes(row.status)"
                   size="small" type="primary" @click="openDispatch(row)"
                 >{{ row.status === 'ASSIGNED' ? '改派' : '派工' }}</el-button>
                 <el-button
-                  v-if="rowActionText(row) === '转派'"
+                  v-else-if="rowActionText(row) === '转派'"
                   size="small" type="primary" @click="onRowCommand('dispatch', row)"
                 >转派</el-button>
                 <el-button
-                  v-if="rowActionText(row) === '领取' && !isPoolView"
+                  v-else-if="rowActionText(row) === '领取' && !isPoolView"
                   size="small" type="primary"
                   :loading="claiming === row.id" @click="claimTask(row)"
                 >领取</el-button>
-                <el-button link type="primary" @click="onRowCommand('print', row)">打印</el-button>
-                <el-button
-                  v-if="!isSupervisor || isAdmin"
-                  link type="primary"
-                  :disabled="!canEditRow(row)"
-                  :title="canEditRow(row) ? '' : editDenyReason(row)"
-                  @click="onRowCommand('edit', row)"
-                >编辑</el-button>
-                <el-button
-                  v-if="!isSupervisor || isAdmin"
-                  link type="danger"
-                  :disabled="!canDeleteRow(row)"
-                  :title="canDeleteRow(row) ? '' : deleteDenyReason(row)"
-                  @click="onRowCommand('delete', row)"
-                >删除</el-button>
+                <template v-else-if="canOperateProgress(row)">
+                  <el-button
+                    v-if="isPoolView && row.status === 'SUBMITTED' && isTechnician"
+                    size="small" type="primary"
+                    :loading="claiming === row.id" @click="claimTask(row)"
+                  >领取</el-button>
+                  <el-button
+                    v-if="row.status === 'DRAFT'"
+                    size="small" type="primary"
+                    :disabled="!isCreatedByMe(row) && !isAdmin"
+                    :loading="transitionLoading[`${row.id}_SUBMITTED`]"
+                    @click="handleTransition(row, 'SUBMITTED')"
+                  >提交报修</el-button>
+                  <!-- 已派单/已接单/已到场/检查中：一键进入处理中（中间步骤自动记入进度） -->
+                  <el-button
+                    v-if="['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(row.status)"
+                    size="small" type="primary"
+                    :disabled="!isAssignedTech(row) && !isSupervisor"
+                    :loading="startingId === row.id"
+                    @click="handleStart(row)"
+                  >开始处理</el-button>
+                  <el-button
+                    v-if="row.status === 'IN_PROGRESS'"
+                    size="small" type="success"
+                    :loading="transitionLoading[`${row.id}_ARCHIVING`]"
+                    @click="handleFinishRepair(row)"
+                  >完成维修</el-button>
+                  <el-button
+                    v-if="row.status === 'ARCHIVING'"
+                    size="small" type="primary"
+                    @click="$router.push(`/work-orders/${row.id}?edit=1`)"
+                  >去归档</el-button>
+                </template>
               </div>
-              <div class="action-row progress-row" v-if="canOperateProgress(row)">
-                <el-button
-                  v-if="isPoolView && row.status === 'SUBMITTED' && isTechnician"
-                  size="small"
-                  type="primary"
-                  :loading="claiming === row.id"
-                  @click="claimTask(row)"
-                >领取</el-button>
-                <el-button
-                  v-if="row.status === 'DRAFT'"
-                  size="small"
-                  type="primary"
-                  :disabled="!isCreatedByMe(row) && !isAdmin"
-                  :loading="transitionLoading[`${row.id}_SUBMITTED`]"
-                  @click="handleTransition(row, 'SUBMITTED')"
-                >提交报修</el-button>
-                <!-- 已派单/已接单/已到场/检查中：一键进入处理中（中间步骤自动记入进度） -->
-                <el-button
-                  v-if="['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(row.status)"
-                  size="small"
-                  type="primary"
-                  :disabled="!isAssignedTech(row) && !isSupervisor"
-                  :loading="startingId === row.id"
-                  @click="handleStart(row)"
-                >开始处理</el-button>
-                <el-button
-                  v-if="row.status === 'IN_PROGRESS'"
-                  size="small"
-                  type="success"
-                  :loading="transitionLoading[`${row.id}_ARCHIVING`]"
-                  @click="handleFinishRepair(row)"
-                >完成维修</el-button>
-                <el-button
-                  v-if="row.status === 'ARCHIVING'"
-                  size="small"
-                  type="primary"
-                  @click="$router.push(`/work-orders/${row.id}?edit=1`)"
-                >去归档</el-button>
+              <div class="op-actions">
+                <el-button link @click="onRowCommand('print', row)">打印</el-button>
+                <template v-if="!isSupervisor || isAdmin">
+                  <span class="op-sep"></span>
+                  <el-button
+                    link
+                    :disabled="!canEditRow(row)"
+                    :title="canEditRow(row) ? '' : editDenyReason(row)"
+                    @click="onRowCommand('edit', row)"
+                  >编辑</el-button>
+                  <span class="op-sep"></span>
+                  <el-button
+                    link type="danger"
+                    :disabled="!canDeleteRow(row)"
+                    :title="canDeleteRow(row) ? '' : deleteDenyReason(row)"
+                    @click="onRowCommand('delete', row)"
+                  >删除</el-button>
+                </template>
               </div>
             </div>
           </template>
@@ -274,6 +272,12 @@ const isAssignedTech = (row) => {
 const canOperateProgress = (row) =>
   isAssignedTech(row) || row.status === 'DRAFT' ||
   (isPoolView && row.status === 'SUBMITTED' && isTechnician)
+
+// 操作列是否渲染「主操作」按钮（派工/改派、领取/转派、流程推进）
+const hasPrimaryAction = (row) =>
+  (isSupervisor && ['SUBMITTED', 'ASSIGNED'].includes(row.status)) ||
+  !!rowActionText(row) ||
+  canOperateProgress(row)
 
 // ===== 派工（把 SUBMITTED 指派给维修员 → ASSIGNED）=====
 const dispatch = reactive({ visible: false, row: null, technicianId: null, remark: '', technicians: [], submitting: false })
@@ -584,7 +588,7 @@ const handleSearch = () => { page.value = 1; fetchData() }
 // 整行点击查看详情；点在操作按钮上时不跳转
 const onRowClick = (row, column, event) => {
   const el = event?.target
-  if (el?.closest?.('.col-actions, button, a, .el-dropdown')) return
+  if (el?.closest?.('.op-cell, button, a, .el-dropdown')) return
   if (window.getSelection?.()?.toString()) return // 用户正在选文字
   router.push(`/work-orders/${row.id}`)
 }
@@ -669,10 +673,16 @@ const handleExport = async () => {
 .wo-table :deep(.el-table__row td:last-child) { cursor: default; }
 .wo-table :deep(.el-button.is-link) { padding: 0 2px; height: auto; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
-.col-actions { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
-/* 操作按钮靠左；进度主操作推到最右，避免每行按钮位置忽左忽右 */
-.action-row { display: flex; align-items: center; gap: 4px; }
-.progress-row { display: flex; align-items: center; margin-left: auto; }
+.op-cell { display: flex; align-items: center; min-height: 28px; white-space: nowrap; }
+.op-primary { display: flex; align-items: center; gap: 6px; margin-right: 12px; }
+.op-primary:empty { display: none; }
+.op-actions { display: flex; align-items: center; margin-left: auto; }
+.op-actions .el-button.is-link { color: #4E5969; font-size: 13px; padding: 0 5px; }
+.op-actions .el-button.is-link:hover { color: #0FC6C2; }
+.op-actions .el-button.is-link.is-disabled { color: #C9CDD4; }
+.op-actions .el-button.is-link.el-button--danger { color: #F53F3F; }
+.op-actions .el-button.is-link.el-button--danger.is-disabled { color: #F7C5C5; }
+.op-sep { width: 1px; height: 12px; background: #E5E6EB; margin: 0 1px; flex-shrink: 0; }
 
 .status-tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; }
 .status-DRAFT { background: #F2F3F5; color: #4E5969; }
