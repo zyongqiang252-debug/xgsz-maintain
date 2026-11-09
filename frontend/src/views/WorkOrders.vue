@@ -66,7 +66,7 @@
 
     <el-card class="table-card" shadow="never">
       <el-table :data="list" stripe class="wo-table" @row-click="onRowClick">
-        <el-table-column label="工单编号" width="176" show-overflow-tooltip>
+        <el-table-column label="工单编号" width="166" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="wo-no">{{ row.work_order_no }}</span>
             <el-tag v-if="row.order_type && row.order_type !== 'REPAIR'" size="small" effect="plain" style="margin-left:4px">
@@ -74,8 +74,8 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="fault_description" label="故障描述" min-width="150" show-overflow-tooltip />
-        <el-table-column label="状态" width="90">
+        <el-table-column prop="fault_description" label="故障描述" min-width="130" show-overflow-tooltip />
+        <el-table-column label="状态" width="86">
           <template #default="{ row }">
             <span class="status-tag" :class="'status-' + (row.status_group || row.status)">{{ row.status_group_label || statusLabel(row.status) }}</span>
           </template>
@@ -88,7 +88,14 @@
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="时效" width="110" align="center">
+
+        <el-table-column label="负责人" width="88" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span v-if="row.technician_name">{{ row.technician_name }}</span>
+            <span v-else class="muted">未指派</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="时效" width="104" align="center">
           <template #default="{ row }">
             <el-tooltip :content="slaTooltip(row)" placement="top">
               <el-tag size="small" :type="slaTagType(row)" effect="light">{{ slaLabel(row) }}</el-tag>
@@ -101,10 +108,10 @@
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="152">
+        <el-table-column prop="created_at" label="创建时间" width="140">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="250">
+        <el-table-column label="操作" width="236">
           <template #default="{ row }">
             <div class="col-actions">
               <div class="action-row">

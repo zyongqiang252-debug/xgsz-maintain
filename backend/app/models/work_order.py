@@ -1,4 +1,5 @@
-from sqlalchemy import Column, String, Text, Integer, Float, TIMESTAMP, ForeignKey, Boolean, Enum as SQLEnum
+from sqlalchemy import (Column, String, Text, Integer, Float, TIMESTAMP, ForeignKey,
+                        Boolean, Enum as SQLEnum, DateTime)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.models.base import BaseModel
@@ -58,6 +59,8 @@ class WorkOrder(BaseModel):
     start_time = Column(TIMESTAMP)
     end_time = Column(TIMESTAMP)
     technician_id = Column(Integer, ForeignKey("users.id"), comment="指派的维修人员 ID")
+    dispatcher_id = Column(Integer, ForeignKey("users.id"), index=True, comment="分配人（派工操作人）")
+    dispatched_at = Column(DateTime, comment="最近一次派工时间")
     assignee_id = Column(Integer, ForeignKey("users.id"), comment="当前处理人 ID")
     reporter_id = Column(Integer, ForeignKey("users.id"), comment="上报人员 ID（移动端提交）")
     priority = Column(String(10), default="MEDIUM", comment="优先级: LOW/MEDIUM/HIGH/CRITICAL")

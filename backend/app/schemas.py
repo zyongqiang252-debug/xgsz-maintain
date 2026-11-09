@@ -252,6 +252,8 @@ class WorkOrderResponse(BaseModel):
     order_type: Optional[str] = None  # REPAIR/MAINTENANCE/INSPECTION/IMPORT
     status_group: Optional[str] = None  # 对外 6 状态分组
     status_group_label: Optional[str] = None  # 分组中文名（草稿/待派工/处理中…）
+    dispatcher_name: Optional[str] = None  # 分配人（派工人）姓名
+    dispatched_at: Optional[datetime] = None  # 最近一次派工时间
     satisfaction_score: Optional[int] = None
     satisfaction_comment: Optional[str] = None
     feedback_at: Optional[datetime] = None

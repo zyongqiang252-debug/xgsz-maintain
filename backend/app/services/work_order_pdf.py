@@ -157,7 +157,7 @@ def _grid_table(rows, col_widths, header_bg=LIGHT, compact=False):
 
 
 def build_work_order_pdf(wo, technician_name=None, creator_name=None, progress_logs=None,
-                         device_name=None) -> bytes:
+                         device_name=None, dispatcher_name=None) -> bytes:
     st = _styles()
     buf = io.BytesIO()
 
@@ -224,7 +224,7 @@ def build_work_order_pdf(wo, technician_name=None, creator_name=None, progress_l
 
     # 2 组/行：左标签+值、右标签+值，日期可单行
     grid = []
-    for i in range(8):
+    for i in range(max(len(left), len(right))):
         a = left[i] if i < len(left) else ["", ""]
         b = right[i] if i < len(right) else ["", ""]
         grid.append(a + b)

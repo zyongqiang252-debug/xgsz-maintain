@@ -113,7 +113,9 @@ def list_work_orders(
     total = query.count()
     items = query.order_by(WorkOrder.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
     # 批量查询创建者/维修员信息（工号+姓名，用于前端权限判断和名字显示）
-    user_ids = {w.created_by for w in items if w.created_by} | {w.technician_id for w in items if w.technician_id}
+    user_ids = ({w.created_by for w in items if w.created_by}
+                | {w.technician_id for w in items if w.technician_id}
+                | {getattr(w, 'dispatcher_id', None) for w in items if getattr(w, 'dispatcher_id', None)})
     user_emp_map = {}
     user_name_map = {}
     if user_ids:
@@ -130,6 +132,8 @@ def list_work_orders(
         # 告警级别：优先级映射，SLA 超时升 P0
         d['alert_level'] = getattr(w, 'alert_level', None) or AL.from_priority(getattr(w, 'priority', None))
         d['order_type'] = getattr(w, 'order_type', None) or 'REPAIR'
+        d['dispatcher_name'] = user_name_map.get(getattr(w, 'dispatcher_id', None))
+        d['dispatched_at'] = getattr(w, 'dispatched_at', None)
         d['status_group'] = SG.group_of(w.status)
         d['status_group_label'] = SG.label_of(w.status)
         result_items.append(d)
@@ -363,10 +367,12 @@ def export_work_order_pdf(work_order_id: int, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="工单不存在")
     tech = db.query(User).filter(User.id == wo.technician_id).first() if wo.technician_id else None
     creator = db.query(User).filter(User.id == wo.created_by).first() if wo.created_by else None
+    disp_user = db.query(User).filter(User.id == wo.dispatcher_id).first() if wo.dispatcher_id else None
     pdf = build_work_order_pdf(
         wo,
         technician_name=tech.real_name if tech else None,
         creator_name=creator.real_name if creator else None,
+        dispatcher_name=disp_user.real_name if disp_user else None,
         progress_logs=wo.progress_logs,
         device_name=wo.device.device_name if wo.device else None,
     )
@@ -998,6 +1004,8 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
 
             work_order.technician_id = tech.id
             work_order.assignee_id = tech.id
+            work_order.dispatcher_id = current_user.id
+            work_order.dispatched_at = datetime.now()
             _add_progress_log(
                 db=db, work_order_id=work_order.id,
                 from_status=work_order.status, to_status=work_order.status,
@@ -1101,6 +1109,11 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
 
     old_technician_id = work_order.technician_id
     from_status_enum = work_order.status
+
+    # 派工/改派：记录分配人（谁把单分出去的）
+    if to_status_val == WorkOrderStatus.ASSIGNED.value:
+        work_order.dispatcher_id = current_user.id
+        work_order.dispatched_at = datetime.now()
 
     if to_status_val == WorkOrderStatus.COMPLETED.value:
         try:
@@ -1515,6 +1528,8 @@ def create_work_order_from_dispatch(
         tags=data.tags,
         status=WorkOrderStatus.ASSIGNED,
         created_by=current_user.id,
+        dispatcher_id=current_user.id,
+        dispatched_at=datetime.now(),
     )
     db.add(work_order)
     db.flush()
