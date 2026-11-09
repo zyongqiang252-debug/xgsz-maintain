@@ -81,7 +81,7 @@
             {{ row.room || '-' }}<span v-if="row.rack_no"> / {{ row.rack_no }}</span><span v-if="row.rack_unit"> / {{ row.rack_unit }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="manufacturer" label="厂商" width="78" show-overflow-tooltip />
+        <el-table-column prop="manufacturer" label="厂商" width="70" show-overflow-tooltip />
         <el-table-column label="故障标签" min-width="130">
           <template #default="{ row }">
             <div v-if="row.fault_tags && row.fault_tags.length > 0" class="fault-tags">
@@ -108,7 +108,7 @@
             <span class="status-reason">{{ row.status_reason || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="!isPureSupervisor" label="操作" width="240">
+        <el-table-column v-if="!isPureSupervisor" label="操作" width="220">
           <template #default="{ row }">
             <div class="action-group">
               <el-button link type="primary" @click="$router.push(`/devices/${row.id}`)">编辑</el-button>
