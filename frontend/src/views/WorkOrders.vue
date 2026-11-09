@@ -11,19 +11,6 @@
     <el-card class="filter-card" shadow="never">
       <div class="filter-bar">
         <el-input v-model="keyword" placeholder="搜索工单编号/故障描述" clearable class="filter-input" @clear="handleSearch" @keyup.enter="handleSearch" />
-        <el-select v-model="statusFilter" placeholder="工单状态" clearable class="filter-select" @change="handleSearch">
-          <el-option v-for="opt in statusOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-        </el-select>
-        <el-popover placement="bottom-start" :width="360" trigger="hover" popper-class="status-help-pop">
-          <template #reference>
-            <el-icon class="status-help-icon" title="工单状态说明"><QuestionFilled /></el-icon>
-          </template>
-          <div class="status-help-title">工单状态说明（按流转顺序）</div>
-          <div class="status-help-row" v-for="opt in statusOptions" :key="opt.value">
-            <span class="status-tag" :class="'status-' + opt.value">{{ opt.label }}</span>
-            <span class="status-help-desc">{{ opt.desc }}</span>
-          </div>
-        </el-popover>
         <el-select v-model="orderTypeFilter" placeholder="工单类型" clearable class="filter-select" @change="handleSearch">
           <el-option label="报修工单" value="REPAIR" />
           <el-option label="保养工单" value="MAINTENANCE" />
@@ -49,30 +36,37 @@
         <el-button type="primary" @click="handleSearch" class="action-btn">查询</el-button>
         <el-button class="action-btn secondary-btn" @click="handleReset">重置</el-button>
       </div>
-    </el-card>
 
-    <!-- 快捷筛选：我的 + 状态 合并为一条工具栏 -->
-    <div class="quick-bar">
-      <template v-if="isTechnician">
-        <span class="qb-label">我的</span>
+      <!-- 快捷筛选：我的 + 状态（放在查询卡片内，与筛选条件同一栏） -->
+      <div class="quick-bar">
+        <template v-if="isTechnician">
+          <span class="qb-label">我的</span>
+          <div class="qb-group">
+            <span v-for="m in mineOptions" :key="m.value"
+                  class="chip" :class="{ active: mineFilter === m.value }"
+                  @click="pickMine(m.value)">{{ m.label }}</span>
+          </div>
+          <span class="qb-divider"></span>
+        </template>
+        <span class="qb-label">状态</span>
         <div class="qb-group">
-          <span v-for="m in mineOptions" :key="m.value"
-                class="chip" :class="{ active: mineFilter === m.value }"
-                @click="pickMine(m.value)">{{ m.label }}</span>
+          <span class="chip" :class="{ active: !statusFilter }" @click="pickStatus('')">全部</span>
+          <span v-for="opt in statusOptions" :key="opt.value"
+                class="chip" :class="{ active: statusFilter === opt.value }"
+                @click="pickStatus(opt.value)">{{ opt.label }}</span>
         </div>
-        <span class="qb-divider"></span>
-      </template>
-      <span class="qb-label">状态</span>
-      <div class="qb-group">
-        <span class="chip" :class="{ active: !statusFilter }" @click="pickStatus('')">全部</span>
-        <span v-for="opt in statusOptions" :key="opt.value"
-              class="chip" :class="{ active: statusFilter === opt.value }"
-              @click="pickStatus(opt.value)">{{ opt.label }}</span>
+        <el-popover placement="top-start" :width="360" trigger="hover" popper-class="status-help-pop">
+          <template #reference>
+            <el-icon class="qb-help"><QuestionFilled /></el-icon>
+          </template>
+          <div class="status-help-title">工单状态说明（按流转顺序）</div>
+          <div class="status-help-row" v-for="opt in statusOptions" :key="opt.value">
+            <span class="status-tag" :class="'status-' + opt.value">{{ opt.label }}</span>
+            <span class="status-help-desc">{{ opt.desc }}</span>
+          </div>
+        </el-popover>
       </div>
-      <el-tooltip content="默认展示全部工单（含历史已归档）" placement="top">
-        <el-icon class="qb-help"><QuestionFilled /></el-icon>
-      </el-tooltip>
-    </div>
+    </el-card>
 
     <!-- 首屏加载骨架 -->
     <el-card v-if="loading && !list.length" class="table-card" shadow="never">
@@ -658,7 +652,7 @@ const handleExport = async () => {
   margin-bottom: 16px;
 }
 .page-title { font-size: 20px; font-weight: 600; color: var(--color-text-primary); }
-.filter-card { margin-bottom: 16px; }
+.filter-card { margin-bottom: 14px; }
 .filter-bar { display: flex; gap: 8px; flex-wrap: nowrap; align-items: center; }
 .filter-bar :deep(.el-date-editor) { flex: 1; min-width: 240px; }
 .filter-input { width: 200px; }
@@ -700,16 +694,16 @@ const handleExport = async () => {
 .status-help-desc { font-size: 12px; color: #4E5969; line-height: 1.5; }
 
 
-/* 快捷筛选工具栏：我的 + 状态 合并一行 */
+/* 快捷筛选：嵌在查询卡片内的一行 */
 .quick-bar {
   display: flex; align-items: center; flex-wrap: wrap;
   gap: 8px 10px;
-  margin: 0 0 12px;
-  padding: 8px 12px;
-  background: #fff;
-  border: 1px solid var(--ui-border, #E9EBF0);
-  border-radius: 10px;
-  box-shadow: 0 1px 2px rgba(16,24,40,.04);
+  margin: 12px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px dashed #EDEFF3;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
 }
 .qb-label {
   font-size: 12.5px; color: #86909C; font-weight: 500;

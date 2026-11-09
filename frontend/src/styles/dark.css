@@ -295,3 +295,5 @@
 [data-theme="dark"] .qb-label { color: #8C94A0 !important; }
 [data-theme="dark"] .qb-divider { background: #2A2E35 !important; }
 [data-theme="dark"] .qb-help { color: #565D68 !important; }
+[data-theme="dark"] .quick-bar { border-top-color: #2A2E35 !important; }
+[data-theme="dark"] .quick-bar .qb-divider { background: #2A2E35 !important; }
