@@ -2,13 +2,13 @@
   <div class="merged-page">
     <el-tabs v-model="tab" class="merged-tabs" @tab-change="onTabChange">
       <el-tab-pane label="全部工单" name="list" lazy>
-        <component :is="WorkOrders" />
+        <component :is="WorkOrders" :key="'wo-list-' + refreshKey" />
       </el-tab-pane>
       <el-tab-pane v-if="isTechnician" label="我的工单" name="mine" lazy>
-        <component :is="WorkOrders" default-mine="assigned" />
+        <component :is="WorkOrders" default-mine="assigned" :key="'wo-mine-' + refreshKey" />
       </el-tab-pane>
       <el-tab-pane v-if="canSupervise" label="进度看板" name="progress" lazy>
-        <component :is="Progress" />
+        <component :is="Progress" :key="'progress-' + refreshKey" />
       </el-tab-pane>
       <el-tab-pane v-if="canSupervise || isTechnician" label="历史导入" name="import" lazy>
         <component :is="ImportWorkOrders" />
@@ -42,7 +42,11 @@ const isTechnician = currentUser.role === 'TECHNICIAN'
 const VALID = ['list', 'mine', 'progress', 'import', 'dispatch']
 const tab = ref(VALID.includes(route.query.tab) ? String(route.query.tab) : 'list')
 
+const refreshKey = ref(0)
+
 const onTabChange = (name) => {
+  // 切换页签时刷新数据，避免「全部工单」与「我的工单」看到旧状态
+  refreshKey.value += 1
   router.replace({ path: '/orders', query: { tab: name } })
 }
 </script>
