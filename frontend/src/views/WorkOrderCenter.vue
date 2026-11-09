@@ -1,11 +1,16 @@
 <template>
   <div class="merged-page">
     <el-tabs v-model="tab" class="merged-tabs" @tab-change="onTabChange">
-      <el-tab-pane label="全部工单" name="list" lazy>
+      <!-- 管理者：全部工单 -->
+      <el-tab-pane v-if="canSupervise" label="全部工单" name="list" lazy>
         <component :is="WorkOrders" :key="'wo-list-' + refreshKey" />
       </el-tab-pane>
+      <!-- 技术员：我的工单（默认）+ 工单池 -->
       <el-tab-pane v-if="isTechnician" label="我的工单" name="mine" lazy>
-        <component :is="WorkOrders" default-mine="assigned" :key="'wo-mine-' + refreshKey" />
+        <component :is="WorkOrders" default-mine="all" :key="'wo-mine-' + refreshKey" />
+      </el-tab-pane>
+      <el-tab-pane v-if="isTechnician" label="工单池" name="pool" lazy>
+        <component :is="WorkOrders" pool-mode="1" :key="'wo-pool-' + refreshKey" />
       </el-tab-pane>
       <el-tab-pane v-if="canSupervise" label="进度看板" name="progress" lazy>
         <component :is="Progress" :key="'progress-' + refreshKey" />
@@ -39,8 +44,12 @@ const isAdmin = currentUser.role === 'ADMIN'
 const canSupervise = currentUser.role === 'SUPERVISOR' || isAdmin
 const isTechnician = currentUser.role === 'TECHNICIAN'
 
-const VALID = ['list', 'mine', 'progress', 'import', 'dispatch']
-const tab = ref(VALID.includes(route.query.tab) ? String(route.query.tab) : 'list')
+// 角色可见页签：管理者看全部，技术员看自己的 + 工单池
+const VALID = canSupervise
+  ? ['list', 'progress', 'import', 'dispatch']
+  : ['mine', 'pool', 'import']
+const DEFAULT_TAB = canSupervise ? 'list' : 'mine'
+const tab = ref(VALID.includes(String(route.query.tab)) ? String(route.query.tab) : DEFAULT_TAB)
 
 const refreshKey = ref(0)
 

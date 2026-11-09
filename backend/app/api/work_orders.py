@@ -1,6 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import cast, Date
+from sqlalchemy import cast, Date, or_, and_
 from typing import Optional, List, Dict, Any
 from loguru import logger
 from datetime import date, datetime
@@ -68,7 +68,13 @@ def list_work_orders(
     if mine:
         from sqlalchemy import or_
         me = current_user.id
-        if mine == "all":
+        if mine == "pool":
+            # 工单池：仅「待派工且尚未指派」的单，供维修员抢单
+            query = query.filter(
+                WorkOrder.status == WorkOrderStatus.SUBMITTED.value,
+                WorkOrder.technician_id.is_(None),
+            )
+        elif mine == "all":
             # 我的：我创建的 或 派给我的（不区分状态）
             query = query.filter(or_(WorkOrder.created_by == me,
                                      WorkOrder.technician_id == me))

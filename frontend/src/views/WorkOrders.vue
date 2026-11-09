@@ -38,7 +38,7 @@
       </div>
 
       <!-- 状态快捷筛选（独立一行，无「我的」分组） -->
-      <div class="quick-bar">
+      <div v-if="!isPoolView" class="quick-bar">
         <span class="qb-label">状态</span>
         <div class="qb-group">
           <span class="chip" :class="{ active: !statusFilter }" @click="pickStatus('')">全部</span>
@@ -140,6 +140,13 @@
               </div>
               <div class="action-row progress-row" v-if="canOperateProgress(row)">
                 <el-button
+                  v-if="isPoolView && row.status === 'SUBMITTED' && isTechnician"
+                  size="small"
+                  type="primary"
+                  :loading="claiming === row.id"
+                  @click="claimTask(row)"
+                >领取</el-button>
+                <el-button
                   v-if="row.status === 'DRAFT'"
                   size="small"
                   type="primary"
@@ -222,6 +229,7 @@
 <script setup>
 const props = defineProps({
   defaultMine: { type: String, default: '' },
+  poolMode: { type: [String, Boolean], default: '' },
 })
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
@@ -257,7 +265,9 @@ const isAssignedTech = (row) => {
   if (!tid) return false
   return tid === currentUser.id
 }
-const canOperateProgress = (row) => isAssignedTech(row) || row.status === 'DRAFT'
+const canOperateProgress = (row) =>
+  isAssignedTech(row) || row.status === 'DRAFT' ||
+  (isPoolView && row.status === 'SUBMITTED' && isTechnician)
 
 // ===== 派工（把 SUBMITTED 指派给维修员 → ASSIGNED）=====
 const dispatch = reactive({ visible: false, row: null, technicianId: null, remark: '', technicians: [], submitting: false })
@@ -425,6 +435,7 @@ const list = ref([])
 const loading = ref(false)
 const keyword = ref('')
 const isMineView = !!props.defaultMine
+const isPoolView = !!props.poolMode
 const statusFilter = ref('')
 const orderTypeFilter = ref('')
 const alertLevelFilter = ref('')
@@ -508,14 +519,16 @@ const slaTooltip = (row) => {
 }
 
 // 不同视图（全部工单 / 我的工单）各自独立记忆筛选，避免互相污染
-const STORAGE_KEY = props.defaultMine ? `workorders_filter_${props.defaultMine}` : 'workorders_filter'
+const STORAGE_KEY = props.poolMode ? 'workorders_filter_pool'
+  : (props.defaultMine ? `workorders_filter_${props.defaultMine}` : 'workorders_filter')
 
 const fetchData = async () => {
   loading.value = true
   try {
     const params = { page: page.value, page_size: pageSize.value }
     if (keyword.value) params.keyword = keyword.value
-    if (isMineView) params.mine = 'all'   // 我的工单：只看自己（我建的 + 派给我的）
+    if (isPoolView) params.mine = 'pool'            // 工单池：我的 + 待领的
+    else if (isMineView) params.mine = 'all'        // 我的工单：只看自己
     if (statusFilter.value) params.status_group = statusFilter.value
     if (orderTypeFilter.value) params.order_type = orderTypeFilter.value
     if (alertLevelFilter.value) params.alert_level = alertLevelFilter.value
@@ -551,11 +564,11 @@ const saveFilter = () => {
 
 // 我的工单（技术员视角）只保留与自己干活相关的状态
 const MINE_STATUS_VALUES = ['PROCESSING', 'ARCHIVING', 'ARCHIVED']
-const visibleStatusOptions = computed(() =>
-  isMineView
-    ? statusOptions.filter((o) => MINE_STATUS_VALUES.includes(o.value))
-    : statusOptions
-)
+const visibleStatusOptions = computed(() => {
+  if (isPoolView) return statusOptions.filter((o) => o.value === 'SUBMITTED')
+  if (isMineView) return statusOptions.filter((o) => MINE_STATUS_VALUES.includes(o.value))
+  return statusOptions
+})
 
 const pickStatus = (val) => {
   statusFilter.value = val
