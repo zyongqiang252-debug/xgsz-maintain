@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="header-left">
         <el-button :icon="ArrowLeft" circle @click="$router.back()" />
-        <h2 class="page-title">派工中心</h2>
+        <h2 class="page-title">快速派工</h2>
       </div>
     </div>
 

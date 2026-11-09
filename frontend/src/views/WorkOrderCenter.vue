@@ -4,14 +4,14 @@
       <el-tab-pane label="全部工单" name="list" lazy>
         <component :is="WorkOrders" />
       </el-tab-pane>
-      <el-tab-pane v-if="canSupervise" label="派工" name="dispatch" lazy>
-        <component :is="Dispatch" />
-      </el-tab-pane>
       <el-tab-pane v-if="canSupervise" label="进度看板" name="progress" lazy>
         <component :is="Progress" />
       </el-tab-pane>
       <el-tab-pane v-if="canSupervise || isTechnician" label="历史导入" name="import" lazy>
         <component :is="ImportWorkOrders" />
+      </el-tab-pane>
+      <el-tab-pane v-if="canSupervise" label="快速派工" name="dispatch" lazy>
+        <component :is="Dispatch" />
       </el-tab-pane>
     </el-tabs>
   </div>

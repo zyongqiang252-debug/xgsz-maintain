@@ -95,6 +95,10 @@
             <div class="col-actions">
               <div class="action-row">
                 <el-button link type="primary" @click="$router.push(`/work-orders/${row.id}`)">查看</el-button>
+                <el-button
+                  v-if="isSupervisor && ['SUBMITTED', 'ASSIGNED'].includes(row.status)"
+                  size="small" type="primary" @click="openDispatch(row)"
+                >{{ row.status === 'ASSIGNED' ? '改派' : '派工' }}</el-button>
                 <el-dropdown trigger="click" @command="(cmd) => onRowCommand(cmd, row)">
                   <el-button link type="primary">更多<el-icon style="margin-left:2px"><ArrowDown /></el-icon></el-button>
                   <template #dropdown>
@@ -290,9 +294,6 @@ const canDeleteRow = (row) =>
 
 // 一行里可能存在的「非主操作」动作文案：派工/改派/领取/转派
 const rowActionText = (row) => {
-  if (['SUBMITTED', 'ASSIGNED'].includes(row.status) && isSupervisor) {
-    return row.status === 'ASSIGNED' ? '改派' : '派工'
-  }
   if (row.status === 'SUBMITTED' && isTechnician) return '领取'
   if (row.status === 'ASSIGNED' && isAssignedTech(row)) return '转派'
   return ''
