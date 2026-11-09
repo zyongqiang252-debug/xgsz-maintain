@@ -42,7 +42,7 @@
         <span class="qb-label">状态</span>
         <div class="qb-group">
           <span class="chip" :class="{ active: !statusFilter }" @click="pickStatus('')">全部</span>
-          <span v-for="opt in statusOptions" :key="opt.value"
+          <span v-for="opt in visibleStatusOptions" :key="opt.value"
                 class="chip" :class="{ active: statusFilter === opt.value }"
                 @click="pickStatus(opt.value)">{{ opt.label }}</span>
         </div>
@@ -51,7 +51,7 @@
             <el-icon class="qb-help"><QuestionFilled /></el-icon>
           </template>
           <div class="status-help-title">工单状态说明（按流转顺序）</div>
-          <div class="status-help-row" v-for="opt in statusOptions" :key="opt.value">
+          <div class="status-help-row" v-for="opt in visibleStatusOptions" :key="opt.value">
             <span class="status-tag" :class="'status-' + opt.value">{{ opt.label }}</span>
             <span class="status-help-desc">{{ opt.desc }}</span>
           </div>
@@ -548,6 +548,14 @@ const saveFilter = () => {
 }
 
 // 我的工单视图（技术员）
+
+// 我的工单（技术员视角）只保留与自己干活相关的状态
+const MINE_STATUS_VALUES = ['PROCESSING', 'ARCHIVING', 'ARCHIVED']
+const visibleStatusOptions = computed(() =>
+  isMineView
+    ? statusOptions.filter((o) => MINE_STATUS_VALUES.includes(o.value))
+    : statusOptions
+)
 
 const pickStatus = (val) => {
   statusFilter.value = val
