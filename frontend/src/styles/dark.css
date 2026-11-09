@@ -270,3 +270,28 @@
 [data-theme="dark"] .stat-assigned { border-left-color: #C4A0FF !important; }
 [data-theme="dark"] .stat-progress { border-left-color: #7FD8FF !important; }
 [data-theme="dark"] .stat-completed { border-left-color: #7EE2A8 !important; }
+
+/* ---------- 快捷筛选工具栏 ---------- */
+[data-theme="dark"] .quick-bar {
+  background: #1C1F24 !important;
+  border-color: #2A2E35 !important;
+  box-shadow: none !important;
+}
+[data-theme="dark"] .quick-bar .chip {
+  background: #22262D !important;
+  border-color: transparent !important;
+  color: #A6ADBB !important;
+}
+[data-theme="dark"] .quick-bar .chip:hover {
+  background: #262A31 !important;
+  border-color: #35D6D3 !important;
+  color: #35D6D3 !important;
+}
+[data-theme="dark"] .quick-bar .chip.active {
+  background: rgba(15, 198, 194, .18) !important;
+  border-color: rgba(53, 214, 211, .5) !important;
+  color: #35D6D3 !important;
+}
+[data-theme="dark"] .qb-label { color: #8C94A0 !important; }
+[data-theme="dark"] .qb-divider { background: #2A2E35 !important; }
+[data-theme="dark"] .qb-help { color: #565D68 !important; }

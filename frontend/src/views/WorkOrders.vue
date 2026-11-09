@@ -51,21 +51,27 @@
       </div>
     </el-card>
 
-    <!-- 我的工单快捷筛选（技术员） -->
-    <div v-if="isTechnician" class="status-chips mine-chips">
-      <span class="chips-label">我的：</span>
-      <span v-for="m in mineOptions" :key="m.value"
-            class="chip" :class="{ active: mineFilter === m.value }"
-            @click="pickMine(m.value)">{{ m.label }}</span>
-    </div>
-
-    <!-- 状态快捷筛选：默认「全部」，含历史已归档 -->
-    <div class="status-chips">
-      <span class="chip" :class="{ active: !statusFilter }" @click="pickStatus('')">全部</span>
-      <span v-for="opt in statusOptions" :key="opt.value"
-            class="chip" :class="{ active: statusFilter === opt.value }"
-            @click="pickStatus(opt.value)">{{ opt.label }}</span>
-      <span class="chips-hint">默认展示全部工单（含历史已归档）</span>
+    <!-- 快捷筛选：我的 + 状态 合并为一条工具栏 -->
+    <div class="quick-bar">
+      <template v-if="isTechnician">
+        <span class="qb-label">我的</span>
+        <div class="qb-group">
+          <span v-for="m in mineOptions" :key="m.value"
+                class="chip" :class="{ active: mineFilter === m.value }"
+                @click="pickMine(m.value)">{{ m.label }}</span>
+        </div>
+        <span class="qb-divider"></span>
+      </template>
+      <span class="qb-label">状态</span>
+      <div class="qb-group">
+        <span class="chip" :class="{ active: !statusFilter }" @click="pickStatus('')">全部</span>
+        <span v-for="opt in statusOptions" :key="opt.value"
+              class="chip" :class="{ active: statusFilter === opt.value }"
+              @click="pickStatus(opt.value)">{{ opt.label }}</span>
+      </div>
+      <el-tooltip content="默认展示全部工单（含历史已归档）" placement="top">
+        <el-icon class="qb-help"><QuestionFilled /></el-icon>
+      </el-tooltip>
     </div>
 
     <!-- 首屏加载骨架 -->
@@ -517,7 +523,8 @@ const slaTooltip = (row) => {
   return parts.join('　') || '无 SLA 信息'
 }
 
-const STORAGE_KEY = 'workorders_filter'
+// 不同视图（全部工单 / 我的工单）各自独立记忆筛选，避免互相污染
+const STORAGE_KEY = props.defaultMine ? `workorders_filter_${props.defaultMine}` : 'workorders_filter'
 
 const fetchData = async () => {
   loading.value = true
@@ -693,27 +700,43 @@ const handleExport = async () => {
 .status-help-desc { font-size: 12px; color: #4E5969; line-height: 1.5; }
 
 
-/* 状态快捷筛选 */
-.status-chips {
+/* 快捷筛选工具栏：我的 + 状态 合并一行 */
+.quick-bar {
   display: flex; align-items: center; flex-wrap: wrap;
-  gap: 8px; margin: 0 0 12px;
+  gap: 8px 10px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid var(--ui-border, #E9EBF0);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(16,24,40,.04);
 }
-.status-chips .chip {
-  padding: 4px 12px; border-radius: 14px;
-  font-size: 13px; color: #4E5969; cursor: pointer;
-  background: #fff; border: 1px solid #E9EBF0;
+.qb-label {
+  font-size: 12.5px; color: #86909C; font-weight: 500;
+  flex-shrink: 0;
+}
+.qb-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.qb-divider {
+  width: 1px; height: 16px; background: #EDEFF3;
+  margin: 0 4px; flex-shrink: 0;
+}
+.quick-bar .chip {
+  padding: 3px 11px; border-radius: 13px;
+  font-size: 12.5px; line-height: 1.5;
+  color: #4E5969; cursor: pointer;
+  background: #F7F8FA; border: 1px solid transparent;
   transition: all .16s;
 }
-.status-chips .chip:hover { border-color: #0FC6C2; color: #0FC6C2; }
-.status-chips .chip.active {
-  background: rgba(15,198,194,.12); border-color: #0FC6C2;
+.quick-bar .chip:hover { background: #fff; border-color: #0FC6C2; color: #0FC6C2; }
+.quick-bar .chip.active {
+  background: rgba(15,198,194,.12);
+  border-color: rgba(15,198,194,.45);
   color: #0B9B98; font-weight: 600;
 }
-.status-chips .chips-hint { font-size: 12px; color: #9AA1AC; margin-left: 4px; }
-
-
-.mine-chips { margin-bottom: 8px; }
-.mine-chips .chips-label { font-size: 13px; color: #4E5969; margin-right: 2px; }
-.mine-chips .chip.active { background: rgba(52,145,250,.12); border-color: #3491FA; color: #2478D9; }
+.quick-bar .qb-help {
+  font-size: 14px; color: #C9CDD4; cursor: help;
+  transition: color .15s;
+}
+.quick-bar .qb-help:hover { color: #0FC6C2; }
 
 </style>
