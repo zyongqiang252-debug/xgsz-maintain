@@ -153,16 +153,10 @@
                 <el-icon><DataAnalysis /></el-icon>
                 <template #title>数据驾驶舱</template>
               </el-menu-item>
-              <el-sub-menu index="center-workorder">
-                <template #title>
-                  <el-icon><Document /></el-icon>
-                  <span>工单中心</span>
-                </template>
-                <el-menu-item index="/work-orders">全部工单</el-menu-item>
-                <el-menu-item index="/supervisor/dispatch">派工中心</el-menu-item>
-                <el-menu-item index="/supervisor/progress">实时进度看板</el-menu-item>
-                <el-menu-item index="/work-order-imports">历史工单导入</el-menu-item>
-              </el-sub-menu>
+              <el-menu-item index="/orders">
+                <el-icon><Document /></el-icon>
+                <template #title>工单中心</template>
+              </el-menu-item>
               <el-menu-item index="/devices">
                 <el-icon><Monitor /></el-icon>
                 <template #title>服务器监控</template>
@@ -190,16 +184,10 @@
                 <el-icon><DataAnalysis /></el-icon>
                 <template #title>数据驾驶舱</template>
               </el-menu-item>
-              <el-sub-menu index="center-workorder">
-                <template #title>
-                  <el-icon><Document /></el-icon>
-                  <span>工单中心</span>
-                </template>
-                <el-menu-item index="/work-orders">全部工单</el-menu-item>
-                <el-menu-item v-if="isSupervisor" index="/supervisor/dispatch">派工中心</el-menu-item>
-                <el-menu-item v-if="isSupervisor" index="/supervisor/progress">实时进度看板</el-menu-item>
-                <el-menu-item v-if="isSupervisor || isTechnician" index="/work-order-imports">历史工单导入</el-menu-item>
-              </el-sub-menu>
+              <el-menu-item index="/orders">
+                <el-icon><Document /></el-icon>
+                <template #title>工单中心</template>
+              </el-menu-item>
               <el-menu-item index="/devices">
                 <el-icon><Monitor /></el-icon>
                 <template #title>服务器监控</template>
@@ -210,58 +198,33 @@
               </el-menu-item>
 
               <div class="menu-group-label">知识与智能</div>
-              <el-sub-menu index="center-knowledge">
-                <template #title>
-                  <el-icon><ChatLineSquare /></el-icon>
-                  <span>知识中心</span>
-                </template>
-                <el-menu-item index="/ai-assistant">AI 问答</el-menu-item>
-                <el-menu-item index="/knowledge/list">知识列表</el-menu-item>
-                <el-menu-item index="/knowledge/manuals">服务器手册</el-menu-item>
-              </el-sub-menu>
+              <el-menu-item index="/knowledge-center">
+                <el-icon><ChatLineSquare /></el-icon>
+                <template #title>知识中心</template>
+              </el-menu-item>
 
               <div class="menu-group-label">资源与字典</div>
-              <el-sub-menu index="center-stock">
-                <template #title>
-                  <el-icon><Box /></el-icon>
-                  <span>库存中心</span>
-                </template>
-                <el-menu-item index="/spare-parts">备件台账</el-menu-item>
-                <el-menu-item index="/warehouse">仓库库存</el-menu-item>
-              </el-sub-menu>
-              <el-sub-menu index="center-dict">
-                <template #title>
-                  <el-icon><Grid /></el-icon>
-                  <span>字典管理</span>
-                </template>
-                <el-menu-item index="/categories">分类管理</el-menu-item>
-                <el-menu-item index="/fault-codes">故障码管理</el-menu-item>
-              </el-sub-menu>
+              <el-menu-item index="/stock">
+                <el-icon><Box /></el-icon>
+                <template #title>库存中心</template>
+              </el-menu-item>
+              <el-menu-item index="/dict">
+                <el-icon><Grid /></el-icon>
+                <template #title>字典管理</template>
+              </el-menu-item>
 
               <div class="menu-group-label">管理与个人</div>
               <el-menu-item v-if="isSupervisor" index="/supervisor/schedule">
                 <el-icon><Calendar /></el-icon>
                 <template #title>排班管理</template>
               </el-menu-item>
-              <el-menu-item v-if="isAdmin" index="/users">
-                <el-icon><User /></el-icon>
-                <template #title>用户管理</template>
-              </el-menu-item>
-              <el-menu-item v-if="isAdmin" index="/system-settings">
+              <el-menu-item v-if="isAdmin" index="/sys">
                 <el-icon><Setting /></el-icon>
-                <template #title>系统设置</template>
+                <template #title>系统管理</template>
               </el-menu-item>
-              <el-menu-item index="/leave">
-                <el-icon><Clock /></el-icon>
-                <template #title>我的请假</template>
-              </el-menu-item>
-              <el-menu-item index="/notifications">
-                <el-icon><Bell /></el-icon>
-                <template #title>通知中心</template>
-              </el-menu-item>
-              <el-menu-item index="/help">
-                <el-icon><QuestionFilled /></el-icon>
-                <template #title>帮助中心</template>
+              <el-menu-item index="/me">
+                <el-icon><User /></el-icon>
+                <template #title>我的（请假 / 通知 / 帮助）</template>
               </el-menu-item>
             </template>
           </el-menu>
@@ -283,15 +246,9 @@
                 <el-menu-item index="/dashboard">
                   <el-icon><DataAnalysis /></el-icon>
                 </el-menu-item>
-                <el-sub-menu index="center-workorder">
-                  <template #title>
-                    <el-icon><Document /></el-icon>
-                  </template>
-                  <el-menu-item index="/work-orders">全部工单</el-menu-item>
-                  <el-menu-item index="/supervisor/dispatch">派工中心</el-menu-item>
-                  <el-menu-item index="/supervisor/progress">实时进度看板</el-menu-item>
-                  <el-menu-item index="/work-order-imports">历史工单导入</el-menu-item>
-                </el-sub-menu>
+                <el-menu-item index="/orders">
+                  <el-icon><Document /></el-icon>
+                </el-menu-item>
                 <el-menu-item index="/devices">
                   <el-icon><Monitor /></el-icon>
                 </el-menu-item>
@@ -310,60 +267,32 @@
                 <el-menu-item index="/dashboard">
                   <el-icon><DataAnalysis /></el-icon>
                 </el-menu-item>
-                <el-sub-menu index="center-workorder">
-                  <template #title>
-                    <el-icon><Document /></el-icon>
-                  </template>
-                  <el-menu-item index="/work-orders">全部工单</el-menu-item>
-                  <el-menu-item v-if="isSupervisor" index="/supervisor/dispatch">派工中心</el-menu-item>
-                  <el-menu-item v-if="isSupervisor" index="/supervisor/progress">实时进度看板</el-menu-item>
-                  <el-menu-item v-if="isSupervisor || isTechnician" index="/work-order-imports">历史工单导入</el-menu-item>
-                </el-sub-menu>
+                <el-menu-item index="/orders">
+                  <el-icon><Document /></el-icon>
+                </el-menu-item>
                 <el-menu-item index="/devices">
                   <el-icon><Monitor /></el-icon>
                 </el-menu-item>
                 <el-menu-item index="/maintenance">
                   <el-icon><Tools /></el-icon>
                 </el-menu-item>
-                <el-sub-menu index="center-knowledge">
-                  <template #title>
-                    <el-icon><ChatLineSquare /></el-icon>
-                  </template>
-                  <el-menu-item index="/ai-assistant">AI 问答</el-menu-item>
-                  <el-menu-item index="/knowledge/list">知识列表</el-menu-item>
-                  <el-menu-item index="/knowledge/manuals">服务器手册</el-menu-item>
-                </el-sub-menu>
-                <el-sub-menu index="center-stock">
-                  <template #title>
-                    <el-icon><Box /></el-icon>
-                  </template>
-                  <el-menu-item index="/spare-parts">备件台账</el-menu-item>
-                  <el-menu-item index="/warehouse">仓库库存</el-menu-item>
-                </el-sub-menu>
-                <el-sub-menu index="center-dict">
-                  <template #title>
-                    <el-icon><Grid /></el-icon>
-                  </template>
-                  <el-menu-item index="/categories">分类管理</el-menu-item>
-                  <el-menu-item index="/fault-codes">故障码管理</el-menu-item>
-                </el-sub-menu>
+                <el-menu-item index="/knowledge-center">
+                  <el-icon><ChatLineSquare /></el-icon>
+                </el-menu-item>
+                <el-menu-item index="/stock">
+                  <el-icon><Box /></el-icon>
+                </el-menu-item>
+                <el-menu-item index="/dict">
+                  <el-icon><Grid /></el-icon>
+                </el-menu-item>
                 <el-menu-item v-if="isSupervisor" index="/supervisor/schedule">
                   <el-icon><Calendar /></el-icon>
                 </el-menu-item>
-                <el-menu-item v-if="isAdmin" index="/users">
-                  <el-icon><User /></el-icon>
-                </el-menu-item>
-                <el-menu-item v-if="isAdmin" index="/system-settings">
+                <el-menu-item v-if="isAdmin" index="/sys">
                   <el-icon><Setting /></el-icon>
                 </el-menu-item>
-                <el-menu-item index="/notifications">
-                  <el-icon><Bell /></el-icon>
-                </el-menu-item>
-                <el-menu-item index="/leave">
-                  <el-icon><Clock /></el-icon>
-                </el-menu-item>
-                <el-menu-item index="/help">
-                  <el-icon><QuestionFilled /></el-icon>
+                <el-menu-item index="/me">
+                  <el-icon><User /></el-icon>
                 </el-menu-item>
               </template>
             </el-menu>
