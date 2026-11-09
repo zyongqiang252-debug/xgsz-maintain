@@ -36,16 +36,13 @@ const onTabChange = (name) => {
 .merged-tabs :deep(.page) { padding: 0; }
 .merged-tabs :deep(.page-title) { display: none; }
 .merged-tabs :deep(.el-tabs__header) { margin-bottom: 10px; border-bottom: 1px solid #F2F3F5; }
-/* 操作行：右对齐 + 浅底 + 圆角，避免孤零零漂在上面 */
+/* 操作行：只右对齐，不加底色，避免出现大片空白工具条 */
 .merged-tabs :deep(.page-header) {
   justify-content: flex-end;
   align-items: center;
   gap: 8px;
-  margin: 0 0 12px;
-  padding: 6px 12px;
-  min-height: 40px;
-  background: #FAFBFC;
-  border: 1px solid #F2F3F5;
-  border-radius: 8px;
+  margin: 0 0 8px;
+  padding: 0;
+  min-height: 32px;
 }
 </style>

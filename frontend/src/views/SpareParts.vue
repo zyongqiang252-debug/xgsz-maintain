@@ -44,20 +44,20 @@
     <!-- 数据表格 -->
     <el-card class="table-card" shadow="never">
       <el-table :data="list" v-loading="loading" stripe class="sp-table">
-        <el-table-column prop="part_code" label="备件编码" width="118" show-overflow-tooltip />
+        <el-table-column prop="part_code" label="备件编码" width="128" show-overflow-tooltip />
         <el-table-column prop="part_name" label="备件名称" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="specification" label="规格型号" width="130" show-overflow-tooltip />
-        <el-table-column prop="unit" label="单位" width="58" align="center" />
+        <el-table-column prop="specification" label="规格型号" width="118" show-overflow-tooltip />
+        <el-table-column prop="unit" label="单位" width="52" align="center" />
         <el-table-column prop="stock_quantity" label="库存" width="68" sortable align="right" />
-        <el-table-column prop="safety_stock" label="安全库存" width="80" align="right" />
-        <el-table-column label="状态" width="78" align="center">
+        <el-table-column prop="safety_stock" label="安全库存" width="76" align="right" />
+        <el-table-column label="状态" width="72" align="center">
           <template #default="{ row }">
             <span class="stock-status" :class="stockClass(row)">{{ stockLabel(row) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="unit_price" label="单价" width="72" align="right" />
-        <el-table-column prop="location" label="存放位置" width="100" show-overflow-tooltip />
-        <el-table-column label="操作" width="256">
+        <el-table-column prop="unit_price" label="单价" width="96" align="right" />
+        <el-table-column prop="location" label="存放位置" width="106" show-overflow-tooltip />
+        <el-table-column label="操作" width="258">
           <template #default="{ row }">
             <div class="action-group">
               <el-button link type="primary" @click="$router.push(`/spare-parts/${row.id}`)">{{ canManage ? '编辑' : '查看' }}</el-button>
