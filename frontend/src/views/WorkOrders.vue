@@ -111,7 +111,7 @@
         <el-table-column prop="created_at" label="创建时间" width="140">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="232" align="right" header-align="left">
+        <el-table-column label="操作" width="208" align="right" header-align="left">
           <template #default="{ row }">
             <div class="op-cell">
               <div class="op-primary" v-if="hasPrimaryAction(row)">
@@ -163,22 +163,24 @@
                 </template>
               </div>
               <div class="op-actions">
-                <el-button link @click="onRowCommand('print', row)">打印</el-button>
+                <el-tooltip content="打印 / PDF" placement="top" :show-after="300">
+                  <el-button text circle size="small" :icon="PrinterIcon" @click="onRowCommand('print', row)" />
+                </el-tooltip>
                 <template v-if="!isSupervisor || isAdmin">
-                  <span class="op-sep"></span>
-                  <el-button
-                    link
-                    :disabled="!canEditRow(row)"
-                    :title="canEditRow(row) ? '' : editDenyReason(row)"
-                    @click="onRowCommand('edit', row)"
-                  >编辑</el-button>
-                  <span class="op-sep"></span>
-                  <el-button
-                    link type="danger"
-                    :disabled="!canDeleteRow(row)"
-                    :title="canDeleteRow(row) ? '' : deleteDenyReason(row)"
-                    @click="onRowCommand('delete', row)"
-                  >删除</el-button>
+                  <el-tooltip :content="canEditRow(row) ? '编辑' : editDenyReason(row)" placement="top" :show-after="300">
+                    <el-button
+                      text circle size="small" :icon="EditIcon"
+                      :disabled="!canEditRow(row)"
+                      @click="onRowCommand('edit', row)"
+                    />
+                  </el-tooltip>
+                  <el-tooltip :content="canDeleteRow(row) ? '删除' : deleteDenyReason(row)" placement="top" :show-after="300">
+                    <el-button
+                      text circle size="small" type="danger" :icon="DeleteIcon"
+                      :disabled="!canDeleteRow(row)"
+                      @click="onRowCommand('delete', row)"
+                    />
+                  </el-tooltip>
                 </template>
               </div>
             </div>
@@ -238,7 +240,7 @@ const props = defineProps({
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { QuestionFilled } from '@element-plus/icons-vue'
+import { QuestionFilled, Printer as PrinterIcon, Edit as EditIcon, Delete as DeleteIcon } from '@element-plus/icons-vue'
 import request from '../api'
 import { downloadFile } from '../utils/download'
 import { workOrderTransition } from '../api/supervisor'
@@ -676,13 +678,13 @@ const handleExport = async () => {
 .op-cell { display: flex; align-items: center; min-height: 28px; white-space: nowrap; }
 .op-primary { display: flex; align-items: center; gap: 6px; margin-right: 12px; }
 .op-primary:empty { display: none; }
-.op-actions { display: flex; align-items: center; margin-left: auto; }
-.op-actions .el-button.is-link { color: #4E5969; font-size: 13px; padding: 0 5px; }
-.op-actions .el-button.is-link:hover { color: #0FC6C2; }
-.op-actions .el-button.is-link.is-disabled { color: #C9CDD4; }
-.op-actions .el-button.is-link.el-button--danger { color: #F53F3F; }
-.op-actions .el-button.is-link.el-button--danger.is-disabled { color: #F7C5C5; }
-.op-sep { width: 1px; height: 12px; background: #E5E6EB; margin: 0 1px; flex-shrink: 0; }
+.op-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.op-actions .el-button { width: 26px; height: 26px; padding: 0; margin: 0; color: #4E5969; font-size: 15px; }
+.op-actions .el-button:hover { color: #0FC6C2; background: #F2F3F5; }
+.op-actions .el-button.is-disabled { color: #C9CDD4; background: transparent; }
+.op-actions .el-button.el-button--danger { color: #F53F3F; }
+.op-actions .el-button.el-button--danger:hover { color: #F53F3F; background: #FFF1F0; }
+.op-actions .el-button.is-disabled.el-button--danger { color: #F7C5C5; }
 
 .status-tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; }
 .status-DRAFT { background: #F2F3F5; color: #4E5969; }
