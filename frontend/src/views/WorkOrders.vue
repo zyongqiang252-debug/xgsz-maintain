@@ -90,15 +90,20 @@
             <div class="col-actions">
               <div class="action-row">
                 <el-button link type="primary" @click="$router.push(`/work-orders/${row.id}`)">查看</el-button>
-                <el-dropdown v-if="hasMoreActions(row)" trigger="click" @command="(cmd) => onRowCommand(cmd, row)">
+                <el-dropdown trigger="click" @command="(cmd) => onRowCommand(cmd, row)">
                   <el-button link type="primary">更多<el-icon style="margin-left:2px"><ArrowDown /></el-icon></el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
                       <el-dropdown-item v-if="rowActionText(row)" command="dispatch" :disabled="claiming === row.id">
                         {{ rowActionText(row) }}
                       </el-dropdown-item>
-                      <el-dropdown-item v-if="!isSupervisor" command="edit" :disabled="!canEditRow(row)">编辑</el-dropdown-item>
-                      <el-dropdown-item v-if="!isSupervisor" command="delete" :disabled="!canDeleteRow(row)" divided>删除</el-dropdown-item>
+                      <el-dropdown-item v-if="!isSupervisor" command="edit" :disabled="!canEditRow(row)"
+                                        :title="canEditRow(row) ? '' : editDenyReason(row)">编辑</el-dropdown-item>
+                      <el-dropdown-item v-if="!isSupervisor" command="delete" :disabled="!canDeleteRow(row)"
+                                        :title="canDeleteRow(row) ? '' : deleteDenyReason(row)" divided>删除</el-dropdown-item>
+                      <el-dropdown-item v-if="isSupervisor && !rowActionText(row)" disabled>
+                        当前状态无可执行操作
+                      </el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
@@ -264,6 +269,16 @@ const dispatchConfirmText = computed(() => {
   if (isSelfDispatch.value) return '确认转派'
   return dispatch.row?.status === 'ASSIGNED' ? '确认改派' : '确认派工'
 })
+const editDenyReason = (row) => {
+  if (['COMPLETED', 'ARCHIVED'].includes(row.status)) return '已归档/已完成，不可编辑'
+  return '仅创建者、被指派人或管理员可编辑'
+}
+
+const deleteDenyReason = (row) => {
+  if (['COMPLETED', 'ARCHIVED'].includes(row.status)) return '已归档/已完成，不可删除'
+  return '仅创建者或管理员可删除'
+}
+
 const canEditRow = (row) =>
   !['COMPLETED', 'ARCHIVED'].includes(row.status) &&
   (isCreatedByMe(row) || isAdmin || isAssignedTech(row))
