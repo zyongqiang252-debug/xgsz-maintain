@@ -237,6 +237,33 @@ def get_progress_board(
     }
 
 
+@router.get("/{work_order_id}/pdf", summary="导出单张工单 PDF")
+def export_work_order_pdf(work_order_id: int, db: Session = Depends(get_db),
+                          current_user: User = Depends(get_current_user)):
+    """生成 A4 工单 PDF（含基本信息/故障处理/备件/费用/进度/签字栏），用于打印或存档"""
+    from urllib.parse import quote
+    from fastapi.responses import Response
+    from app.services.work_order_pdf import build_work_order_pdf
+
+    wo = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
+    if not wo:
+        raise HTTPException(status_code=404, detail="工单不存在")
+    tech = db.query(User).filter(User.id == wo.technician_id).first() if wo.technician_id else None
+    creator = db.query(User).filter(User.id == wo.created_by).first() if wo.created_by else None
+    pdf = build_work_order_pdf(
+        wo,
+        technician_name=tech.real_name if tech else None,
+        creator_name=creator.real_name if creator else None,
+        progress_logs=wo.progress_logs,
+        device_name=wo.device.device_name if wo.device else None,
+    )
+    cn = f"工单-{wo.work_order_no}.pdf"
+    ascii_name = f"work-order-{wo.work_order_no}.pdf"
+    disp = "attachment; filename=\"" + ascii_name + "\"; filename*=UTF-8''" + quote(cn)
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": disp})
+
+
 @router.get("/{work_order_id}", response_model=WorkOrderResponse, summary="获取工单详情")
 def get_work_order(work_order_id: int, db: Session = Depends(get_db)):
     work_order = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()

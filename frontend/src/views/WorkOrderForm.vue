@@ -38,6 +38,7 @@
               v-if="form.status === 'ASSIGNED' && isMyTask && !canDispatch"
               type="primary" plain size="small" @click="openDispatch"
             >转派</el-button>
+            <el-button size="small" :loading="printing" @click="printPdf">打印 / PDF</el-button>
             <el-tag :type="statusTagType" size="large">{{ statusLabel }}</el-tag>
           </div>
         </div>
@@ -793,6 +794,7 @@
 </template>
 
 <script setup>
+import { downloadFile } from '../utils/download'
 import { ref, computed, reactive, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1879,6 +1881,21 @@ const sendAIMessage = async () => {
     aiDialog.loading = false
     await nextTick()
     if (aiMsgRef.value) aiMsgRef.value.scrollTop = aiMsgRef.value.scrollHeight
+  }
+}
+
+
+const printing = ref(false)
+const printPdf = async () => {
+  if (!form.id) return
+  printing.value = true
+  try {
+    await downloadFile(`/work-orders/${form.id}/pdf`, {},
+                       `工单-${form.work_order_no || form.id}.pdf`)
+  } catch (e) {
+    ElMessage.error('PDF 生成失败')
+  } finally {
+    printing.value = false
   }
 }
 

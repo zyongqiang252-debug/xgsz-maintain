@@ -101,6 +101,7 @@
                                         :title="canEditRow(row) ? '' : editDenyReason(row)">编辑</el-dropdown-item>
                       <el-dropdown-item v-if="!isSupervisor" command="delete" :disabled="!canDeleteRow(row)"
                                         :title="canDeleteRow(row) ? '' : deleteDenyReason(row)" divided>删除</el-dropdown-item>
+                      <el-dropdown-item command="print">打印 / PDF</el-dropdown-item>
                       <el-dropdown-item v-if="isSupervisor && !rowActionText(row)" disabled>
                         当前状态无可执行操作
                       </el-dropdown-item>
@@ -305,6 +306,9 @@ const onRowCommand = (cmd, row) => {
     router.push(`/work-orders/${row.id}?edit=1`)
   } else if (cmd === 'delete') {
     handleDelete(row)
+  } else if (cmd === 'print') {
+    downloadFile(`/work-orders/${row.id}/pdf`, {}, `工单-${row.work_order_no}.pdf`)
+      .catch(() => ElMessage.error('PDF 生成失败'))
   } else if (cmd === 'dispatch') {
     if (row.status === 'SUBMITTED' && isTechnician) claimTask(row)
     else openDispatch(row)
