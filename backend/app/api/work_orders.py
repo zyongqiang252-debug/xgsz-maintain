@@ -90,6 +90,11 @@ def list_work_orders(
         d['technician_name'] = user_name_map.get(w.technician_id) if w.technician_id else None
         d['device_type'] = w.device.device_type if w.device else None
         d['device_name'] = w.device.device_name if w.device else None
+        # 告警级别：优先级映射，SLA 超时升 P0
+        lv = AL.from_priority(getattr(w, 'priority', None))
+        if getattr(w, 'sla_status', None) == 'OVERDUE':
+            lv = 'P0'
+        d['alert_level'] = lv
         result_items.append(d)
     return {"total": total, "items": result_items, "page": page, "page_size": page_size}
 

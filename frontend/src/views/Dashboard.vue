@@ -3,7 +3,7 @@
     <div class="page-header">
       <h2 class="page-title">数据驾驶舱</h2>
       <div style="display:flex;gap:8px">
-        <el-button :loading="exportingAll" @click="exportAll">一键导出全部数据</el-button>
+        <el-button v-if="canExportAll" :loading="exportingAll" @click="exportAll">一键导出全部数据</el-button>
       </div>
     </div>
 
@@ -282,6 +282,12 @@ const fetchStats = async () => {
 const fetchRecentOrders = async () => {} // 已合并到 fetchStats
 
 
+const canExportAll = (() => {
+  try {
+    const u = JSON.parse(localStorage.getItem('current_user') || '{}')
+    return ['ADMIN', 'SUPERVISOR'].includes(u.role)
+  } catch { return false }
+})()
 const exportingAll = ref(false)
 const exportAll = async () => {
   exportingAll.value = true

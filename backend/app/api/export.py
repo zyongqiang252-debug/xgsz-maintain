@@ -12,7 +12,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import require_supervisor
+from app.core.security import get_current_user
 from app.models.device import Device
 from app.models.knowledge import KnowledgeItem
 from app.models.spare_part import SparePart
@@ -20,7 +20,7 @@ from app.models.stock_movement import StockMovement
 from app.models.user import User
 from app.models.work_order import WorkOrder
 
-router = APIRouter(tags=["报表导出"], dependencies=[Depends(require_supervisor)])
+router = APIRouter(tags=["报表导出"], dependencies=[Depends(get_current_user)])
 
 _HEAD_FILL = PatternFill("solid", fgColor="0FC6C2")
 _HEAD_FONT = Font(bold=True, color="FFFFFF")
