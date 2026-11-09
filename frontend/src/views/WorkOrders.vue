@@ -111,32 +111,38 @@
         <el-table-column prop="created_at" label="创建时间" width="140">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="236">
+        <el-table-column label="操作" width="248">
           <template #default="{ row }">
             <div class="col-actions">
               <div class="action-row">
-                <el-button link type="primary" @click="$router.push(`/work-orders/${row.id}`)">查看</el-button>
                 <el-button
                   v-if="isSupervisor && ['SUBMITTED', 'ASSIGNED'].includes(row.status)"
                   size="small" type="primary" @click="openDispatch(row)"
                 >{{ row.status === 'ASSIGNED' ? '改派' : '派工' }}</el-button>
-                <el-dropdown trigger="click" @command="(cmd) => onRowCommand(cmd, row)">
-                  <el-button link type="primary">更多<el-icon style="margin-left:2px"><ArrowDown /></el-icon></el-button>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item v-if="rowActionText(row)" command="dispatch" :disabled="claiming === row.id">
-                        {{ rowActionText(row) }}
-                      </el-dropdown-item>
-                      <el-dropdown-item command="print">打印 / PDF</el-dropdown-item>
-                      <el-dropdown-item command="copy">复制工单号</el-dropdown-item>
-                      <el-dropdown-item v-if="row.status === 'ARCHIVING'" command="archiveCheck">归档检查</el-dropdown-item>
-                      <el-dropdown-item v-if="!isSupervisor || isAdmin" command="edit" :disabled="!canEditRow(row)"
-                                        :title="canEditRow(row) ? '' : editDenyReason(row)" divided>编辑</el-dropdown-item>
-                      <el-dropdown-item v-if="!isSupervisor || isAdmin" command="delete" :disabled="!canDeleteRow(row)"
-                                        :title="canDeleteRow(row) ? '' : deleteDenyReason(row)">删除</el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
+                <el-button
+                  v-if="rowActionText(row) === '转派'"
+                  size="small" type="primary" @click="onRowCommand('dispatch', row)"
+                >转派</el-button>
+                <el-button
+                  v-if="rowActionText(row) === '领取' && !isPoolView"
+                  size="small" type="primary"
+                  :loading="claiming === row.id" @click="claimTask(row)"
+                >领取</el-button>
+                <el-button link type="primary" @click="onRowCommand('print', row)">打印</el-button>
+                <el-button
+                  v-if="!isSupervisor || isAdmin"
+                  link type="primary"
+                  :disabled="!canEditRow(row)"
+                  :title="canEditRow(row) ? '' : editDenyReason(row)"
+                  @click="onRowCommand('edit', row)"
+                >编辑</el-button>
+                <el-button
+                  v-if="!isSupervisor || isAdmin"
+                  link type="danger"
+                  :disabled="!canDeleteRow(row)"
+                  :title="canDeleteRow(row) ? '' : deleteDenyReason(row)"
+                  @click="onRowCommand('delete', row)"
+                >删除</el-button>
               </div>
               <div class="action-row progress-row" v-if="canOperateProgress(row)">
                 <el-button
@@ -234,7 +240,7 @@ const props = defineProps({
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, QuestionFilled } from '@element-plus/icons-vue'
+import { QuestionFilled } from '@element-plus/icons-vue'
 import request from '../api'
 import { downloadFile } from '../utils/download'
 import { workOrderTransition } from '../api/supervisor'
@@ -309,9 +315,6 @@ const rowActionText = (row) => {
   if (row.status === 'ASSIGNED' && isAssignedTech(row)) return '转派'
   return ''
 }
-
-const hasMoreActions = (row) =>
-  !!rowActionText(row) || (!isSupervisor && (canEditRow(row) || canDeleteRow(row)))
 
 const onRowCommand = (cmd, row) => {
   if (cmd === 'edit') {
@@ -578,7 +581,7 @@ const pickStatus = (val) => {
 
 const handleSearch = () => { page.value = 1; fetchData() }
 
-// 整行点击查看详情；点在操作按钮/下拉上时不跳转
+// 整行点击查看详情；点在操作按钮上时不跳转
 const onRowClick = (row, column, event) => {
   const el = event?.target
   if (el?.closest?.('.col-actions, button, a, .el-dropdown')) return
@@ -667,8 +670,8 @@ const handleExport = async () => {
 .wo-table :deep(.el-button.is-link) { padding: 0 2px; height: auto; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
 .col-actions { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
-/* 查看/更多靠左对齐；主操作推到最右，避免每行按钮位置忽左忽右 */
-.action-row { display: flex; align-items: center; gap: 2px; }
+/* 操作按钮靠左；进度主操作推到最右，避免每行按钮位置忽左忽右 */
+.action-row { display: flex; align-items: center; gap: 4px; }
 .progress-row { display: flex; align-items: center; margin-left: auto; }
 
 .status-tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; }
