@@ -102,14 +102,13 @@
                       <el-dropdown-item v-if="rowActionText(row)" command="dispatch" :disabled="claiming === row.id">
                         {{ rowActionText(row) }}
                       </el-dropdown-item>
-                      <el-dropdown-item v-if="!isSupervisor" command="edit" :disabled="!canEditRow(row)"
-                                        :title="canEditRow(row) ? '' : editDenyReason(row)">编辑</el-dropdown-item>
-                      <el-dropdown-item v-if="!isSupervisor" command="delete" :disabled="!canDeleteRow(row)"
-                                        :title="canDeleteRow(row) ? '' : deleteDenyReason(row)" divided>删除</el-dropdown-item>
                       <el-dropdown-item command="print">打印 / PDF</el-dropdown-item>
-                      <el-dropdown-item v-if="isSupervisor && !rowActionText(row)" disabled>
-                        当前状态无可执行操作
-                      </el-dropdown-item>
+                      <el-dropdown-item command="copy">复制工单号</el-dropdown-item>
+                      <el-dropdown-item v-if="row.status === 'ARCHIVING'" command="archiveCheck">归档检查</el-dropdown-item>
+                      <el-dropdown-item v-if="!isSupervisor || isAdmin" command="edit" :disabled="!canEditRow(row)"
+                                        :title="canEditRow(row) ? '' : editDenyReason(row)" divided>编辑</el-dropdown-item>
+                      <el-dropdown-item v-if="!isSupervisor || isAdmin" command="delete" :disabled="!canDeleteRow(row)"
+                                        :title="canDeleteRow(row) ? '' : deleteDenyReason(row)">删除</el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
@@ -316,6 +315,18 @@ const onRowCommand = (cmd, row) => {
     router.push(`/work-orders/${row.id}?edit=1`)
   } else if (cmd === 'delete') {
     handleDelete(row)
+  } else if (cmd === 'copy') {
+    navigator.clipboard?.writeText(row.work_order_no)
+      .then(() => ElMessage.success('工单号已复制'))
+      .catch(() => ElMessage.warning('复制失败，请手动选择'))
+  } else if (cmd === 'archiveCheck') {
+    request.post(`/work-orders/${row.id}/archive-check`)
+      .then((d) => {
+        if (!d) return
+        if (d.passed) ElMessage.success(`归档字段齐全（${d.total_fields ?? 6} 项，完成度 ${Math.round((d.completeness || 1) * 100)}%）`)
+        else ElMessage.warning(`还缺 ${(d.missing_fields || []).length} 项：${(d.missing_fields || []).join('、')}`)
+      })
+      .catch(() => ElMessage.error('归档检查失败'))
   } else if (cmd === 'print') {
     downloadFile(`/work-orders/${row.id}/pdf`, {}, `工单-${row.work_order_no}.pdf`)
       .catch(() => ElMessage.error('PDF 生成失败'))
