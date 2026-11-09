@@ -18,6 +18,9 @@ from app.models.notification import Notification
 from app.models.manual_code import ManualCodeEntry
 from app.models.work_order_import import WorkOrderImportBatch, WorkOrderImportItem
 from app.models.stock_movement import StockMovement
+from app.models.spare_part_requisition import (
+    SparePartRequisition, SparePartRequisitionStatus,
+)
 from app.models.login_log import LoginLog
 from app.models.maintenance import (
     MaintenancePlan, MaintenanceRecord, InspectionTemplate, InspectionRecord,
@@ -41,6 +44,7 @@ __all__ = [
     "ManualCodeEntry",
     "WorkOrderImportBatch", "WorkOrderImportItem",
     "StockMovement",
+    "SparePartRequisition", "SparePartRequisitionStatus",
     "LoginLog",
     "MaintenancePlan", "MaintenanceRecord",
     "InspectionTemplate", "InspectionRecord",

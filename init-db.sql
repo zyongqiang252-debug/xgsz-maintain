@@ -72,22 +72,72 @@ CREATE TABLE IF NOT EXISTS knowledge_items (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 备件表
+-- 备件表（字段以 backend/app/models/spare_part.py 为准，Alembic 迁移为最终权威）
 CREATE TABLE IF NOT EXISTS spare_parts (
     id SERIAL PRIMARY KEY,
     part_code VARCHAR(50) UNIQUE NOT NULL,
     part_name VARCHAR(200) NOT NULL,
     specification VARCHAR(200),
-    applicable_devices JSONB,
+    unit VARCHAR(20) DEFAULT '个',
+    stock_quantity INTEGER DEFAULT 0,
     safety_stock INTEGER DEFAULT 0,
-    current_stock INTEGER DEFAULT 0,
-    in_transit_stock INTEGER DEFAULT 0,
-    unit VARCHAR(20),
-    unit_price DECIMAL(10, 2),
+    unit_price DOUBLE PRECISION DEFAULT 0,
+    device_type VARCHAR(100),
+    location VARCHAR(200),
     supplier VARCHAR(200),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 备件出入库流水（字段以 backend/app/models/stock_movement.py 为准）
+CREATE TABLE IF NOT EXISTS stock_movements (
+    id SERIAL PRIMARY KEY,
+    part_id INTEGER NOT NULL REFERENCES spare_parts(id),
+    part_code VARCHAR(50),
+    part_name VARCHAR(200),
+    movement_type VARCHAR(16) NOT NULL,          -- IN / OUT / ADJUST / RETURN
+    quantity DOUBLE PRECISION NOT NULL,
+    before_qty DOUBLE PRECISION,
+    after_qty DOUBLE PRECISION,
+    unit_price DOUBLE PRECISION DEFAULT 0,
+    amount DOUBLE PRECISION DEFAULT 0,
+    work_order_id INTEGER REFERENCES work_orders(id),
+    operator_id INTEGER,                          -- 关联 users.id（users 由 Alembic 迁移创建）
+    operator_name VARCHAR(100),
+    remark TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS stock_movements_part_idx ON stock_movements(part_id);
+CREATE INDEX IF NOT EXISTS stock_movements_type_idx ON stock_movements(movement_type);
+CREATE INDEX IF NOT EXISTS stock_movements_wo_idx ON stock_movements(work_order_id);
+
+-- 备件领用申请单（审批流，字段以 backend/app/models/spare_part_requisition.py 为准）
+CREATE TABLE IF NOT EXISTS spare_part_requisitions (
+    id SERIAL PRIMARY KEY,
+    part_id INTEGER NOT NULL REFERENCES spare_parts(id),
+    part_code VARCHAR(50),
+    part_name VARCHAR(200),
+    quantity DOUBLE PRECISION NOT NULL,
+    unit VARCHAR(20) DEFAULT '个',
+    work_order_id INTEGER REFERENCES work_orders(id),
+    reason TEXT,
+    status VARCHAR(16) NOT NULL DEFAULT 'PENDING',  -- PENDING/APPROVED/REJECTED/CANCELLED/ISSUED
+    applicant_id INTEGER,                         -- 关联 users.id（users 由 Alembic 迁移创建）
+    applicant_name VARCHAR(100),
+    approver_id INTEGER,
+    approver_name VARCHAR(100),
+    approved_at TIMESTAMP,
+    reject_reason TEXT,
+    movement_id INTEGER REFERENCES stock_movements(id),
+    issued_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS spare_part_requisitions_part_idx ON spare_part_requisitions(part_id);
+CREATE INDEX IF NOT EXISTS spare_part_requisitions_status_idx ON spare_part_requisitions(status);
+CREATE INDEX IF NOT EXISTS spare_part_requisitions_applicant_idx ON spare_part_requisitions(applicant_id);
+
 
 -- 故障码映射表（故障码与故障名称一一对应，系统生成，只读）
 CREATE TABLE IF NOT EXISTS fault_code_mappings (
@@ -119,3 +169,5 @@ COMMENT ON TABLE devices IS '设备信息表';
 COMMENT ON TABLE work_orders IS '维修工单表';
 COMMENT ON TABLE knowledge_items IS '知识条目表（含向量字段）';
 COMMENT ON TABLE spare_parts IS '备件库存表';
+COMMENT ON TABLE stock_movements IS '备件出入库流水';
+COMMENT ON TABLE spare_part_requisitions IS '备件领用申请单（审批流）';
