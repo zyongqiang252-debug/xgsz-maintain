@@ -1,0 +1,272 @@
+/* ========================================
+   暗色模式 — 基于 html[data-theme="dark"]
+   依赖 element-plus/theme-chalk/dark/css-vars.css 的组件级变量，
+   这里补齐自研布局/卡片/表格/页面的表面色。
+   ======================================== */
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* 平台令牌 */
+  --color-bg-page: #14161A;
+  --color-bg-card: #1C1F24;
+  --color-bg-filter: #1C1F24;
+  --color-sidebar-bg: #181B20;
+  --color-sidebar-text: #A6ADBB;
+  --color-sidebar-active-bg: rgba(15, 198, 194, .16);
+  --color-sidebar-active-text: #35D6D3;
+  --color-sidebar-group: #6B7280;
+  --color-sidebar-border: #24272D;
+  --color-text-primary: #E6E8EC;
+  --color-text-secondary: #A6ADBB;
+  --color-text-tertiary: #7C848F;
+  --color-text-disabled: #565D68;
+  --color-border: #2A2E35;
+  --color-border-light: #24272D;
+  --color-divider: #2A2E35;
+  --color-primary-light: rgba(15, 198, 194, .14);
+  --color-primary-mid: rgba(15, 198, 194, .22);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, .4);
+  --shadow-card-hover: 0 4px 14px rgba(0, 0, 0, .45);
+
+  /* UI 2.0 令牌 */
+  --ui-bg: #14161A;
+  --ui-surface: #1C1F24;
+  --ui-surface-2: #22262D;
+  --ui-border: #2A2E35;
+  --ui-border-strong: #363B44;
+  --ui-text: #E6E8EC;
+  --ui-text-2: #A6ADBB;
+  --ui-text-3: #7C848F;
+  --ui-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  --ui-shadow-hover: 0 4px 14px rgba(0, 0, 0, .45);
+  --ui-accent-soft: rgba(15, 198, 194, .16);
+}
+
+/* ---------- 基础表面 ---------- */
+[data-theme="dark"] body,
+[data-theme="dark"] #app { background: #14161A; color: #E6E8EC; }
+
+/* 布局表面：MainLayout 的样式是 scoped（带 [data-v] 属性选择器），
+   这里必须加 !important 才能覆盖 */
+[data-theme="dark"] .layout,
+[data-theme="dark"] .layout-body,
+[data-theme="dark"] .main-content,
+[data-theme="dark"] .page-container,
+[data-theme="dark"] .topbar,
+[data-theme="dark"] .sidebar { background: #14161A !important; }
+[data-theme="dark"] .sidebar { border-right-color: #24272D !important; }
+[data-theme="dark"] .topbar { border-bottom-color: #24272D !important; }
+[data-theme="dark"] .sidebar-logo { border-bottom-color: #24272D !important; }
+[data-theme="dark"] .sidebar-menu { background: transparent !important; }
+[data-theme="dark"] .el-menu { background: transparent !important; }
+[data-theme="dark"] .collapse-bar,
+[data-theme="dark"] .sidebar-collapse { background: #181B20 !important; border-top-color: #24272D !important; color: #A6ADBB !important; }
+[data-theme="dark"] .sidebar-menu :deep(.el-menu-item),
+[data-theme="dark"] .sidebar-menu .el-menu-item { color: #A6ADBB !important; }
+[data-theme="dark"] .sidebar-menu .el-menu-item.is-active { color: #35D6D3 !important; }
+[data-theme="dark"] .sidebar-logo-text,
+[data-theme="dark"] .system-name { color: #E6E8EC; }
+[data-theme="dark"] .logo-icon,
+[data-theme="dark"] .sidebar-logo-icon { background: #22262D; border-color: #2A2E35; }
+[data-theme="dark"] .user-name { color: #E6E8EC; }
+[data-theme="dark"] .user-role { color: #7C848F; }
+[data-theme="dark"] .user-area:hover { background: #22262D; }
+[data-theme="dark"] .topbar-crumb :deep(.el-breadcrumb__inner) { color: #7C848F; }
+[data-theme="dark"] .menu-group-label { color: #5E6672; }
+
+/* 侧栏菜单 */
+[data-theme="dark"] .sidebar-menu :deep(.el-menu-item) { color: #A6ADBB !important; }
+[data-theme="dark"] .sidebar-menu :deep(.el-menu-item:hover) {
+  background: #22262D !important;
+  color: #E6E8EC !important;
+}
+[data-theme="dark"] .sidebar-menu :deep(.el-menu-item.is-active) {
+  background: rgba(15, 198, 194, .16) !important;
+  color: #35D6D3 !important;
+}
+
+/* ---------- 卡片 / 面板 ---------- */
+[data-theme="dark"] .el-card {
+  background: #1C1F24 !important;
+  border-color: #2A2E35 !important;
+  color: #E6E8EC;
+}
+[data-theme="dark"] .el-card__header {
+  border-bottom-color: #2A2E35 !important;
+  color: #E6E8EC;
+}
+[data-theme="dark"] .stat-item,
+[data-theme="dark"] .metric-item {
+  background: #1C1F24;
+  border-color: #2A2E35;
+}
+[data-theme="dark"] .stat-item:hover,
+[data-theme="dark"] .metric-item:hover { border-color: #363B44; }
+[data-theme="dark"] .stat-item__value,
+[data-theme="dark"] .metric-value { color: #E6E8EC; }
+[data-theme="dark"] .stat-item__label { color: #A6ADBB; }
+[data-theme="dark"] .stat-item__hint,
+[data-theme="dark"] .metric-label { color: #7C848F; }
+
+/* 通用页面区块（页面内写死的白底） */
+[data-theme="dark"] .page,
+[data-theme="dark"] .dashboard,
+[data-theme="dark"] .filter-card,
+[data-theme="dark"] .table-card,
+[data-theme="dark"] .section-card,
+[data-theme="dark"] .stat-card,
+[data-theme="dark"] .mon-card,
+[data-theme="dark"] .knowledge-item,
+[data-theme="dark"] .notice-item,
+[data-theme="dark"] .list-card { background: transparent; }
+
+[data-theme="dark"] .filter-card.el-card,
+[data-theme="dark"] .table-card.el-card,
+[data-theme="dark"] .section-card.el-card,
+[data-theme="dark"] .knowledge-item.el-card { background: #1C1F24 !important; }
+
+/* ---------- 表格 ---------- */
+[data-theme="dark"] .el-table {
+  --el-table-bg-color: #1C1F24;
+  --el-table-tr-bg-color: #1C1F24;
+  --el-table-header-bg-color: #22262D;
+  --el-table-row-hover-bg-color: rgba(15, 198, 194, .12);
+  --el-table-border-color: #2A2E35;
+  --el-table-header-text-color: #A6ADBB;
+  --el-table-text-color: #D8DBE1;
+  background: #1C1F24;
+}
+[data-theme="dark"] .el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background: #1F2328;
+}
+[data-theme="dark"] .el-table__empty-block { background: #1C1F24; }
+
+/* ---------- 标签 / 输入 / 弹层 ---------- */
+[data-theme="dark"] .soft-tag--p3 { background: rgba(134, 144, 156, .22); color: #A6ADBB; }
+[data-theme="dark"] .soft-tag--ok { background: rgba(0, 180, 42, .18); color: #4ADE80; }
+[data-theme="dark"] .status-DRAFT,
+[data-theme="dark"] .status-ARCHIVED { background: #262A31; color: #A6ADBB; }
+
+[data-theme="dark"] .el-input__wrapper,
+[data-theme="dark"] .el-textarea__inner,
+[data-theme="dark"] .el-select__wrapper {
+  background: #22262D !important;
+  box-shadow: 0 0 0 1px #2A2E35 inset !important;
+}
+[data-theme="dark"] .el-input__inner,
+[data-theme="dark"] .el-textarea__inner,
+[data-theme="dark"] .el-select__placeholder { color: #E6E8EC !important; }
+
+[data-theme="dark"] .el-dialog,
+[data-theme="dark"] .el-drawer { background: #1C1F24 !important; }
+[data-theme="dark"] .el-dialog__title,
+[data-theme="dark"] .el-drawer__title { color: #E6E8EC !important; }
+[data-theme="dark"] .el-message-box { background: #1C1F24 !important; border-color: #2A2E35; }
+[data-theme="dark"] .el-popover.el-popper,
+[data-theme="dark"] .el-dropdown__popper { background: #22262D !important; border-color: #2A2E35 !important; }
+[data-theme="dark"] .el-dropdown-menu { background: transparent; }
+[data-theme="dark"] .el-dropdown-menu__item { color: #D8DBE1; }
+[data-theme="dark"] .el-dropdown-menu__item:not(.is-disabled):hover {
+  background: rgba(15, 198, 194, .14); color: #35D6D3;
+}
+
+/* 分页 */
+[data-theme="dark"] .el-pagination { --el-pagination-bg-color: transparent; --el-pagination-text-color: #A6ADBB; }
+[data-theme="dark"] .el-pagination.is-background .el-pager li { background: #22262D; }
+[data-theme="dark"] .el-pagination.is-background .el-pager li.is-active { background: #0FC6C2; }
+
+/* 空状态 / 骨架屏 */
+[data-theme="dark"] .empty-state__icon,
+[data-theme="dark"] .empty-block__icon { background: #262A31; color: #565D68; }
+[data-theme="dark"] .empty-state__title,
+[data-theme="dark"] .empty-block__title { color: #A6ADBB; }
+[data-theme="dark"] .empty-state__hint,
+[data-theme="dark"] .empty-block__hint { color: #7C848F; }
+[data-theme="dark"] .tbl-skeleton__row { border-bottom-color: #24272D; }
+[data-theme="dark"] .tbl-skeleton__cell {
+  background: linear-gradient(90deg, #22262D 25%, #2C313A 37%, #22262D 63%);
+  background-size: 400% 100%;
+}
+
+/* 驾驶舱里的知识概览与小标签 */
+[data-theme="dark"] .ks-item { border-color: #2A2E35; }
+[data-theme="dark"] .ks-value { color: #E6E8EC; }
+[data-theme="dark"] .ks-label { color: #7C848F; }
+
+/* 滚动条 */
+[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #3A404A; background-clip: content-box; }
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #4A515C; background-clip: content-box; }
+
+/* 移动端 */
+[data-theme="dark"] .mobile-app { background: #14161A; color: #E6E8EC; }
+[data-theme="dark"] .mobile-tabs { background: rgba(24, 27, 32, .96); border-top-color: #24272D; }
+[data-theme="dark"] .mobile-app :deep(.el-card) { background: #1C1F24 !important; border-color: #2A2E35 !important; }
+
+/* ---------- 组件内 scoped 样式需要 !important 才能被暗色覆盖 ---------- */
+[data-theme="dark"] .empty-state__icon,
+[data-theme="dark"] .empty-block__icon {
+  background: #262A31 !important;
+  color: #565D68 !important;
+}
+[data-theme="dark"] .empty-state__title { color: #C9CED6 !important; }
+[data-theme="dark"] .empty-state__hint { color: #7C848F !important; }
+
+[data-theme="dark"] .el-pagination .btn-prev,
+[data-theme="dark"] .el-pagination .btn-next,
+[data-theme="dark"] .el-pagination .el-pager li {
+  background: #22262D !important;
+  color: #C9CED6 !important;
+  border-radius: 6px;
+}
+[data-theme="dark"] .el-pagination .el-pager li.is-active {
+  background: #0FC6C2 !important;
+  color: #0A1A1A !important;
+}
+
+[data-theme="dark"] .el-tabs__item { color: #8C94A0 !important; }
+[data-theme="dark"] .el-tabs__item.is-active { color: #35D6D3 !important; }
+[data-theme="dark"] .el-tabs__nav-wrap::after { background-color: #2A2E35 !important; }
+
+[data-theme="dark"] .el-breadcrumb__inner { color: #8C94A0 !important; }
+[data-theme="dark"] .el-breadcrumb__inner.is-link:hover { color: #35D6D3 !important; }
+
+[data-theme="dark"] .filter-input .el-input__wrapper,
+[data-theme="dark"] .filter-select .el-select__wrapper { background: #22262D !important; }
+
+[data-theme="dark"] .el-empty__description p { color: #8C94A0 !important; }
+
+/* 软标签暗色：提高对比度 */
+[data-theme="dark"] .soft-tag--p0 { background: rgba(245, 63, 63, .22) !important; color: #FF9A9A !important; }
+[data-theme="dark"] .soft-tag--p1 { background: rgba(255, 125, 0, .22) !important; color: #FFB877 !important; }
+[data-theme="dark"] .soft-tag--p2 { background: rgba(255, 193, 7, .20) !important; color: #FFD75E !important; }
+
+/* ---------- 页面级自绘卡片（非 el-card） ---------- */
+[data-theme="dark"] .stat-card,
+[data-theme="dark"] .stat-card.danger,
+[data-theme="dark"] .stat-card.warn,
+[data-theme="dark"] .overview-card,
+[data-theme="dark"] .overview-card.card-warning,
+[data-theme="dark"] .overview-card.card-danger,
+[data-theme="dark"] .summary-card,
+[data-theme="dark"] .kpi-card,
+[data-theme="dark"] .metric-box,
+[data-theme="dark"] .info-card,
+[data-theme="dark"] .panel,
+[data-theme="dark"] .panel-card {
+  background: #1C1F24 !important;
+  border-color: #2A2E35 !important;
+  color: #E6E8EC !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .35) !important;
+}
+[data-theme="dark"] .stat-card .stat-value,
+[data-theme="dark"] .overview-card .overview-value,
+[data-theme="dark"] .stat-card .stat-num { color: #E6E8EC !important; }
+[data-theme="dark"] .stat-card .stat-label,
+[data-theme="dark"] .overview-card .overview-label { color: #8C94A0 !important; }
+
+/* 进度看板四色统计卡在暗色下保持语义色但降低亮度 */
+[data-theme="dark"] .stat-submitted { border-left-color: #FFB877 !important; }
+[data-theme="dark"] .stat-assigned { border-left-color: #C4A0FF !important; }
+[data-theme="dark"] .stat-progress { border-left-color: #7FD8FF !important; }
+[data-theme="dark"] .stat-completed { border-left-color: #7EE2A8 !important; }

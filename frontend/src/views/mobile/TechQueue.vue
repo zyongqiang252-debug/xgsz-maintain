@@ -80,7 +80,7 @@ onMounted(fetchData)
   flex: 1; text-align: center; padding: 12px 0; font-size: 14px;
   color: #86909C; cursor: pointer; border-bottom: 2px solid transparent;
 }
-.status-tab.active { color: #1677FF; border-bottom-color: #1677FF; font-weight: 500; }
+.status-tab.active { color: #0FC6C2; border-bottom-color: #0FC6C2; font-weight: 500; }
 
 .order-list { display: flex; flex-direction: column; gap: 12px; }
 .order-card {

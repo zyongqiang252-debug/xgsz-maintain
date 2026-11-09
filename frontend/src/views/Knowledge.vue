@@ -44,7 +44,10 @@
             </div>
           </el-card>
           </template>
-          <el-empty v-if="!loading && list.length === 0" description="暂无知识条目" />
+          <EmptyState v-if="!loading && list.length === 0" icon="doc"
+                      title="知识库还没有内容"
+                      hint="上传历史工单或手动新增条目，AI 问答会从知识库检索答案"
+                      action-text="新增知识" @action="$router.push('/knowledge/new')" />
         </div>
 
         <div class="pagination-wrap" v-if="total > pageSize">
@@ -79,7 +82,11 @@
               </span>
             </template>
           </el-table-column>
-        </el-table>
+          <template #empty>
+          <EmptyState icon="doc" title="知识库还没有内容" hint="上传历史工单或手动新增，AI 问答会从知识库检索答案"
+                     action-text="新增知识" @action="$router.push('/knowledge/new')" />
+        </template>
+      </el-table>
       </div>
     </el-dialog>
   </div>
@@ -92,6 +99,7 @@ import request from '../api'
 import { downloadFile } from '../utils/download'
 import dayjs from 'dayjs'
 
+import EmptyState from '../components/EmptyState.vue'
 const list = ref([])
 const loading = ref(false)
 const keyword = ref('')

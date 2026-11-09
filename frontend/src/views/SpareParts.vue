@@ -43,7 +43,7 @@
 
     <!-- 数据表格 -->
     <el-card class="table-card" shadow="never">
-      <el-table :data="list" v-loading="loading" stripe class="sp-table">
+      <el-table :data="list" stripe class="sp-table">
         <el-table-column prop="part_code" label="备件编码" width="128" show-overflow-tooltip />
         <el-table-column prop="part_name" label="备件名称" min-width="150" show-overflow-tooltip />
         <el-table-column prop="specification" label="规格型号" width="118" show-overflow-tooltip />
@@ -74,6 +74,9 @@
             </div>
           </template>
         </el-table-column>
+        <template #empty>
+          <EmptyState icon="search" title="没有找到符合条件的记录" hint="试试调整筛选条件，或清空搜索后重新查询" />
+        </template>
       </el-table>
       <div class="pagination-wrap">
         <el-pagination
@@ -258,6 +261,7 @@ import { useRouter } from 'vue-router'
 import request from '../api'
 import { downloadFile } from '../utils/download'
 
+import EmptyState from '../components/EmptyState.vue'
 const router = useRouter()
 
 // 备件台账维护权限：仅管理员/主管可增删改，维修员只读

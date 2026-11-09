@@ -9,8 +9,20 @@
           </div>
           <span class="system-name">芯光数智</span>
         </div>
+        <div class="topbar-divider"></div>
+        <el-breadcrumb class="topbar-crumb" separator="/">
+          <el-breadcrumb-item :to="{ path: '/dashboard' }">首页</el-breadcrumb-item>
+          <el-breadcrumb-item v-if="crumbs.group">{{ crumbs.group }}</el-breadcrumb-item>
+          <el-breadcrumb-item v-if="crumbs.page">{{ crumbs.page }}</el-breadcrumb-item>
+        </el-breadcrumb>
       </div>
       <div class="topbar-right">
+        <!-- 主题切换 -->
+        <el-tooltip :content="isDark ? '切换到浅色模式' : '切换到暗色模式'" placement="bottom">
+          <button class="theme-toggle" @click="toggleTheme">
+            <el-icon :size="18"><component :is="isDark ? Sunny : Moon" /></el-icon>
+          </button>
+        </el-tooltip>
         <!-- 消息通知 -->
         <el-popover
           placement="bottom-end"
@@ -327,12 +339,39 @@ import {
   User, Lock, QuestionFilled, SwitchButton,
   SetUp, Histogram, Calendar, Upload,
   DataAnalysis, Document, ChatLineSquare, Reading, Monitor, Grid, Box, Connection,
-  Setting, Tools
+  Setting, Tools, Moon, Sunny, Bell
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
 const sidebarCollapsed = ref(false)
+
+// ===== 主题（暗色模式）=====
+const isDark = ref(localStorage.getItem('theme') === 'dark')
+function applyTheme() {
+  document.documentElement.dataset.theme = isDark.value ? 'dark' : 'light'
+}
+function toggleTheme() {
+  isDark.value = !isDark.value
+  localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
+  applyTheme()
+}
+onMounted(applyTheme)
+
+// 顶部面包屑：模块分组 + 当前页
+const CRUMB_GROUPS = [
+  [['/dashboard', '/orders', '/work-orders', '/supervisor', '/work-order-imports', '/devices', '/maintenance'], '工单维修'],
+  [['/knowledge', '/knowledge-center', '/ai-assistant'], '知识与智能'],
+  [['/stock', '/spare-parts', '/warehouse', '/dict', '/categories', '/fault-codes'], '资源与字典'],
+  [['/supervisor/schedule', '/sys', '/users', '/system-settings', '/me', '/leave', '/notifications', '/help', '/profile', '/security'], '管理与个人'],
+]
+const crumbs = computed(() => {
+  const path = route.path || '/'
+  const page = route.meta?.title || ''
+  if (path === '/dashboard') return { group: '', page: '' }
+  const hit = CRUMB_GROUPS.find(([prefixes]) => prefixes.some((p) => path.startsWith(p)))
+  return { group: hit ? hit[1] : '', page }
+})
 
 // 点击 Logo 回到首页（数据驾驶舱）
 function goHome() {
@@ -556,6 +595,26 @@ watch(() => route.path, () => {
   z-index: 100;
 }
 .topbar-left { display:flex; align-items:center; }
+.theme-toggle {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 8px;
+  background: transparent; color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background .16s, color .16s;
+}
+.theme-toggle:hover { background: rgba(15, 198, 194, .10); color: var(--color-primary); }
+.topbar-divider {
+  width: 1px; height: 20px;
+  background: var(--color-border);
+  margin: 0 14px;
+}
+.topbar-crumb { font-size: 13px; }
+.topbar-crumb :deep(.el-breadcrumb__inner) { color: var(--ui-text-3, #86909C); font-weight: 400; }
+.topbar-crumb :deep(.el-breadcrumb__item:last-child .el-breadcrumb__inner) {
+  color: var(--ui-text, #1D2129); font-weight: 600;
+}
+.topbar-crumb :deep(.el-breadcrumb__separator) { color: #C9CDD4; margin: 0 6px; }
 .logo-area { display:flex; align-items:center; gap:10px; }
 .logo-clickable { cursor: pointer; user-select: none; transition: opacity .2s ease; }
 .logo-clickable:hover { opacity: .78; }

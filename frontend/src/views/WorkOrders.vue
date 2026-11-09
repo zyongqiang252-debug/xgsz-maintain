@@ -45,8 +45,13 @@
       </div>
     </el-card>
 
+    <!-- 首屏加载骨架 -->
+    <el-card v-if="loading && !list.length" class="table-card" shadow="never">
+      <TableSkeleton :rows="8" :cols="6" :widths="['16%','26%','10%','8%','12%','10%']" />
+    </el-card>
+
     <el-card class="table-card" shadow="never">
-      <el-table :data="list" v-loading="loading" stripe class="wo-table">
+      <el-table :data="list" stripe class="wo-table">
         <el-table-column label="工单编号" width="176" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="wo-no">{{ row.work_order_no }}</span>
@@ -167,6 +172,9 @@
             </div>
           </template>
         </el-table-column>
+        <template #empty>
+          <EmptyState icon="search" title="没有找到符合条件的记录" hint="试试调整筛选条件，或清空搜索后重新查询" />
+        </template>
       </el-table>
       <div class="pagination-wrap">
         <el-pagination
@@ -220,6 +228,8 @@ import { downloadFile } from '../utils/download'
 import { workOrderTransition } from '../api/supervisor'
 import dayjs from 'dayjs'
 
+import EmptyState from '../components/EmptyState.vue'
+import TableSkeleton from '../components/TableSkeleton.vue'
 const router = useRouter()
 
 const flattenTree = (nodes, result = []) => {

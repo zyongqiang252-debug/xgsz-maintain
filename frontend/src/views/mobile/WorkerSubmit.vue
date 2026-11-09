@@ -172,7 +172,7 @@ const handleSubmit = async () => {
 .worker-submit { padding: 16px; }
 
 .scan-area {
-  background: linear-gradient(135deg, #1677FF, #4096FF);
+  background: linear-gradient(135deg, #14C8C4, #0AA9A5);
   border-radius: 12px;
   padding: 24px;
   text-align: center;
@@ -192,18 +192,18 @@ const handleSubmit = async () => {
   font-size: 14px; resize: vertical; box-sizing: border-box;
   outline: none; transition: border-color .2s;
 }
-.fault-input:focus { border-color: #1677FF; }
+.fault-input:focus { border-color: #0FC6C2; }
 .form-input {
   width: 100%; padding: 10px 12px;
   border: 1px solid #D9D9D9; border-radius: 8px;
   font-size: 14px; box-sizing: border-box; outline: none;
 }
-.form-input:focus { border-color: #1677FF; }
+.form-input:focus { border-color: #0FC6C2; }
 
 .quick-options { margin-bottom: 16px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .option-label { font-size: 13px; color: #86909C; }
 .option-chip {
-  background: #E8F3FF; color: #1677FF; padding: 4px 12px;
+  background: rgba(15, 198, 194, .12); color: #0FC6C2; padding: 4px 12px;
   border-radius: 16px; font-size: 13px; cursor: pointer;
 }
 .option-chip:active { background: #BCD1F0; }
@@ -224,7 +224,7 @@ const handleSubmit = async () => {
 .preview-img { width: 80px; height: 60px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
 
 .submit-btn {
-  width: 100%; padding: 14px; background: #1677FF; color: #fff;
+  width: 100%; padding: 14px; background: #0FC6C2; color: #fff;
   border: none; border-radius: 8px; font-size: 16px; font-weight: 500;
   cursor: pointer; margin-top: 8px;
 }

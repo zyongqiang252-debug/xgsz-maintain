@@ -49,7 +49,7 @@
 
     <!-- 设备监控列表 -->
     <el-card class="table-card" shadow="never">
-      <el-table :data="list" v-loading="loading" stripe row-class-name="mon-row">
+      <el-table :data="list" stripe row-class-name="mon-row">
         <el-table-column label="设备" min-width="200">
           <template #default="{ row }">
             <div class="device-cell">
@@ -130,6 +130,9 @@
             </div>
           </template>
         </el-table-column>
+        <template #empty>
+          <EmptyState icon="search" title="没有找到符合条件的记录" hint="试试调整筛选条件，或清空搜索后重新查询" />
+        </template>
       </el-table>
       <div class="pagination-wrap">
         <el-pagination
@@ -169,6 +172,7 @@ import { downloadFile } from '../utils/download'
 import dayjs from 'dayjs'
 import QrcodeVue from 'qrcode.vue'
 
+import EmptyState from '../components/EmptyState.vue'
 const list = ref([])
 const loading = ref(false)
 const keyword = ref('')

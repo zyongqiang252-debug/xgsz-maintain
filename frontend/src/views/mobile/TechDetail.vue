@@ -163,7 +163,7 @@ onMounted(fetchData)
 .tech-detail { padding: 16px; padding-bottom: 80px; }
 
 .detail-header {
-  background: linear-gradient(135deg, #1677FF, #4096FF);
+  background: linear-gradient(135deg, #14C8C4, #0AA9A5);
   border-radius: 12px; padding: 18px; color: #fff; margin-bottom: 16px;
 }
 .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
@@ -192,7 +192,7 @@ onMounted(fetchData)
   width: 100%; padding: 14px; border: none; border-radius: 8px;
   font-size: 16px; font-weight: 500; cursor: pointer;
 }
-.action-btn.primary { background: #1677FF; color: #fff; }
+.action-btn.primary { background: #0FC6C2; color: #fff; }
 .action-btn:disabled { opacity: 0.5; }
 
 /* 报告弹窗 */
@@ -224,6 +224,6 @@ onMounted(fetchData)
   flex: 1; padding: 12px; border-radius: 8px; font-size: 15px; border: none; cursor: pointer;
 }
 .btn-cancel { background: #F2F3F5; color: #4E5969; }
-.btn-submit { background: #1677FF; color: #fff; }
+.btn-submit { background: #0FC6C2; color: #fff; }
 .btn-submit:disabled { opacity: 0.5; }
 </style>

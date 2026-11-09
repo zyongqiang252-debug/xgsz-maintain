@@ -210,7 +210,7 @@ onMounted(fetchData)
 .m-page { padding: 12px; padding-bottom: 80px; }
 .card { background: #fff; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
 .card-title { display: flex; justify-content: space-between; align-items: center; font-size: 15px; font-weight: 600; color: #1D2129; }
-.link { font-size: 13px; color: #1677FF; font-weight: 400; cursor: pointer; }
+.link { font-size: 13px; color: #0FC6C2; font-weight: 400; cursor: pointer; }
 .form { margin-top: 12px; }
 .field { margin-bottom: 12px; }
 .field label { display: block; font-size: 13px; color: #4E5969; margin-bottom: 6px; }
@@ -224,14 +224,14 @@ onMounted(fetchData)
   flex: 1; text-align: center; padding: 8px 0; border: 1px solid #E5E6EB; border-radius: 8px;
   font-size: 13px; color: #4E5969; background: #FAFBFC;
 }
-.seg-item.active { border-color: #1677FF; color: #1677FF; background: #F0F7FF; }
+.seg-item.active { border-color: #0FC6C2; color: #0FC6C2; background: rgba(15, 198, 194, .10); }
 .precheck { background: #F7F8FA; border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 12px; line-height: 1.7; }
 .precheck .warn { color: #FF7D00; }
 .precheck .danger { color: #F53F3F; }
 .precheck .ok { color: #00B42A; }
 .precheck .wo { color: #4E5969; margin-top: 2px; }
 .submit-btn {
-  width: 100%; height: 44px; border: none; border-radius: 22px; background: #1677FF;
+  width: 100%; height: 44px; border: none; border-radius: 22px; background: #0FC6C2;
   color: #fff; font-size: 15px; font-weight: 500;
 }
 .submit-btn:disabled { background: #9EC5FF; }
