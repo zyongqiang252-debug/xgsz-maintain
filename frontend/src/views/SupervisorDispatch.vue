@@ -24,7 +24,7 @@
               v-model="form.fault_description"
               type="textarea"
               :rows="6"
-              placeholder="简要描述设备目前的故障情况，有什么现象"
+              placeholder="简要描述服务器目前的故障情况（如 GPU3 掉卡、Xid 79、温度过高）"
               maxlength="1000"
               show-word-limit
             />

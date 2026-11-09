@@ -11,7 +11,7 @@
     <!-- 故障信息 -->
     <div class="info-section">
       <h3>故障信息</h3>
-      <div class="info-row"><span>设备编码</span><span>{{ wo.device_code || '-' }}</span></div>
+      <div class="info-row"><span>服务器编码</span><span>{{ wo.device_code || '-' }}</span></div>
       <div class="info-row"><span>故障码</span><span>{{ wo.fault_code || '-' }}</span></div>
       <div class="info-row"><span>故障描述</span><span>{{ wo.fault_description }}</span></div>
       <div class="info-row" v-if="wo.fault_phenomenon"><span>故障现象</span><span>{{ wo.fault_phenomenon }}</span></div>

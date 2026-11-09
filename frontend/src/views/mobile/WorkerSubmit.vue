@@ -3,7 +3,7 @@
     <!-- 扫码区 -->
     <div class="scan-area" @click="handleScan">
       <div class="scan-icon">📷</div>
-      <div class="scan-text">扫码识别设备</div>
+      <div class="scan-text">扫码识别服务器</div>
       <div class="scan-code" v-if="form.device_code">{{ form.device_code }}</div>
     </div>
 
@@ -90,12 +90,12 @@ const submitting = ref(false)
 const result = ref(null)
 
 const quickOptions = [
-  '设备异响',
-  '温度过高',
-  '设备不启动',
-  '漏油/漏水',
-  '精度偏差',
-  '显示屏故障',
+  'GPU 掉卡',
+  'Xid 报错',
+  'GPU 温度过高',
+  '显存 ECC 错误',
+  '训练任务失败',
+  'IB 链路异常',
 ]
 
 // 扫码报修：/m/report?device=EQ-001 直接带出设备

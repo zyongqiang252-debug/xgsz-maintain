@@ -18,7 +18,7 @@
           <el-option label="已归档" value="ARCHIVED" />
           <el-option label="已完成" value="COMPLETED" />
         </el-select>
-        <el-select v-model="deviceTypeFilter" placeholder="设备类型" clearable class="filter-select" @change="handleSearch">
+        <el-select v-model="deviceTypeFilter" placeholder="服务器类型" clearable class="filter-select" @change="handleSearch">
           <el-option v-for="d in deviceTypeOptions" :key="d.value" :label="d.label" :value="d.value" />
         </el-select>
         <el-date-picker

@@ -43,6 +43,37 @@ IMPORT_DIR = os.path.join(
 _MANAGE_ROLES = {UserRole.ADMIN.value, UserRole.SUPERVISOR.value, UserRole.TECHNICIAN.value, "MANAGER"}
 
 
+
+def _norm_service_mode(v):
+    """服务方式归一：远程/现场/返厂/REMOTE/SITE/RMA -> 枚举值"""
+    if v is None:
+        return None
+    t = str(v).strip().upper()
+    if not t:
+        return None
+    if t in ("REMOTE", "远程", "远程处理", "远程支持"):
+        return "REMOTE"
+    if t in ("SITE", "现场", "现场处理", "上门"):
+        return "SITE"
+    if t in ("RMA", "返厂", "返厂维修", "返修", "送修"):
+        return "RMA"
+    return None
+
+
+def _norm_bool(v):
+    """是否返厂归一"""
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return v
+    t = str(v).strip().lower()
+    if t in ("1", "true", "yes", "y", "是", "需要", "需返厂", "返厂"):
+        return True
+    if t in ("0", "false", "no", "n", "否", "不需要", "无需"):
+        return False
+    return None
+
+
 def _require_manage(current_user: User):
     if current_user.role not in _MANAGE_ROLES:
         raise HTTPException(status_code=403, detail="仅管理员/主管/维修员可执行历史工单导入")
@@ -322,6 +353,10 @@ def confirm_item(
         fault_category=data.get("fault_category") or None,
         fault_phenomenon_type=data.get("fault_phenomenon_type") or None,
         fault_phenomenon=data.get("fault_phenomenon") or None,
+        gpu_index=(str(data.get("gpu_index")).strip() or None) if data.get("gpu_index") else None,
+        fault_device_sn=(str(data.get("fault_device_sn")).strip() or None) if data.get("fault_device_sn") else None,
+        service_mode=_norm_service_mode(data.get("service_mode")),
+        need_rma=_norm_bool(data.get("need_rma")),
         root_cause_category=data.get("root_cause_category") or None,
         root_cause=data.get("root_cause") or None,
         solution_steps=data.get("solution_steps") or None,

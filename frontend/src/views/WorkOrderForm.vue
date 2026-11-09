@@ -44,9 +44,9 @@
         <el-descriptions :column="2" border>
           <el-descriptions-item label="故障描述" :span="2">{{ form.fault_description || '-' }}</el-descriptions-item>
           <el-descriptions-item label="故障码">{{ displayFaultCodes || '-' }}</el-descriptions-item>
-          <el-descriptions-item v-if="form.device_error_code" label="设备错误码">{{ form.device_error_code }}</el-descriptions-item>
+          <el-descriptions-item v-if="form.device_error_code" label="Xid/错误码">{{ form.device_error_code }}</el-descriptions-item>
           <template v-if="form.device_id">
-            <el-descriptions-item label="设备">
+            <el-descriptions-item label="服务器">
               <div style="display:flex;align-items:center;gap:8px">
                 <span>{{ deviceName }}</span>
                 <el-tag :type="devStatusTagType(selectedDevice?.run_status)" size="small" effect="dark" round>
@@ -58,8 +58,8 @@
               </div>
             </el-descriptions-item>
           </template>
-          <el-descriptions-item label="设备类型">{{ form.device_type || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="设备位置">{{ form.location || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="服务器类型">{{ form.device_type || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="机房位置">{{ form.location || '-' }}</el-descriptions-item>
           <el-descriptions-item label="故障分类">{{ form.fault_phenomenon_type || '-' }}</el-descriptions-item>
           <el-descriptions-item label="故障 GPU">{{ form.gpu_index || '-' }}</el-descriptions-item>
           <el-descriptions-item label="故障件 SN">{{ form.fault_device_sn || '-' }}</el-descriptions-item>
@@ -206,7 +206,7 @@
             <template #header>
               <div class="card-header-row">
                 <span class="section-title">日志原文检索预填</span>
-                <span class="mode-tip">粘贴设备屏幕/日志原文，自动提取报警码并匹配手册标准处理与历史工单案例，一键预填</span>
+                <span class="mode-tip">粘贴 dmesg / nvidia-smi / BMC 日志原文，自动提取 Xid 等错误码并匹配历史处置方案，一键预填</span>
               </div>
             </template>
             <div class="ec-search">
@@ -246,7 +246,7 @@
                   未检索到相关手册或工单案例
                 </div>
                 <div v-if="ecResults.manual_items.length" class="ec-group">
-                  <div class="ec-group-title">设备手册（权威标准处理）</div>
+                  <div class="ec-group-title">服务器手册 / 厂商文档（权威标准处理）</div>
                   <div v-for="m in ecResults.manual_items" :key="m.manual_code_id" class="ec-item manual">
                     <div class="ec-item-header">
                       <span class="ec-code">{{ m.error_code }}</span>
@@ -316,7 +316,7 @@
                   {{ Math.round((analysisResult.confidence || 0) * 100) }}%
                 </span>
               </el-descriptions-item>
-              <el-descriptions-item label="设备类型">{{ analysisResult.device_type || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="服务器类型">{{ analysisResult.device_type || '-' }}</el-descriptions-item>
               <el-descriptions-item label="故障分类">{{ analysisResult.fault_category || '-' }}</el-descriptions-item>
               <el-descriptions-item label="标准化故障码">{{ analysisResult.standardized_fault_code || '-' }}</el-descriptions-item>
               <el-descriptions-item label="缺失字段">
@@ -361,14 +361,14 @@
               <el-form-item label="工单编号">
                 <el-input v-model="form.work_order_no" disabled placeholder="系统自动生成" />
               </el-form-item>
-              <el-form-item label="关联设备" required>
+              <el-form-item label="关联服务器" required>
                 <el-select
                   v-model="form.device_id"
                   clearable
                   filterable
                   remote
                   :remote-method="searchDevices"
-                  placeholder="输入设备名称检索（会显示实时状态）"
+                  placeholder="输入服务器名称 / SN 检索（会显示实时状态）"
                   style="width:100%"
                   @change="onDeviceChange"
                 >
@@ -390,11 +390,11 @@
                   </el-option>
                 </el-select>
               </el-form-item>
-              <el-form-item label="设备类型">
-                <el-input v-model="form.device_type" disabled placeholder="选择设备后自动填充" />
+              <el-form-item label="服务器类型">
+                <el-input v-model="form.device_type" disabled placeholder="选择服务器后自动填充" />
               </el-form-item>
-              <el-form-item label="设备位置">
-                <el-input v-model="form.location" disabled placeholder="选择设备后自动填充" />
+              <el-form-item label="机房位置">
+                <el-input v-model="form.location" disabled placeholder="选择服务器后自动填充" />
               </el-form-item>
               <el-form-item label="技术员" required>
                 <el-input :model-value="technicianDisplay" disabled placeholder="当前登录账号" />
@@ -705,7 +705,7 @@
     <el-dialog v-model="knowledgeDialog.visible" title="从知识库引用处理步骤" width="750px" :close-on-click-modal="false">
       <div class="knowledge-dialog">
         <div class="kd-search">
-          <el-input v-model="knowledgeDialog.keyword" placeholder="输入故障现象或设备关键词检索" clearable @keydown.enter="searchSolutions" style="flex:1">
+          <el-input v-model="knowledgeDialog.keyword" placeholder="输入故障现象或 GPU/服务器关键词检索" clearable @keydown.enter="searchSolutions" style="flex:1">
             <template #append>
               <el-button type="primary" @click="searchSolutions" :loading="knowledgeDialog.searching">搜索</el-button>
             </template>
@@ -932,11 +932,12 @@ const viewDrafts = () => {
 }
 
 const DEFAULT_DEVICE_TYPES = [
-  { label: '注塑机', value: '注塑机' },
-  { label: '空压机', value: '空压机' },
-  { label: '数控机床', value: '数控机床' },
-  { label: '输送设备', value: '输送设备' },
-  { label: 'PLC系统', value: 'PLC系统' },
+  { label: 'GPU服务器整机', value: 'GPU服务器整机' },
+  { label: 'GPU模组/板卡', value: 'GPU模组/板卡' },
+  { label: '计算节点', value: '计算节点' },
+  { label: '存储节点', value: '存储节点' },
+  { label: 'IB/网络交换机', value: 'IB/网络交换机' },
+  { label: '管理节点', value: '管理节点' },
 ]
 
 const flattenTree = (nodes, result = []) => {
@@ -1104,7 +1105,7 @@ const cleanLogText = (text) => (text || '')
 const ecSearch = async () => {
   const q = ecQuery.value.trim()
   if (!q) {
-    ElMessage.warning('请粘贴设备日志/屏幕原文')
+    ElMessage.warning('请粘贴服务器日志原文')
     return
   }
   ecSearching.value = true
@@ -1627,7 +1628,7 @@ const fieldLabelMap = {
   root_cause: '根本原因',
   solution_steps: '处理步骤',
   repair_result: '维修结果',
-  device_id: '关联设备',
+  device_id: '关联服务器',
   work_hours: '工时',
 }
 
