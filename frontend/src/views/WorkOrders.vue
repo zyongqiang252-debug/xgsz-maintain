@@ -65,7 +65,7 @@
     </el-card>
 
     <el-card class="table-card" shadow="never">
-      <el-table :data="list" stripe class="wo-table" @row-click="onRowClick">
+      <el-table :data="list" stripe class="wo-table" :row-class-name="rowClassName" @row-click="onRowClick">
         <el-table-column label="工单编号" width="166" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="wo-no">{{ row.work_order_no }}</span>
@@ -76,21 +76,19 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="fault_description" label="故障描述" min-width="130" show-overflow-tooltip />
+        <el-table-column label="设备 / 故障" min-width="240">
+          <template #default="{ row }">
+            <div class="fault-cell" :title="row.fault_description || ''">
+              <div class="fault-device">{{ row.device_code || row.device_name || '未指定设备' }}</div>
+              <div class="fault-desc">{{ row.fault_description || '-' }}</div>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="86">
           <template #default="{ row }">
             <span class="status-tag" :class="'status-' + (row.status_group || row.status)">{{ row.status_group_label || statusLabel(row.status) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="级别" width="86" align="center">
-          <template #default="{ row }">
-            <el-tag v-if="row.alert_level" size="small" :type="alertLevelMeta(row.alert_level).type" effect="plain">
-              {{ row.alert_level }}
-            </el-tag>
-            <span v-else class="muted">—</span>
-          </template>
-        </el-table-column>
-
         <el-table-column label="负责人" width="150" show-overflow-tooltip>
           <template #default="{ row }">
             <span v-if="row.technician_name">{{ row.technician_name }}</span>
@@ -106,21 +104,18 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="时效" width="104" align="center">
+        <el-table-column label="优先级 / 时效" width="156">
           <template #default="{ row }">
-            <el-tooltip :content="slaTooltip(row)" placement="top">
-              <el-tag size="small" :type="slaTagType(row)" effect="light">{{ slaLabel(row) }}</el-tag>
-            </el-tooltip>
+            <div class="prio-cell">
+              <el-tag v-if="row.alert_level" size="small" :type="alertLevelMeta(row.alert_level).type" effect="plain">
+                {{ row.alert_level }}
+              </el-tag>
+              <span v-else class="muted">—</span>
+              <el-tooltip :content="slaTooltip(row)" placement="top">
+                <el-tag size="small" :type="slaTagType(row)" effect="light">{{ slaLabel(row) }}</el-tag>
+              </el-tooltip>
+            </div>
           </template>
-        </el-table-column>
-        <el-table-column label="成本" width="90" align="right">
-          <template #default="{ row }">
-            <span v-if="row.total_cost">{{ row.total_cost.toFixed(0) }} 元</span>
-            <span v-else class="muted">—</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="140">
-          <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="212" header-align="left">
           <template #default="{ row }">
@@ -686,6 +681,10 @@ const pickStatus = (val) => {
 
 const handleSearch = () => { page.value = 1; fetchData() }
 
+// P0 / 已超时的行加底色，列表里不用点开就能发现
+const rowClassName = ({ row }) =>
+  (row.alert_level === 'P0' || row.sla_status === 'OVERDUE') ? 'row-urgent' : ''
+
 // 整行点击查看详情；点在操作按钮上时不跳转
 const onRowClick = (row, column, event) => {
   const el = event?.target
@@ -769,6 +768,11 @@ const handleExport = async () => {
 .table-card { min-height: 300px; overflow: hidden; }
 .muted { color: #C9CDD4; }
 .collab-line { font-size: 11px; color: #86909C; line-height: 1.4; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fault-cell { display: flex; flex-direction: column; gap: 2px; line-height: 1.4; }
+.fault-device { font-size: 12px; color: #86909C; }
+.fault-desc { font-size: 13px; color: #1D2129; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prio-cell { display: flex; align-items: center; gap: 6px; }
+.wo-table :deep(.el-table__row.row-urgent) > td { background: #FFF6F6 !important; }
 /* 表格统一行高，避免按钮把行撑高 */
 .wo-table :deep(.el-table__cell) { padding: 8px 0; }
 .wo-table :deep(.el-table__row) { cursor: pointer; }
