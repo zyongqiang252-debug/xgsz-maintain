@@ -48,11 +48,6 @@
         <el-table-column prop="part_code" label="备件编码" width="128" show-overflow-tooltip />
         <el-table-column prop="part_name" label="备件名称" min-width="150" show-overflow-tooltip />
         <el-table-column prop="specification" label="规格型号" width="118" show-overflow-tooltip />
-        <el-table-column prop="serial_no" label="序列号 SN" width="150" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span :class="{ muted: !row.serial_no }">{{ row.serial_no || '—' }}</span>
-          </template>
-        </el-table-column>
         <el-table-column label="照片" width="84" align="center">          <template #default="{ row }">
             <el-image
               v-if="row.attachments && row.attachments.length"
