@@ -39,7 +39,15 @@
               type="primary" plain size="small" @click="openDispatch"
             >转派</el-button>
             <el-button
-              v-if="['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(form.status)"
+              v-if="form.status === 'ASSIGNED' && isMyTask && !canDispatch"
+              type="primary" size="small" :loading="accepting" @click="acceptAssignment"
+            >接受</el-button>
+            <el-button
+              v-if="form.status === 'ASSIGNED' && isMyTask && !canDispatch"
+              type="danger" plain size="small" @click="rejectAssignment"
+            >拒收</el-button>
+            <el-button
+              v-if="['ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(form.status)"
               type="primary" size="small" :loading="starting" @click="startProcessing"
             >{{ startActionLabel }}</el-button>
             <el-button size="small" :loading="printing" @click="printPdf">打印 / PDF</el-button>
@@ -908,6 +916,51 @@ const claimTask = async () => {
     ElMessage.error(e?.response?.data?.detail || '领取失败')
   } finally {
     claiming.value = false
+  }
+}
+
+const accepting = ref(false)
+// 接受派工：ASSIGNED → ACCEPTED
+const acceptAssignment = async () => {
+  accepting.value = true
+  try {
+    await request.post(`/work-orders/${form.id}/transition`, {
+      to_status: 'ACCEPTED', source: 'TECH_ACCEPT',
+    })
+    ElMessage.success('已接单')
+    const res = await request.get(`/work-orders/${form.id}`)
+    Object.assign(form, res)
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '接单失败')
+  } finally {
+    accepting.value = false
+  }
+}
+
+// 拒收：ASSIGNED → SUBMITTED（退回待派工池，必须填原因）
+const rejectAssignment = async () => {
+  let reason = ''
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '工单将退回「待派工」池，由主管重新派工', '拒收工单',
+      {
+        confirmButtonText: '确认拒收', cancelButtonText: '取消',
+        inputType: 'textarea',
+        inputPlaceholder: '必填，例如：不熟悉该设备 / 手头工单已满 / 不在现场',
+        inputValidator: (v) => (v && v.trim().length >= 2) || '请填写至少 2 个字的拒收原因',
+      },
+    )
+    reason = value.trim()
+  } catch { return }
+  try {
+    await request.post(`/work-orders/${form.id}/transition`, {
+      to_status: 'SUBMITTED', remark: reason, source: 'TECH_REJECT',
+    })
+    ElMessage.success('已拒收，工单已回到待派工池')
+    const res = await request.get(`/work-orders/${form.id}`)
+    Object.assign(form, res)
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '拒收失败')
   }
 }
 

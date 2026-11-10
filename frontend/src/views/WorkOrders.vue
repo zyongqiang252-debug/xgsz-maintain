@@ -159,9 +159,21 @@
                     :loading="transitionLoading[`${row.id}_SUBMITTED`]"
                     @click="handleTransition(row, 'SUBMITTED')"
                   >提交报修</el-button>
-                  <!-- 已派单/已接单/已到场/检查中：一键进入处理中（中间步骤自动记入进度） -->
+                  <!-- 已派单：接受 / 拒收（拒收回待派工池） -->
                   <el-button
-                    v-if="['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(row.status)"
+                    v-if="row.status === 'ASSIGNED' && isAssignedTech(row) && (isTechnician || isAdmin)"
+                    size="small" type="primary"
+                    :loading="startingId === row.id"
+                    @click="acceptAssignment(row)"
+                  >接受</el-button>
+                  <el-button
+                    v-if="row.status === 'ASSIGNED' && isAssignedTech(row) && (isTechnician || isAdmin)"
+                    size="small" type="danger" plain
+                    @click="rejectAssignment(row)"
+                  >拒收</el-button>
+                  <!-- 已接单/已到场/检查中：一键进入下一步（中间步骤自动记入进度） -->
+                  <el-button
+                    v-if="['ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(row.status)"
                     size="small" type="primary"
                     :disabled="!isAssignedTech(row) && !isSupervisor"
                     :loading="startingId === row.id"
@@ -358,6 +370,48 @@ const onRowCommand = (cmd, row) => {
   } else if (cmd === 'dispatch') {
     if (row.status === 'SUBMITTED' && isTechnician) claimTask(row)
     else openDispatch(row)
+  }
+}
+
+// 接受派工：ASSIGNED → ACCEPTED
+const acceptAssignment = async (row) => {
+  startingId.value = row.id
+  try {
+    await request.post(`/work-orders/${row.id}/transition`, {
+      to_status: 'ACCEPTED', source: 'TECH_ACCEPT',
+    })
+    ElMessage.success('已接单')
+    fetchData()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '接单失败')
+  } finally {
+    startingId.value = null
+  }
+}
+
+// 拒收：ASSIGNED → SUBMITTED（退回待派工池，必须填原因）
+const rejectAssignment = async (row) => {
+  let reason = ''
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '工单将退回「待派工」池，由主管重新派工', '拒收工单',
+      {
+        confirmButtonText: '确认拒收', cancelButtonText: '取消',
+        inputType: 'textarea',
+        inputPlaceholder: '必填，例如：不熟悉该设备 / 手头工单已满 / 不在现场',
+        inputValidator: (v) => (v && v.trim().length >= 2) || '请填写至少 2 个字的拒收原因',
+      },
+    )
+    reason = value.trim()
+  } catch { return }
+  try {
+    await request.post(`/work-orders/${row.id}/transition`, {
+      to_status: 'SUBMITTED', remark: reason, source: 'TECH_REJECT',
+    })
+    ElMessage.success('已拒收，工单已回到待派工池')
+    fetchData()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '拒收失败')
   }
 }
 

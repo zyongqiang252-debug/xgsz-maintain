@@ -922,7 +922,7 @@ def _ensure_fault_code_mappings(wo: WorkOrder, db: Session):
 VALID_TRANSITIONS: Dict[str, List[str]] = {
     WorkOrderStatus.DRAFT.value: [WorkOrderStatus.SUBMITTED.value, WorkOrderStatus.ASSIGNED.value],
     WorkOrderStatus.SUBMITTED.value: [WorkOrderStatus.ASSIGNED.value, WorkOrderStatus.REJECTED.value],
-    WorkOrderStatus.ASSIGNED.value: [WorkOrderStatus.ACCEPTED.value, WorkOrderStatus.REJECTED.value],
+    WorkOrderStatus.ASSIGNED.value: [WorkOrderStatus.ACCEPTED.value, WorkOrderStatus.SUBMITTED.value, WorkOrderStatus.REJECTED.value],
     WorkOrderStatus.ACCEPTED.value: [WorkOrderStatus.ARRIVED.value, WorkOrderStatus.REJECTED.value],
     WorkOrderStatus.ARRIVED.value: [WorkOrderStatus.INSPECTING.value, WorkOrderStatus.REJECTED.value],
     WorkOrderStatus.INSPECTING.value: [WorkOrderStatus.IN_PROGRESS.value, WorkOrderStatus.REJECTED.value],
@@ -971,6 +971,41 @@ def _add_progress_log(
     db.add(log)
     db.flush()
     return log
+
+
+def _notify_returned_to_pool(wo: WorkOrder, actor, reason: str = "") -> None:
+    """拒收回池：通知原派工人 + 主管/管理员（独立会话）"""
+    try:
+        from app.core.database import SessionLocal
+        from app.api.notifications import create_notification
+        if not wo:
+            return
+        db = SessionLocal()
+        try:
+            users = db.query(User).filter(
+                User.is_active == True,
+                User.role.in_([UserRole.ADMIN.value, UserRole.SUPERVISOR.value]),
+            ).all()
+            targets = {u.id: u for u in users}
+            if wo.dispatcher_id:
+                dispatcher = db.query(User).filter(User.id == wo.dispatcher_id).first()
+                if dispatcher:
+                    targets[dispatcher.id] = dispatcher
+            for u in targets.values():
+                create_notification(
+                    db, user_id=u.id, type="WORK_ORDER",
+                    title="工单被拒收，已回到待派工池",
+                    content=f"{getattr(actor, 'real_name', '维修员')} 拒收了工单 "
+                            f"{wo.work_order_no}，原因：{reason or '-'}，请重新派工。",
+                    work_order_id=wo.id,
+                    level=AL.from_priority(getattr(wo, "priority", None)),
+                )
+            if targets:
+                db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"[WorkOrder] 拒收通知写入失败（忽略）: {e}")
 
 
 def _notify_inapp(wo: WorkOrder, event: str, actor: str = "", extra: str = "") -> None:
@@ -1187,6 +1222,13 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
         if not (is_assigned_tech or is_admin):
             raise HTTPException(status_code=403, detail="仅被指派的维修员或管理员可接单")
 
+    elif to_status_val == WorkOrderStatus.SUBMITTED.value:
+        # 拒收回池：仅当前负责人或管理员可操作，必须写原因
+        if not (is_assigned_tech or is_admin):
+            raise HTTPException(status_code=403, detail="仅当前负责人或管理员可拒收该工单")
+        if not (data.remark or "").strip():
+            raise HTTPException(status_code=400, detail="拒收必须填写原因")
+
     elif to_status_val in (WorkOrderStatus.ARRIVED.value, WorkOrderStatus.INSPECTING.value, WorkOrderStatus.IN_PROGRESS.value):
         if not (is_assigned_tech or is_admin):
             raise HTTPException(status_code=403, detail="仅维修员或管理员可推进到此状态")
@@ -1253,6 +1295,12 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
     old_technician_id = work_order.technician_id
     from_status_enum = work_order.status
 
+    # 拒收回池：清空负责人（old_technician_id 已用于工作量回退）
+    if to_status_val == WorkOrderStatus.SUBMITTED.value:
+        work_order.technician_id = None
+        work_order.assignee_id = None
+        work_order.dispatched_at = None
+
     # 派工/改派：记录分配人（谁把单分出去的）
     if to_status_val == WorkOrderStatus.ASSIGNED.value:
         work_order.dispatcher_id = current_user.id
@@ -1294,6 +1342,9 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
     db.commit()
     db.refresh(work_order)
 
+    if to_status_val == WorkOrderStatus.SUBMITTED.value and from_status_val == WorkOrderStatus.ASSIGNED.value:
+        _notify_returned_to_pool(work_order, current_user, data.remark)
+
     # SLA：接单记首次响应；进入待归档视为维修完成；随后刷新 SLA 状态
     try:
         if to_status_val == WorkOrderStatus.ACCEPTED.value and not work_order.first_response_at:
@@ -1311,7 +1362,11 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
         logger.warning(f"[WorkOrder] SLA/成本刷新失败（忽略）: {e}")
 
     # 群机器人通知：提交报修 / 派工 / 退回
-    _event = {"SUBMITTED": "submitted", "ASSIGNED": "assigned", "REJECTED": "rejected"}.get(to_status_val)
+    # 拒收回池用专门的“被拒收”通知，避免再发一条“新报修待派工”
+    if to_status_val == WorkOrderStatus.SUBMITTED.value and from_status_val == WorkOrderStatus.ASSIGNED.value:
+        _event = None
+    else:
+        _event = {"SUBMITTED": "submitted", "ASSIGNED": "assigned", "REJECTED": "rejected"}.get(to_status_val)
     if _event:
         _notify_wo(work_order, _event, actor=current_user.real_name, extra=(data.remark or ""))
 
