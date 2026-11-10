@@ -163,24 +163,21 @@
                 </template>
               </div>
               <div class="op-actions">
-                <el-tooltip content="打印 / PDF" placement="top" :show-after="300">
-                  <el-button text circle size="small" :icon="PrinterIcon" @click="onRowCommand('print', row)" />
-                </el-tooltip>
+                <IconAction :icon="PrinterIcon" title="打印 / PDF" @click="onRowCommand('print', row)" />
                 <template v-if="!isSupervisor || isAdmin">
-                  <el-tooltip :content="canEditRow(row) ? '编辑' : editDenyReason(row)" placement="top" :show-after="300">
-                    <el-button
-                      text circle size="small" :icon="EditIcon"
-                      :disabled="!canEditRow(row)"
-                      @click="onRowCommand('edit', row)"
-                    />
-                  </el-tooltip>
-                  <el-tooltip :content="canDeleteRow(row) ? '删除' : deleteDenyReason(row)" placement="top" :show-after="300">
-                    <el-button
-                      text circle size="small" type="danger" :icon="DeleteIcon"
-                      :disabled="!canDeleteRow(row)"
-                      @click="onRowCommand('delete', row)"
-                    />
-                  </el-tooltip>
+                  <IconAction
+                    :icon="EditIcon"
+                    :title="canEditRow(row) ? '编辑' : editDenyReason(row)"
+                    :disabled="!canEditRow(row)"
+                    @click="onRowCommand('edit', row)"
+                  />
+                  <IconAction
+                    :icon="DeleteIcon"
+                    :title="canDeleteRow(row) ? '删除' : deleteDenyReason(row)"
+                    type="danger"
+                    :disabled="!canDeleteRow(row)"
+                    @click="onRowCommand('delete', row)"
+                  />
                 </template>
               </div>
             </div>
@@ -248,6 +245,7 @@ import dayjs from 'dayjs'
 
 import EmptyState from '../components/EmptyState.vue'
 import TableSkeleton from '../components/TableSkeleton.vue'
+import IconAction from '../components/IconAction.vue'
 const router = useRouter()
 
 // 当前登录用户（用于权限判断：仅创建者或管理员可编辑）
@@ -679,12 +677,6 @@ const handleExport = async () => {
 .op-primary { display: flex; align-items: center; gap: 6px; margin-right: 12px; }
 .op-primary:empty { display: none; }
 .op-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
-.op-actions .el-button { width: 26px; height: 26px; padding: 0; margin: 0; color: #4E5969; font-size: 15px; }
-.op-actions .el-button:hover { color: #0FC6C2; background: #F2F3F5; }
-.op-actions .el-button.is-disabled { color: #C9CDD4; background: transparent; }
-.op-actions .el-button.el-button--danger { color: #F53F3F; }
-.op-actions .el-button.el-button--danger:hover { color: #F53F3F; background: #FFF1F0; }
-.op-actions .el-button.is-disabled.el-button--danger { color: #F7C5C5; }
 
 .status-tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; }
 .status-DRAFT { background: #F2F3F5; color: #4E5969; }

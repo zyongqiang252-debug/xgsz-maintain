@@ -57,20 +57,25 @@
         </el-table-column>
         <el-table-column prop="unit_price" label="单价" width="96" align="right" />
         <el-table-column prop="location" label="存放位置" width="106" show-overflow-tooltip />
-        <el-table-column label="操作" width="196">
+        <el-table-column label="操作" width="118" align="right" header-align="left">
           <template #default="{ row }">
             <div class="action-group">
-              <el-button size="small" type="primary" plain @click="openConsume(row)">领用</el-button>
-              <el-dropdown trigger="click" @command="(cmd) => onRowCommand(cmd, row)">
-                <el-button link type="primary">更多<el-icon style="margin-left:2px"><ArrowDown /></el-icon></el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="edit">{{ canManage ? '编辑' : '查看' }}</el-dropdown-item>
-                    <el-dropdown-item command="movements">流水</el-dropdown-item>
-                    <el-dropdown-item v-if="canManage" command="delete" divided>删除</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
+              <IconAction :icon="ShoppingCart" title="领用" @click="openConsume(row)" />
+              <IconAction
+                v-if="canManage"
+                :icon="Edit" title="编辑"
+                @click="router.push(`/spare-parts/${row.id}`)"
+              />
+              <IconAction
+                v-else
+                :icon="View" title="查看"
+                @click="router.push(`/spare-parts/${row.id}`)"
+              />
+              <IconAction
+                v-if="canManage"
+                :icon="Delete" title="删除" type="danger"
+                @click="handleDelete(row)"
+              />
             </div>
           </template>
         </el-table-column>
@@ -225,43 +230,19 @@
         <el-button type="primary" :loading="consume.loading" @click="submitConsume">确认领用</el-button>
       </template>
     </el-dialog>
-
-    <!-- 流水 -->
-    <el-dialog v-model="movement.visible" :title="`出入库流水 · ${movement.partName || ''}`" width="820px">
-      <el-table :data="movement.items" size="small" border max-height="420">
-        <el-table-column prop="created_at" label="时间" width="160">
-          <template #default="{ row }">{{ (row.created_at || '').replace('T', ' ').slice(0, 16) }}</template>
-        </el-table-column>
-        <el-table-column label="类型" width="80">
-          <template #default="{ row }">
-            <el-tag size="small" :type="row.movement_type === 'OUT' ? 'warning' : 'success'">
-              {{ row.movement_type === 'OUT' ? '出库' : '入库' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="quantity" label="数量" width="70" />
-        <el-table-column label="库存变化" width="120">
-          <template #default="{ row }">{{ row.before_qty }} → {{ row.after_qty }}</template>
-        </el-table-column>
-        <el-table-column prop="amount" label="金额" width="90" />
-        <el-table-column prop="work_order_id" label="工单" width="70" />
-        <el-table-column prop="operator_name" label="操作人" width="100" />
-        <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
-      </el-table>
-      <div v-if="!movement.items.length" class="empty-hint">暂无流水</div>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown } from '@element-plus/icons-vue'
+import { ShoppingCart, Edit, View, Delete } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import request from '../api'
 import { downloadFile } from '../utils/download'
 
 import EmptyState from '../components/EmptyState.vue'
+import IconAction from '../components/IconAction.vue'
 const router = useRouter()
 
 // 备件台账维护权限：仅管理员/主管可增删改，维修员只读
@@ -287,8 +268,6 @@ const showAlerts = ref(false)
 const consume = reactive({
   visible: false, row: null, quantity: 1, workOrderId: null, remark: '', loading: false, workOrders: [],
 })
-const movement = reactive({ visible: false, partName: '', items: [] })
-
 const openConsume = async (row) => {
   if (!row.stock_quantity) {
     ElMessage.warning('该备件库存为 0，无法领用')
@@ -323,22 +302,6 @@ const submitConsume = async () => {
   } finally {
     consume.loading = false
   }
-}
-
-const onRowCommand = (cmd, row) => {
-  if (cmd === 'edit') router.push(`/spare-parts/${row.id}`)
-  else if (cmd === 'movements') openMovements(row)
-  else if (cmd === 'delete') handleDelete(row)
-}
-
-const openMovements = async (row) => {
-  movement.partName = row.part_name
-  movement.visible = true
-  movement.items = []
-  try {
-    const res = await request.get(`/spare-parts/${row.id}/movements`, { params: { page_size: 50 } })
-    movement.items = res.items || []
-  } catch { movement.items = [] }
 }
 
 const alerts = reactive({
@@ -508,7 +471,7 @@ const handleExport = async () => {
 .stock-out::before { background: #F53F3F; }
 .stock-out { color: #F53F3F; }
 
-.action-group { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.action-group { display: flex; gap: 4px; align-items: center; justify-content: flex-end; white-space: nowrap; }
 .sp-table :deep(.el-table__cell) { padding: 8px 0; }
 .sp-table :deep(.el-button.is-link) { padding: 0 2px; height: auto; }
 </style>

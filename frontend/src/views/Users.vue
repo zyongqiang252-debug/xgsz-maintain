@@ -42,14 +42,22 @@
         <el-table-column prop="created_at" label="创建时间" width="140">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="265">
+        <el-table-column label="操作" width="138" align="right" header-align="left">
           <template #default="{ row }">
-            <div class="action-group">
-              <el-button size="small" type="primary" @click="handleEdit(row)">编辑</el-button>
-              <el-button link type="warning" @click="handleResetPwd(row)">重置密码</el-button>
-              <el-button v-if="!row.dingtalk_userid" link type="success" @click="openBindDingTalk(row)">绑定钉钉</el-button>
-              <el-button v-else link type="info" @click="handleUnbindDingTalk(row)">解绑钉钉</el-button>
-              <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+            <div class="user-op">
+              <IconAction :icon="Edit" title="编辑" @click="handleEdit(row)" />
+              <IconAction :icon="Key" title="重置密码" type="warning" @click="handleResetPwd(row)" />
+              <IconAction
+                v-if="!row.dingtalk_userid"
+                :icon="Link" title="绑定钉钉" type="success"
+                @click="openBindDingTalk(row)"
+              />
+              <IconAction
+                v-else
+                :icon="Link" title="解绑钉钉"
+                @click="handleUnbindDingTalk(row)"
+              />
+              <IconAction :icon="Delete" title="删除" type="danger" @click="handleDelete(row)" />
             </div>
           </template>
         </el-table-column>
@@ -150,7 +158,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Edit, Key, Link, Delete } from '@element-plus/icons-vue'
 import QrcodeVue from 'qrcode.vue'
+import IconAction from '../components/IconAction.vue'
 import request from '../api'
 import dayjs from 'dayjs'
 
@@ -356,6 +366,7 @@ onMounted(fetchData)
 .page-title { font-size: 20px; font-weight: 600; color: var(--color-text-primary); }
 .table-card { flex: 1; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
+.user-op { display: flex; align-items: center; justify-content: flex-end; gap: 4px; white-space: nowrap; }
 
 .role-tag {
   display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; line-height: 20px;

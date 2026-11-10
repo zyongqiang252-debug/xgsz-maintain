@@ -58,9 +58,11 @@
           {{ formatTime(row.created_at) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="80">
+      <el-table-column label="操作" width="64" align="right" header-align="left">
         <template #default="{ row }">
-          <el-button size="small" type="primary" @click="showDetail(row)">详情</el-button>
+          <div class="fc-op">
+            <IconAction :icon="View" title="详情" @click="showDetail(row)" />
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -153,8 +155,9 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { Search } from '@element-plus/icons-vue'
+import { Search, View } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import IconAction from '../components/IconAction.vue'
 import request from '../api'
 import dayjs from 'dayjs'
 
@@ -261,6 +264,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.fc-op { display: flex; justify-content: flex-end; align-items: center; }
 .fault-codes-page { padding: 0 4px; }
 
 .page-header {
