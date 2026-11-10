@@ -258,10 +258,20 @@
                 <el-icon><Calendar /></el-icon>
                 <template #title>排班管理</template>
               </el-menu-item>
-              <el-menu-item v-if="isAdmin" index="/sys">
-                <el-icon><Setting /></el-icon>
-                <template #title>系统管理</template>
-              </el-menu-item>
+              <template v-if="isAdmin">
+                <el-menu-item index="/sys?tab=users">
+                  <el-icon><User /></el-icon>
+                  <template #title>用户管理</template>
+                </el-menu-item>
+                <el-menu-item index="/sys?tab=customers">
+                  <el-icon><UserFilled /></el-icon>
+                  <template #title>客户管理</template>
+                </el-menu-item>
+                <el-menu-item index="/sys?tab=settings">
+                  <el-icon><Setting /></el-icon>
+                  <template #title>系统设置</template>
+                </el-menu-item>
+              </template>
               <el-menu-item index="/me">
                 <el-icon><Bell /></el-icon>
                 <template #title>通知中心</template>
@@ -356,9 +366,17 @@
                 <el-menu-item v-if="(isSupervisor) && FEATURES.schedule" index="/supervisor/schedule">
                   <el-icon><Calendar /></el-icon>
                 </el-menu-item>
-                <el-menu-item v-if="isAdmin" index="/sys">
-                  <el-icon><Setting /></el-icon>
-                </el-menu-item>
+                <template v-if="isAdmin">
+                  <el-menu-item index="/sys?tab=users">
+                    <el-icon><User /></el-icon>
+                  </el-menu-item>
+                  <el-menu-item index="/sys?tab=customers">
+                    <el-icon><UserFilled /></el-icon>
+                  </el-menu-item>
+                  <el-menu-item index="/sys?tab=settings">
+                    <el-icon><Setting /></el-icon>
+                  </el-menu-item>
+                </template>
                 <el-menu-item index="/me">
                   <el-icon><Bell /></el-icon>
                 </el-menu-item>
@@ -396,7 +414,7 @@ import {
   User, Lock, QuestionFilled, SwitchButton,
   SetUp, Histogram, Calendar, Upload,
   DataAnalysis, Document, ChatLineSquare, Reading, Monitor, Grid, Box, Connection,
-  Setting, Tools, Moon, Sunny, Bell, Tickets
+  Setting, Tools, Moon, Sunny, Bell, Tickets, UserFilled
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -431,6 +449,10 @@ const crumbs = computed(() => {
       list: '全部工单', progress: '进度看板', import: '历史导入',
       mine: '我的工单', pool: '工单池',
     }[tab] || page
+  }
+  if (path.startsWith('/sys')) {
+    const tab = String(route.query.tab || 'users')
+    page = { users: '用户管理', customers: '客户管理', settings: '系统设置' }[tab] || page
   }
   if (path === '/dashboard') return { group: '', page: '' }
   const hit = CRUMB_GROUPS.find(([prefixes]) => prefixes.some((p) => path.startsWith(p)))
@@ -469,6 +491,7 @@ const activeMenu = computed(() => {
     const fallback = (role === 'ADMIN' || role === 'SUPERVISOR') ? 'list' : 'mine'
     return `/orders?tab=${route.query.tab || fallback}`
   }
+  if (path.startsWith('/sys')) return `/sys?tab=${route.query.tab || 'users'}`
   if (path.startsWith('/devices')) return '/devices'
   if (path.startsWith('/knowledge/manuals')) return '/knowledge/manuals'
   if (path.startsWith('/knowledge/list')) return '/knowledge/list'
