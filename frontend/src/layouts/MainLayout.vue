@@ -156,7 +156,7 @@
                 <el-icon><DataAnalysis /></el-icon>
                 <template #title>首页</template>
               </el-menu-item>
-              <div class="menu-group-label">工单管理</div>
+              <div class="menu-divider"></div>
               <el-menu-item index="/orders?tab=list">
                 <el-icon><Document /></el-icon>
                 <template #title>全部工单</template>
@@ -178,7 +178,13 @@
                 <template #title>保养与点检</template>
               </el-menu-item>
 
-              <div class="menu-group-label">管理与个人</div>
+              <div class="menu-divider"></div>
+              <el-menu-item index="/stock">
+                <el-icon><Box /></el-icon>
+                <template #title>库存中心</template>
+              </el-menu-item>
+
+              <div class="menu-divider"></div>
               <el-menu-item v-if="FEATURES.schedule" index="/supervisor/schedule">
                 <el-icon><Calendar /></el-icon>
                 <template #title>排班管理</template>
@@ -195,7 +201,7 @@
                 <el-icon><DataAnalysis /></el-icon>
                 <template #title>首页</template>
               </el-menu-item>
-              <div class="menu-group-label">工单管理</div>
+              <div class="menu-divider"></div>
               <template v-if="isSupervisor">
                 <el-menu-item index="/orders?tab=list">
                   <el-icon><Document /></el-icon>
@@ -233,27 +239,17 @@
                 <template #title>保养与点检</template>
               </el-menu-item>
 
-              <div class="menu-group-label">知识与智能</div>
+              <div class="menu-divider"></div>
               <el-menu-item index="/knowledge-center">
                 <el-icon><ChatLineSquare /></el-icon>
                 <template #title>知识中心</template>
               </el-menu-item>
-
-              <div class="menu-group-label">资源与字典</div>
               <el-menu-item index="/stock">
                 <el-icon><Box /></el-icon>
                 <template #title>库存中心</template>
               </el-menu-item>
-              <el-menu-item v-if="FEATURES.stockMovements" index="/stock/movements">
-                <el-icon><Tickets /></el-icon>
-                <template #title>出入库流水</template>
-              </el-menu-item>
-              <el-menu-item index="/dict">
-                <el-icon><Grid /></el-icon>
-                <template #title>字典管理</template>
-              </el-menu-item>
 
-              <div class="menu-group-label">管理与个人</div>
+              <div class="menu-divider"></div>
               <el-menu-item v-if="(isSupervisor) && FEATURES.schedule" index="/supervisor/schedule">
                 <el-icon><Calendar /></el-icon>
                 <template #title>排班管理</template>
@@ -270,6 +266,10 @@
                 <el-menu-item index="/sys?tab=settings">
                   <el-icon><Setting /></el-icon>
                   <template #title>系统设置</template>
+                </el-menu-item>
+                <el-menu-item index="/dict">
+                  <el-icon><Grid /></el-icon>
+                  <template #title>字典管理</template>
                 </el-menu-item>
               </template>
               <el-menu-item index="/me">
@@ -310,6 +310,9 @@
                 </el-menu-item>
                 <el-menu-item v-if="FEATURES.maintenance" index="/maintenance">
                   <el-icon><Tools /></el-icon>
+                </el-menu-item>
+                <el-menu-item index="/stock">
+                  <el-icon><Box /></el-icon>
                 </el-menu-item>
                 <el-menu-item v-if="FEATURES.schedule" index="/supervisor/schedule">
                   <el-icon><Calendar /></el-icon>
@@ -357,12 +360,6 @@
                 <el-menu-item index="/stock">
                   <el-icon><Box /></el-icon>
                 </el-menu-item>
-                <el-menu-item v-if="FEATURES.stockMovements" index="/stock/movements">
-                  <el-icon><Tickets /></el-icon>
-                </el-menu-item>
-                <el-menu-item index="/dict">
-                  <el-icon><Grid /></el-icon>
-                </el-menu-item>
                 <el-menu-item v-if="(isSupervisor) && FEATURES.schedule" index="/supervisor/schedule">
                   <el-icon><Calendar /></el-icon>
                 </el-menu-item>
@@ -375,6 +372,9 @@
                   </el-menu-item>
                   <el-menu-item index="/sys?tab=settings">
                     <el-icon><Setting /></el-icon>
+                  </el-menu-item>
+                  <el-menu-item index="/dict">
+                    <el-icon><Grid /></el-icon>
                   </el-menu-item>
                 </template>
                 <el-menu-item index="/me">
@@ -414,7 +414,7 @@ import {
   User, Lock, QuestionFilled, SwitchButton,
   SetUp, Histogram, Calendar, Upload,
   DataAnalysis, Document, ChatLineSquare, Reading, Monitor, Grid, Box, Connection,
-  Setting, Tools, Moon, Sunny, Bell, Tickets, UserFilled
+  Setting, Tools, Moon, Sunny, Bell, Tickets, UserFilled, Download
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -436,9 +436,7 @@ onMounted(applyTheme)
 // 顶部面包屑：模块分组 + 当前页
 const CRUMB_GROUPS = [
   [['/orders', '/work-orders', '/supervisor', '/work-order-imports', '/devices', '/maintenance'], '工单维修'],
-  [['/knowledge', '/knowledge-center', '/ai-assistant'], '知识与智能'],
-  [['/stock', '/spare-parts', '/warehouse', '/dict', '/categories', '/fault-codes'], '资源与字典'],
-  [['/supervisor/schedule', '/sys', '/users', '/system-settings', '/me', '/leave', '/notifications', '/help', '/profile', '/security'], '管理与个人'],
+  [['/supervisor/schedule', '/sys', '/users', '/system-settings', '/dict', '/categories', '/fault-codes', '/me', '/leave', '/notifications', '/help', '/profile', '/security'], '管理与个人'],
 ]
 const crumbs = computed(() => {
   const path = route.path || '/'
@@ -917,6 +915,13 @@ watch(() => route.path, () => {
   color: #A9B0BC;
   text-transform: uppercase;
   letter-spacing: 1px;
+}
+
+/* 单条目的分组不再用标题，改一条细线分隔 */
+.menu-divider {
+  height: 1px;
+  margin: 12px 20px;
+  background: var(--color-sidebar-border, #EDEFF3);
 }
 
 /* 折叠区域 */

@@ -265,7 +265,9 @@ def install_instance(instance_id: int, data: InstallIn, db: Session = Depends(ge
     if not part:
         raise HTTPException(status_code=404, detail="备件不存在")
 
-    if data.deduct_stock:
+    if not inst.outbound_movement_id:
+        # 是否扣库存不看调用方传参，看这件货有没有已经出过库：
+        # 走过领用单/直接领用的，出库时已经扣过，装机只是绑设备；没扣过的才在这里扣。
         if available_qty(part) < 1:
             raise HTTPException(
                 status_code=400,
@@ -319,11 +321,17 @@ def return_instance(instance_id: int, data: ReturnIn, db: Session = Depends(get_
         inst.warehouse_id = data.warehouse_id
 
     from_device = inst.device_code
-    mv = apply_stock_change(
-        db, part, "RETURN", 1, unit_price=inst.unit_price,
-        work_order_id=data.work_order_id or inst.work_order_id, operator=current_user,
-        remark=f"拆回入库 {inst.sn or inst.id}" + (f"（拆自 {from_device}）" if from_device else ""),
-    )
+    # 只有"这件货确实从库存里扣过"才 +1；在库→待返厂再从待返厂拆回的情况不重复加数
+    counted = bool(inst.outbound_movement_id)
+    mv = None
+    if counted:
+        mv = apply_stock_change(
+            db, part, "RETURN", 1, unit_price=inst.unit_price,
+            work_order_id=data.work_order_id or inst.work_order_id, operator=current_user,
+            remark=f"拆回入库 {inst.sn or inst.id}" + (f"（拆自 {from_device}）" if from_device else ""),
+        )
+        inst.inbound_movement_id = mv.id
+    inst.outbound_movement_id = None
     inst.status = PartInstanceStatus.IN_STOCK
     inst.device_id = None
     inst.gpu_index = None
@@ -338,7 +346,8 @@ def return_instance(instance_id: int, data: ReturnIn, db: Session = Depends(get_
 
     db.commit()
     db.refresh(inst)
-    logger.info(f"[PartInstance] 拆回 {inst.part_code} sn={inst.sn}，库存 +1（流水 {mv.id}）")
+    logger.info(f"[PartInstance] 拆回 {inst.part_code} sn={inst.sn}，库存 +{1 if counted else 0}"
+                + (f"（流水 {mv.id}）" if mv else ""))
     return _inst_dict(inst)
 
 

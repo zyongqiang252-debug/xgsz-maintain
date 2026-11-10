@@ -11,9 +11,11 @@
     <el-card shadow="never">
       <div class="toolbar">
         <el-input v-model="keyword" placeholder="搜索备件编码/名称" clearable style="width: 220px" @keyup.enter="load" />
-        <el-select v-model="type" placeholder="类型" clearable style="width: 120px">
-          <el-option label="出库（领用）" value="OUT" />
+        <el-select v-model="type" placeholder="类型" clearable style="width: 130px">
           <el-option label="入库" value="IN" />
+          <el-option label="出库（领用）" value="OUT" />
+          <el-option label="退库入库" value="RETURN" />
+          <el-option label="盘点调整" value="ADJUST" />
         </el-select>
         <el-button type="primary" @click="load">查询</el-button>
         <el-button @click="reset">重置</el-button>
@@ -23,11 +25,9 @@
         <el-table-column label="时间" width="150">
           <template #default="{ row }">{{ (row.created_at || '').replace('T', ' ').slice(0, 16) }}</template>
         </el-table-column>
-        <el-table-column label="类型" width="90">
+        <el-table-column label="类型" width="100">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.movement_type === 'OUT' ? 'warning' : 'success'">
-              {{ row.movement_type === 'OUT' ? '出库' : '入库' }}
-            </el-tag>
+            <el-tag size="small" :type="mvTag(row.movement_type)">{{ mvLabel(row.movement_type) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="part_code" label="备件编码" width="130" show-overflow-tooltip />
@@ -70,9 +70,7 @@
       <template v-if="detail.row">
         <el-descriptions :column="1" border size="small">
           <el-descriptions-item label="类型">
-            <el-tag size="small" :type="detail.row.movement_type === 'OUT' ? 'warning' : 'success'">
-              {{ detail.row.movement_type === 'OUT' ? '出库（领用）' : '入库' }}
-            </el-tag>
+            <el-tag size="small" :type="mvTag(detail.row.movement_type)">{{ mvLabel(detail.row.movement_type) }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="备件">{{ detail.row.part_name }}（{{ detail.row.part_code }}）</el-descriptions-item>
           <el-descriptions-item label="数量">{{ detail.row.quantity }}</el-descriptions-item>
@@ -111,6 +109,15 @@ import request from '../api'
 import { downloadFile } from '../utils/download'
 
 const rows = ref([])
+// 流水四种类型：入库 / 出库 / 退库 / 盘点调整（以前非 OUT 全显示成"入库"，账容易看错）
+const MV_TYPE = {
+  IN: { label: '入库', tag: 'success' },
+  OUT: { label: '出库', tag: 'warning' },
+  RETURN: { label: '退库入库', tag: 'primary' },
+  ADJUST: { label: '盘点调整', tag: 'info' },
+}
+const mvLabel = (t) => (MV_TYPE[t] || {}).label || t || '—'
+const mvTag = (t) => (MV_TYPE[t] || {}).tag || 'info'
 const detail = reactive({ visible: false, row: null })
 const openDetail = (row) => {
   detail.row = row

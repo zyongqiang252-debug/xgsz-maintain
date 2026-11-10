@@ -31,9 +31,10 @@
           </el-col>
         </el-row>
         <el-row :gutter="20">
-          <el-col :span="8">
-            <el-form-item label="库存数量">
+          <el-col v-if="isNew" :span="8">
+            <el-form-item label="期初库存">
               <el-input-number v-model="form.stock_quantity" :min="0" style="width: 100%" />
+              <div class="tip">建档时录入会记一条「期初入库」流水；之后的增减走入库 / 出库 / 盘点</div>
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -59,11 +60,21 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="所属仓库">
+          <el-select v-model="form.warehouse_id" clearable placeholder="选择仓库（库存按仓统计）" style="width: 100%">
+            <el-option v-for="w in warehouses" :key="w.id" :label="`${w.name}（${w.code}）`" :value="w.id" />
+          </el-select>
+          <div class="tip">仓库与库位在「仓储管理 → 仓库与库位」维护；留空视为未归仓</div>
+        </el-form-item>
         <el-form-item label="供应商">
           <el-input v-model="form.supplier" placeholder="供应商名称" />
         </el-form-item>
         <el-form-item label="序列号 SN">
           <el-input v-model="form.serial_no" maxlength="500" placeholder="一物一码，多个用逗号分隔" />
+        </el-form-item>
+        <el-form-item label="SN 追溯">
+          <el-switch v-model="form.need_sn" active-text="开启（入库必须逐件填 SN）" />
+          <div class="tip">GPU 卡、内存、SSD、光模块这类要返厂/保修的件建议开启；硅脂、扎带、螺丝等耗材保持关闭</div>
         </el-form-item>
         <el-form-item label="照片附件">
           <PhotoUpload v-model="form.attachments" />
@@ -101,8 +112,17 @@ const canManage = computed(() => {
 const form = ref({
   part_code: '', part_name: '', specification: '', unit: '个',
   stock_quantity: 0, safety_stock: 0, unit_price: 0,
-  device_type: '', location: '', supplier: '', serial_no: '', attachments: []
+  device_type: '', location: '', supplier: '', serial_no: '', attachments: [], need_sn: false,
+  warehouse_id: null,
 })
+const warehouses = ref([])
+
+const loadWarehouses = async () => {
+  try {
+    const res = await request.get('/warehouses/')
+    warehouses.value = res.items || []
+  } catch { warehouses.value = [] }
+}
 
 const loadData = async () => {
   if (isNew.value) return
@@ -114,6 +134,7 @@ const handleSave = async () => {
   saving.value = true
   try {
     const data = { ...form.value }
+    if (!isNew.value) delete data.stock_quantity  // 库存只能通过出入库/盘点改
     if (isNew.value) {
       await request.post('/spare-parts/', data)
       ElMessage.success('创建成功')
@@ -131,10 +152,12 @@ onMounted(() => {
     router.push('/spare-parts')
     return
   }
+  loadWarehouses()
   loadData()
 })
 </script>
 
 <style scoped>
 .readonly-tip { margin-left: 12px; font-size: 12px; color: #86909C; }
+.tip { font-size: 12px; color: #86909C; line-height: 1.4; margin-top: 2px; }
 </style>

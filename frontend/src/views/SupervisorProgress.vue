@@ -100,17 +100,7 @@
               </span>
               <span class="wo-time">{{ formatTime(wo.created_at) }}</span>
             </div>
-            <div class="timeline-dots">
-              <div
-                v-for="step in getTimelineState(wo)"
-                :key="step.key"
-                class="tl-step"
-                :class="{ 'tl-done': step.done && !step.isCurrent, 'tl-current': step.isCurrent, 'tl-pending': !step.done }"
-              >
-                <span class="tl-dot"></span>
-                <span class="tl-label">{{ step.label }}</span>
-              </div>
-            </div>
+            <TimelineDots :wo="wo" />
           </el-card>
         </div>
       </div>
@@ -150,17 +140,7 @@
               </span>
               <span class="wo-time">{{ formatTime(wo.created_at) }}</span>
             </div>
-            <div class="timeline-dots">
-              <div
-                v-for="step in getTimelineState(wo)"
-                :key="step.key"
-                class="tl-step"
-                :class="{ 'tl-done': step.done && !step.isCurrent, 'tl-current': step.isCurrent, 'tl-pending': !step.done }"
-              >
-                <span class="tl-dot"></span>
-                <span class="tl-label">{{ step.label }}</span>
-              </div>
-            </div>
+            <TimelineDots :wo="wo" />
           </el-card>
         </div>
       </div>
@@ -200,17 +180,7 @@
               </span>
               <span class="wo-time">{{ formatTime(wo.created_at) }}</span>
             </div>
-            <div class="timeline-dots">
-              <div
-                v-for="step in getTimelineState(wo)"
-                :key="step.key"
-                class="tl-step"
-                :class="{ 'tl-done': step.done && !step.isCurrent, 'tl-current': step.isCurrent, 'tl-pending': !step.done }"
-              >
-                <span class="tl-dot"></span>
-                <span class="tl-label">{{ step.label }}</span>
-              </div>
-            </div>
+            <TimelineDots :wo="wo" />
           </el-card>
         </div>
       </div>
@@ -250,17 +220,7 @@
               </span>
               <span class="wo-time">{{ formatTime(wo.created_at) }}</span>
             </div>
-            <div class="timeline-dots">
-              <div
-                v-for="step in getTimelineState(wo)"
-                :key="step.key"
-                class="tl-step"
-                :class="{ 'tl-done': step.done && !step.isCurrent, 'tl-current': step.isCurrent, 'tl-pending': !step.done }"
-              >
-                <span class="tl-dot"></span>
-                <span class="tl-label">{{ step.label }}</span>
-              </div>
-            </div>
+            <TimelineDots :wo="wo" />
           </el-card>
         </div>
       </div>
@@ -276,6 +236,7 @@ import {
 } from '@element-plus/icons-vue'
 import request from '../api'
 import dayjs from 'dayjs'
+import TimelineDots from '../components/TimelineDots.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -309,42 +270,8 @@ const stats = ref({
   completed_today: 0,
 })
 
-// 进度时间轴步骤：派工→接受→到达→检查→维修→完成
-const TIMELINE_STEPS = [
-  { key: 'ASSIGNED', label: '派工' },
-  { key: 'ACCEPTED', label: '接受' },
-  { key: 'ARRIVED', label: '到达' },
-  { key: 'INSPECTING', label: '检查' },
-  { key: 'IN_PROGRESS', label: '维修' },
-  { key: 'COMPLETED', label: '完成' },
-]
-
-
 const formatTime = (t) => t ? dayjs(t).format('MM-DD HH:mm') : '-'
 
-// 计算工单时间轴每一步的状态：已完成 / 当前 / 未完成
-const getTimelineState = (wo) => {
-  const timeline = wo.progress_timeline || []
-  // 构建 status -> 日志项 映射（后端字段为 status / timestamp）
-  const map = {}
-  timeline.forEach(item => {
-    const key = item.status || item.step || item.key || item.to_status
-    if (key) map[key] = item
-  })
-  const currentStatus = wo.status
-  return TIMELINE_STEPS.map(s => {
-    const info = map[s.key]
-    const done = !!info
-    const isCurrent = s.key === currentStatus
-    return {
-      key: s.key,
-      label: s.label,
-      done,
-      isCurrent,
-      time: info?.timestamp || info?.time || info?.created_at || ''
-    }
-  })
-}
 
 // 统计卡点击 → 滚动到对应列
 const scrollToCol = (colName) => {

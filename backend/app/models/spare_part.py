@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Float, ForeignKey, JSON
+from sqlalchemy import Column, String, Integer, Float, ForeignKey, JSON, Boolean
 from app.models.base import BaseModel
 
 
@@ -17,6 +17,9 @@ class SparePart(BaseModel):
     supplier = Column(String(200))
     serial_no = Column(String(500), comment="序列号 SN（当前在库件，可多个逗号分隔）")
     attachments = Column(JSON, comment="照片附件 URL 列表")
+    # 是否按 SN 一物一码追溯：勾上后入库必须逐件填 SN（GPU 卡/内存/光模块这类）
+    need_sn = Column(Boolean, default=False, nullable=False, server_default="false",
+                     comment="是否需要按 SN 追溯")
     # 所属仓库（多仓）；精确库位在 part_instances 上
     warehouse_id = Column(Integer, ForeignKey("warehouses.id"), index=True,
                           comment="所属仓库 ID")

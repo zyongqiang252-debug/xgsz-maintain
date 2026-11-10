@@ -23,6 +23,7 @@ from loguru import logger
 from app.core.config import settings
 from app.core.ws_manager import manager as notification_ws
 from app.api import work_orders, knowledge, devices, spare_parts, users, categories, search, dashboard, dispatch, duty_schedules, leave_requests, notifications, customer, customers
+from app.api import warehouses, stocktakes, part_instances, spare_part_requisitions
 from app.api.work_order_imports import router as work_order_imports_router
 from app.api.manual_codes import router as manual_codes_router
 from app.api.dingtalk import router as dingtalk_router, ensure_oa_services_started
@@ -124,6 +125,12 @@ app.include_router(work_orders.router, prefix="/api/v1/work-orders", tags=["工�
 app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["知识管理"])
 app.include_router(manual_codes_router, prefix="/api/v1/manual-codes", tags=["设备手册错误码"])
 app.include_router(devices.router, prefix="/api/v1/devices", tags=["设备管理"])
+app.include_router(warehouses.router, prefix="/api/v1/warehouses", tags=["仓库库位"])
+app.include_router(stocktakes.router, prefix="/api/v1/stocktakes", tags=["库存盘点"])
+app.include_router(part_instances.router, prefix="/api/v1/part-instances", tags=["备件实例"])
+# ⚠️ 领用单路径是 /spare-parts/requisitions，必须注册在 /spare-parts/{part_id} 之前，
+# 否则 "requisitions" 会被当成 part_id 去转 int 而报 422。
+app.include_router(spare_part_requisitions.router, prefix="/api/v1/spare-parts/requisitions", tags=["备件领用"])
 app.include_router(spare_parts.router, prefix="/api/v1/spare-parts", tags=["备件管理"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["用户管理"])
 app.include_router(categories.router, prefix="/api/v1/categories", tags=["分类管理"])

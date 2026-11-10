@@ -266,10 +266,13 @@ def _build_board_item(
         for l in logs
     ]
 
-    # is_overtime: ASSIGNED状态且 created_at 距现在超过15分钟
+    # is_overtime: 已派工但迟迟没接单 —— 从「派工时间」算，不能用建单时间
+    # （老数据没有 dispatched_at 时退回 created_at，避免误判成刚派就超时）
     is_overtime = False
-    if status_val == WorkOrderStatus.ASSIGNED.value and w.created_at:
-        is_overtime = (now - w.created_at).total_seconds() > 15 * 60
+    if status_val == WorkOrderStatus.ASSIGNED.value:
+        start = w.dispatched_at or w.created_at
+        if start:
+            is_overtime = (now - start).total_seconds() > 15 * 60
 
     return {
         "id": w.id,

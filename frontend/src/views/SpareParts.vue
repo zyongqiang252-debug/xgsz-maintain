@@ -3,6 +3,8 @@
     <div class="page-header">
       <h2 class="page-title">库存管理</h2>
       <div class="header-actions">
+        <el-button v-if="canManage" type="primary" plain @click="openIn()">入库</el-button>
+        <el-button v-if="canManage" type="warning" plain @click="openOut()">出库</el-button>
         <el-button v-if="canManage" @click="importDialog.visible = true">进货单导入</el-button>
         <div style="display:flex;gap:8px">
         <el-button :loading="exporting" @click="handleExport">导出 Excel</el-button>
@@ -36,6 +38,26 @@
           <el-option label="库存充足" value="sufficient" />
           <el-option label="库存不足" value="low_stock" />
           <el-option label="已缺货" value="out_of_stock" />
+        </el-select>
+        <el-select
+          v-model="snSearchValue" filterable remote clearable reserve-keyword
+          :remote-method="searchInstances" :loading="snSearching"
+          placeholder="按 SN / 设备搜实物" class="sn-search" @change="jumpToInstance"
+        >
+          <el-option
+            v-for="i in snOptions" :key="i.id"
+            :label="`${i.sn || '散件#' + i.id} · ${i.part_code}`" :value="i.id"
+          >
+            <div class="sn-opt">
+              <span class="sn-main">{{ i.sn || ('散件 #' + i.id) }}</span>
+              <span class="sn-meta">
+                {{ i.part_code }} · {{ i.status_label }}<template v-if="i.device_code"> · {{ i.device_code }}</template>
+              </span>
+            </div>
+          </el-option>
+          <template #empty>
+            <div class="sn-empty">输入至少 2 个字符，按 SN / 备件编码 / 设备编码搜索</div>
+          </template>
         </el-select>
         <el-button type="primary" @click="handleSearch" class="action-btn">查询</el-button>
         <el-button class="action-btn secondary-btn" @click="handleReset">重置</el-button>
@@ -76,7 +98,6 @@
           <template #default="{ row }">
             <div class="action-group">
               <IconAction :icon="Tickets" title="SN 明细" @click="openInstances(row)" />
-              <IconAction :icon="ShoppingCart" title="领用" @click="openConsume(row)" />
               <IconAction
                 v-if="canManage"
                 :icon="Edit" title="编辑"
@@ -220,48 +241,16 @@
     </el-dialog>
 
     <!-- 领用 -->
-    <el-dialog v-model="consume.visible" title="领用备件" width="480px">
-      <el-form label-width="90px">
-        <el-form-item label="备件">
-          <span>{{ consume.row?.part_name }}（{{ consume.row?.part_code }}）</span>
-        </el-form-item>
-        <el-form-item label="当前库存">
-          <b>{{ consume.row?.stock_quantity }}</b> {{ consume.row?.unit || '' }}
-        </el-form-item>
-        <el-form-item label="领用数量" required>
-          <el-input-number v-model="consume.quantity" :min="1" :max="consume.row?.stock_quantity || 1" />
-        </el-form-item>
-        <el-form-item label="序列号 SN">
-          <el-input v-model="consume.serialNo" maxlength="500" placeholder="选填，出库件的 SN；多个用逗号分隔" />
-        </el-form-item>
-        <el-form-item label="照片附件">
-          <PhotoUpload v-model="consume.attachments" />
-        </el-form-item>
-        <el-form-item label="关联工单">
-          <el-select v-model="consume.workOrderId" filterable clearable placeholder="选填：挂到某张工单上（会自动计入该工单成本）" style="width:100%">
-            <el-option v-for="wo in consume.workOrders" :key="wo.id"
-                       :label="`${wo.work_order_no} · ${(wo.fault_description || '').slice(0, 18)}`" :value="wo.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="consume.remark" placeholder="选填，例如：抢修领用" maxlength="100" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="consume.visible = false">取消</el-button>
-        <el-button type="primary" :loading="consume.loading" @click="submitConsume">确认领用</el-button>
-      </template>
-    </el-dialog>
-
     <!-- SN 明细 -->
-    <el-dialog v-model="instances.visible" :title="`SN 明细 · ${instances.row?.part_name || ''}`" width="880px">
+    <el-dialog v-model="instances.visible" :title="`SN 明细 · ${instances.row?.part_name || ''}`" width="1000px">
       <div class="inst-summary">
         {{ instances.row?.part_code }} · 总库存 {{ instances.row?.stock_quantity }} {{ instances.row?.unit || '' }}
         · 已登记 SN {{ instances.rows.length }} 件
+        <span class="inst-tip">在库件可直接装机 / 报废；装机的件可拆回或标记待返厂</span>
       </div>
       <el-table :data="instances.rows" v-loading="instances.loading" size="small" stripe>
-        <el-table-column prop="sn" label="序列号 SN" min-width="140" show-overflow-tooltip />
-        <el-table-column label="入库照片" width="150">
+        <el-table-column prop="sn" label="序列号 SN" width="130" show-overflow-tooltip />
+        <el-table-column label="入库照片" width="120">
           <template #default="{ row }">
             <div v-if="row.inbound_attachments && row.inbound_attachments.length" class="inst-photos">
               <el-image
@@ -279,10 +268,10 @@
             <el-tag size="small" :type="instStatusType(row.status)" effect="plain">{{ row.status_label }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="location_text" label="库位" width="130" show-overflow-tooltip>
+        <el-table-column prop="location_text" label="库位" width="110" show-overflow-tooltip>
           <template #default="{ row }">{{ row.location_text || '—' }}</template>
         </el-table-column>
-        <el-table-column prop="device_code" label="装机设备" width="130" show-overflow-tooltip>
+        <el-table-column prop="device_code" label="装机设备" width="110" show-overflow-tooltip>
           <template #default="{ row }">{{ row.device_code || '—' }}</template>
         </el-table-column>
         <el-table-column label="关联工单" width="100">
@@ -293,13 +282,55 @@
             <span v-else>—</span>
           </template>
         </el-table-column>
-        <el-table-column label="入库时间" width="150">
+        <el-table-column label="入库时间" width="130">
           <template #default="{ row }">{{ (row.inbound_at || row.created_at || '').replace('T', ' ').slice(0, 16) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="160" fixed="right">
+          <template #default="{ row }">
+            <div class="inst-actions">
+              <el-button v-if="row.status === 'IN_STOCK'" link type="primary" @click="openInstall(row)">装机</el-button>
+              <el-button v-if="['INSTALLED', 'RMA'].includes(row.status)" link type="primary" @click="returnInstance(row)">拆回</el-button>
+              <el-button v-if="row.status === 'INSTALLED'" link type="warning" @click="rmaInstance(row)">返厂</el-button>
+              <el-button v-if="['IN_STOCK', 'RMA'].includes(row.status)" link type="danger" @click="scrapInstance(row)">报废</el-button>
+              <span v-if="['ISSUED', 'SCRAPPED'].includes(row.status)" class="muted">—</span>
+            </div>
+          </template>
         </el-table-column>
       </el-table>
       <div v-if="!instances.loading && !instances.rows.length" class="inst-empty">
         还没有按 SN 登记的实物。入库时填写「序列号 SN」会自动生成，每个 SN 一条记录。
       </div>
+    </el-dialog>
+
+    <!-- 入库 / 出库抽屉（原独立页面收进台账） -->
+    <StockInDrawer v-model="inDrawer.visible" :part-id="drawerPartId" @done="onDrawerDone" />
+    <StockOutDrawer v-model="outDrawer.visible" :part-id="drawerPartId" @done="onDrawerDone" />
+
+    <!-- 装机 -->
+    <el-dialog v-model="installDlg.visible" title="装机" width="480px" :close-on-click-modal="false">
+      <el-form label-width="90px">
+        <el-form-item label="实例">
+          <span>{{ installDlg.row?.sn || `#${installDlg.row?.id}` }} · {{ installDlg.row?.part_name }}</span>
+        </el-form-item>
+        <el-form-item label="设备" required>
+          <el-select v-model="installDlg.deviceId" filterable placeholder="选择设备" style="width: 100%">
+            <el-option
+              v-for="d in deviceOptions" :key="d.id"
+              :label="`${d.device_code} ${d.device_name || ''}`" :value="d.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="GPU 序号">
+          <el-input-number v-model="installDlg.gpuIndex" :min="0" :max="15" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="installDlg.remark" type="textarea" :rows="2" maxlength="200" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="installDlg.visible = false">取消</el-button>
+        <el-button type="primary" :loading="installDlg.submitting" @click="submitInstall">确认装机</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -307,14 +338,15 @@
 <script setup>
 import { ref, onMounted, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ShoppingCart, Edit, View, Delete, Sort, SortUp, SortDown, Tickets } from '@element-plus/icons-vue'
+import { Edit, View, Delete, Sort, SortUp, SortDown, Tickets } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import request from '../api'
 import { downloadFile } from '../utils/download'
 
 import EmptyState from '../components/EmptyState.vue'
 import IconAction from '../components/IconAction.vue'
-import PhotoUpload from '../components/PhotoUpload.vue'
+import StockInDrawer from './StockInDrawer.vue'
+import StockOutDrawer from './StockOutDrawer.vue'
 const router = useRouter()
 
 // 备件台账维护权限：仅管理员/主管可增删改，维修员只读
@@ -338,32 +370,18 @@ const pageSize = ref(10)
 const total = ref(0)
 const showAlerts = ref(false)
 
-// ===== 领用 / 流水 =====
-const consume = reactive({
-  visible: false, row: null, quantity: 1, workOrderId: null, serialNo: '', attachments: [], remark: '', loading: false, workOrders: [],
-})
-const openConsume = async (row) => {
-  if (!row.stock_quantity) {
-    ElMessage.warning('该备件库存为 0，无法领用')
-    return
-  }
-  consume.row = row
-  consume.quantity = 1
-  consume.workOrderId = null
-  consume.serialNo = row.serial_no || ''
-  consume.attachments = []
-  consume.remark = ''
-  consume.visible = true
-  try {
-    const res = await request.get('/work-orders/', { params: { page: 1, page_size: 50 } })
-    consume.workOrders = res.items || []
-  } catch { consume.workOrders = [] }
-}
+// ===== 入库 / 出库抽屉（原独立页面收进台账）=====
+const inDrawer = reactive({ visible: false })
+const outDrawer = reactive({ visible: false })
+const drawerPartId = ref(null)
+const openIn = (row) => { drawerPartId.value = row?.id || null; inDrawer.visible = true }
+const openOut = (row) => { drawerPartId.value = row?.id || null; outDrawer.visible = true }
+const onDrawerDone = () => { fetchData(); fetchAlerts() }
 
 // ===== SN 明细 =====
 const instances = reactive({ visible: false, row: null, rows: [], loading: false })
 const instStatusType = (s) => ({
-  IN_STOCK: 'success', INSTALLED: 'primary', RMA: 'warning', SCRAPPED: 'info',
+  IN_STOCK: 'success', ISSUED: 'primary', INSTALLED: 'primary', RMA: 'warning', SCRAPPED: 'info',
 }[s] || 'info')
 const openInstances = async (row) => {  instances.row = row
   instances.rows = []
@@ -387,25 +405,83 @@ const onPartRowClick = (row, column, event) => {
   openInstances(row)
 }
 
-const submitConsume = async () => {  if (!consume.row) return
-  consume.loading = true
+// ===== 实例操作：装机 / 拆回 / 待返厂 / 报废 =====
+const deviceOptions = ref([])
+const installDlg = reactive({ visible: false, row: null, deviceId: null, gpuIndex: null, remark: '', submitting: false })
+
+const loadDevices = async () => {
+  if (deviceOptions.value.length) return
   try {
-    const res = await request.post(`/spare-parts/${consume.row.id}/consume`, {
-      quantity: consume.quantity,
-      work_order_id: consume.workOrderId || null,
-      serial_no: consume.serialNo.trim() || null,
-      attachments: consume.attachments,
-      remark: consume.remark || null,
+    const res = await request.get('/devices/', { params: { page_size: 500 } })
+    deviceOptions.value = res.items || []
+  } catch { deviceOptions.value = [] }
+}
+
+const refreshAfterInstanceChange = async () => {
+  if (instances.row) await openInstances(instances.row)
+  fetchData()
+  fetchAlerts()
+}
+
+const openInstall = async (row) => {
+  Object.assign(installDlg, {
+    visible: true, row, deviceId: null, gpuIndex: null, remark: '', submitting: false,
+  })
+  await loadDevices()
+}
+
+const submitInstall = async () => {
+  if (!installDlg.deviceId) return ElMessage.warning('请选择设备')
+  installDlg.submitting = true
+  try {
+    const res = await request.post(`/part-instances/${installDlg.row.id}/install`, {
+      device_id: installDlg.deviceId,
+      gpu_index: installDlg.gpuIndex,
+      remark: installDlg.remark || null,
     })
-    ElMessage.success(`领用成功，剩余库存 ${res.stock_quantity}`)
-    consume.visible = false
-    fetchData()
-    fetchAlerts()
-  } catch (e) {
-    ElMessage.error(e?.response?.data?.detail || '领用失败')
-  } finally {
-    consume.loading = false
-  }
+    ElMessage.success(`已装机到 ${res.device_code}`)
+    installDlg.visible = false
+    await refreshAfterInstanceChange()
+  } catch { /* ignore */ } finally { installDlg.submitting = false }
+}
+
+const returnInstance = async (row) => {
+  try {
+    await ElMessageBox.confirm('拆回后这件会回到「在库」，之前扣过库存的会自动 +1。', '拆回入库', {
+      confirmButtonText: '确认拆回', cancelButtonText: '取消',
+    })
+  } catch { return }
+  try {
+    await request.post(`/part-instances/${row.id}/return-in`, {})
+    ElMessage.success('已拆回入库')
+    await refreshAfterInstanceChange()
+  } catch { /* ignore */ }
+}
+
+const rmaInstance = async (row) => {
+  try {
+    await ElMessageBox.confirm('标记为待返厂后库存不变，等寄回供应商。', '标记待返厂', { type: 'warning' })
+  } catch { return }
+  try {
+    await request.post(`/part-instances/${row.id}/rma`, {})
+    ElMessage.success('已标记待返厂')
+    await refreshAfterInstanceChange()
+  } catch { /* ignore */ }
+}
+
+const scrapInstance = async (row) => {
+  let remark = ''
+  try {
+    const { value } = await ElMessageBox.prompt('报废原因（选填）', '报废确认', {
+      confirmButtonText: '确认报废', cancelButtonText: '取消', inputType: 'textarea',
+    })
+    remark = value || ''
+  } catch { return }
+  try {
+    await request.post(`/part-instances/${row.id}/scrap`, { remark: remark || null })
+    ElMessage.success('已报废')
+    await refreshAfterInstanceChange()
+  } catch { /* ignore */ }
 }
 
 const alerts = reactive({
@@ -539,6 +615,31 @@ const fetchDeviceTypes = async () => {
   } catch { /* fallback to empty */ }
 }
 
+// ===== 全局实物检索：按 SN / 设备定位到备件，直接打开该件的 SN 明细 =====
+const snOptions = ref([])
+const snSearching = ref(false)
+const snSearchValue = ref(null)
+
+const searchInstances = async (kw = '') => {
+  const q = String(kw || '').trim()
+  if (q.length < 2) { snOptions.value = []; return }
+  snSearching.value = true
+  try {
+    const res = await request.get('/part-instances/', { params: { keyword: q, page_size: 20 } })
+    snOptions.value = res.items || []
+  } catch { snOptions.value = [] } finally { snSearching.value = false }
+}
+
+const jumpToInstance = async (instId) => {
+  const hit = snOptions.value.find((i) => i.id === instId)
+  snSearchValue.value = null
+  if (!hit) return
+  try {
+    const part = await request.get(`/spare-parts/${hit.part_id}`)
+    await openInstances(part)
+  } catch { ElMessage.error('打不开这个备件的实例列表') }
+}
+
 onMounted(() => {
   fetchDeviceTypes()
   fetchData()
@@ -561,6 +662,8 @@ const handleExport = async () => {
   }
 }
 
+// 供外层库存中心在切回台账 tab 时刷新（跨 tab 数据联动）
+defineExpose({ refresh: () => { fetchData(); fetchAlerts() } })
 </script>
 
 <style scoped>
@@ -570,6 +673,8 @@ const handleExport = async () => {
 .inst-empty { margin-top: 12px; padding: 14px; background: #F7F8FA; border-radius: 6px;
   color: #86909C; font-size: 13px; text-align: center; }
 .inst-summary { margin: -4px 0 10px; color: #86909C; font-size: 13px; }
+.inst-tip { margin-left: 8px; font-size: 12px; color: #C9CDD4; }
+.inst-actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .inst-photos { display: flex; align-items: center; gap: 4px; }
 .inst-thumb { width: 30px; height: 30px; border-radius: 4px; }
 .inst-more { font-size: 12px; color: #86909C; }
@@ -580,6 +685,11 @@ const handleExport = async () => {
 
 .filter-card { margin-bottom: 16px; }
 .filter-bar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.sn-search { width: 210px; }
+.sn-opt { display: flex; flex-direction: column; line-height: 1.35; padding: 2px 0; }
+.sn-main { color: #1D2129; font-size: 13px; }
+.sn-meta { color: #86909C; font-size: 12px; }
+.sn-empty { padding: 8px 12px; color: #86909C; font-size: 12px; }
 .table-card { flex: 1; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
 

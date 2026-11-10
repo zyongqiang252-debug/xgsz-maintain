@@ -12,7 +12,7 @@ from app.core.cache_service import cache_service
 from app.models.spare_part import SparePart
 from app.models.user import User
 from app.schemas import SparePartCreate, SparePartUpdate, SparePartResponse, PaginatedResponse
-from app.services.stock_service import lock_part
+from app.services.stock_service import apply_stock_change, lock_part, normalize_qty
 
 router = APIRouter()
 
@@ -196,11 +196,25 @@ def create_spare_part(data: SparePartCreate, db: Session = Depends(get_db), curr
     existing = db.query(SparePart).filter(SparePart.part_code == data.part_code).first()
     if existing:
         raise HTTPException(status_code=400, detail="备件编码已存在")
-    part = SparePart(**data.model_dump())
+    payload = data.model_dump()
+    # 建备件时录的数量是"期初库存"，不能直接写余额：走入库流水，对账公式才成立
+    opening = float(payload.get("stock_quantity") or 0)
+    payload["stock_quantity"] = 0
+    part = SparePart(**payload)
     db.add(part)
+    db.flush()
+    if opening > 0:
+        apply_stock_change(
+            db, part, "IN", opening,
+            unit_price=part.unit_price or 0,
+            operator=current_user,
+            remark="期初库存（建档时录入）",
+            source_type="OPENING", source_id=part.id,
+        )
     db.commit()
     db.refresh(part)
     cache_service.invalidate_pattern("stock_alerts:*")
+    logger.info(f"[SparePart] 新建 {part.part_code}，期初库存 {opening:g}（已记 IN 流水）")
     return part
 
 
@@ -209,7 +223,10 @@ def update_spare_part(part_id: int, data: SparePartUpdate, db: Session = Depends
     part = db.query(SparePart).filter(SparePart.id == part_id).first()
     if not part:
         raise HTTPException(status_code=404, detail="备件不存在")
-    for key, val in data.model_dump(exclude_unset=True).items():
+    payload = data.model_dump(exclude_unset=True)
+    # 库存数量不在这里改：入库/出库/盘点各走各的单据，否则账会断
+    payload.pop("stock_quantity", None)
+    for key, val in payload.items():
         setattr(part, key, val)
     db.commit()
     db.refresh(part)
@@ -298,10 +315,9 @@ def part_movements(
             "items": [_movement_to_dict(m) for m in rows]}
 
 
-@router.post("/{part_id}/consume", summary="领用/消耗（维修员可用，自动扣库存并记流水）")
+@router.post("/{part_id}/consume", summary="领用/消耗（仅管理员/主管；维修员走领用审批）")
 def consume_part(part_id: int, data: ConsumeIn, db: Session = Depends(get_db),
-                 current_user: User = Depends(get_current_user)):
-    from app.models.stock_movement import StockMovement
+                 current_user: User = Depends(require_supervisor)):
     from app.models.work_order import WorkOrder
     from app.services import sla as sla_service
 
@@ -312,25 +328,31 @@ def consume_part(part_id: int, data: ConsumeIn, db: Session = Depends(get_db),
     before = float(part.stock_quantity or 0)
     reserved = float(part.reserved_quantity or 0)
     avail = before - reserved
-    out_serials = []
-    if data.serial_no:
-        for s in data.serial_no.replace("，", ",").replace("、", ",").split(","):
-            s = s.strip()
-            if s and s not in out_serials:
-                out_serials.append(s)
-        if len(out_serials) != int(data.quantity):
+    need_sn = bool(getattr(part, "need_sn", False))
+    out_serials = _split_serials(data.serial_no)
+    qty_f = float(data.quantity)
+
+    if need_sn:
+        if not qty_f.is_integer():
+            raise HTTPException(status_code=400, detail="该备件按 SN 管理，出库数量必须是整数")
+        if len(out_serials) != int(qty_f):
             raise HTTPException(
                 status_code=400,
-                detail=f"SN 数量（{len(out_serials)} 个）与出库数量（{data.quantity:g}）不一致；一个 SN 只能对应一件",
+                detail=f"该备件按 SN 管理：出库 {int(qty_f)} 件要选 {int(qty_f)} 个 SN，"
+                       f"当前 {len(out_serials)} 个",
             )
+    elif out_serials and len(out_serials) != int(qty_f):
+        raise HTTPException(
+            status_code=400,
+            detail=f"SN 数量（{len(out_serials)} 个）与出库数量（{qty_f:g}）不一致；一个 SN 只能对应一件",
+        )
+
     if data.quantity > avail:
         raise HTTPException(
             status_code=400,
             detail=f"可用库存不足：现存 {before:g}，已预占 {reserved:g}，"
                    f"可用 {avail:g} {part.unit or ''}，本次要领 {data.quantity:g}",
         )
-    after = before - data.quantity
-    part.stock_quantity = int(after) if float(after).is_integer() else after
 
     wo = None
     if data.work_order_id:
@@ -338,36 +360,45 @@ def consume_part(part_id: int, data: ConsumeIn, db: Session = Depends(get_db),
         if not wo:
             raise HTTPException(status_code=404, detail="关联工单不存在")
 
-    mv = StockMovement(
-        part_id=part.id, part_code=part.part_code, part_name=part.part_name,
-        movement_type="OUT", quantity=data.quantity,
-        before_qty=before, after_qty=after,
-        unit_price=part.unit_price or 0,
-        amount=round((part.unit_price or 0) * data.quantity, 2),
-        work_order_id=data.work_order_id,
-        operator_id=current_user.id, operator_name=current_user.real_name,
-        serial_no=data.serial_no, attachments=data.attachments,
-        remark=data.remark,
-    )
-    db.add(mv)
-    db.flush()
-
-    # 按 SN 把对应实物实例标记为已装机/已出库
+    # SN 必须属于本备件且在库：先校验再动库存，避免"库存减了、实物档案没动"
+    inst_map = {}
     if out_serials:
         from app.models.part_instance import PartInstance, PartInstanceStatus
-        for sn in out_serials:
-            inst = (db.query(PartInstance)
-                    .filter(PartInstance.part_id == part.id, PartInstance.sn == sn,
-                            PartInstance.status == PartInstanceStatus.IN_STOCK).first())
-            if not inst:
-                continue
+        rows = (db.query(PartInstance)
+                .filter(PartInstance.part_id == part.id, PartInstance.sn.in_(out_serials))
+                .all())
+        inst_map = {i.sn: i for i in rows}
+        missing = [s for s in out_serials if s not in inst_map]
+        if missing:
+            raise HTTPException(status_code=400,
+                                detail=f"这些 SN 没登记在该备件下：{'、'.join(missing)}")
+        not_in_stock = [s for s, i in inst_map.items()
+                        if i.status != PartInstanceStatus.IN_STOCK]
+        if not_in_stock:
+            raise HTTPException(status_code=400,
+                                detail=f"这些 SN 不在库（已装机/待返厂/已报废）：{'、'.join(not_in_stock)}")
+
+    mv = apply_stock_change(
+        db, part, "OUT", -qty_f, unit_price=part.unit_price or 0,
+        work_order_id=data.work_order_id, operator=current_user,
+        remark=data.remark,
+    )
+    mv.serial_no = data.serial_no
+    mv.attachments = data.attachments
+    db.flush()
+
+    # 按 SN 更新实物实例：有工单且带设备 → 已装机；否则 → 已出库
+    for sn, inst in inst_map.items():
+        if wo is not None and wo.device_id:
             inst.status = PartInstanceStatus.INSTALLED
-            inst.work_order_id = data.work_order_id
-            inst.outbound_movement_id = mv.id
+            inst.device_id = wo.device_id
+            inst.device_code = wo.device_code
             inst.installed_at = datetime.now()
-            if wo is not None:
-                inst.device_id = wo.device_id
-                inst.device_code = wo.device_code
+        else:
+            inst.status = PartInstanceStatus.ISSUED
+            inst.removed_at = datetime.now()
+        inst.work_order_id = data.work_order_id
+        inst.outbound_movement_id = mv.id
 
     # 关联工单：把这次领用追加到 used_parts，并重算成本
     if wo is not None:
@@ -382,11 +413,41 @@ def consume_part(part_id: int, data: ConsumeIn, db: Session = Depends(get_db),
         except Exception as e:
             logger.warning(f"[SparePart] 工单成本重算失败: {e}")
 
+    # 同一工单上已审批、还没发料的领用单：这次直接领用就把它冲掉，
+    # 否则预占会一直挂着，可用库存永远少一块
+    if wo is not None and float(part.reserved_quantity or 0) > 0:
+        from app.models.spare_part_requisition import (
+            SparePartRequisition, SparePartRequisitionStatus as ReqSt,
+        )
+        remaining = qty_f
+        released = 0.0
+        reqs = (db.query(SparePartRequisition)
+                .filter(SparePartRequisition.part_id == part.id,
+                        SparePartRequisition.status == ReqSt.APPROVED,
+                        SparePartRequisition.work_order_id == data.work_order_id)
+                .order_by(SparePartRequisition.id)
+                .with_for_update()
+                .all())
+        for req in reqs:
+            req_qty = float(req.quantity or 0)
+            if remaining < req_qty:
+                break
+            req.status = ReqSt.ISSUED
+            req.issued_at = datetime.now()
+            req.movement_id = mv.id
+            remaining -= req_qty
+            released += req_qty
+        if released:
+            part.reserved_quantity = normalize_qty(
+                max(0.0, float(part.reserved_quantity or 0) - released)
+            )
+            logger.info(f"[SparePart] 直接领用冲抵领用单 {released:g}，预占降至 {part.reserved_quantity}")
+
     db.commit()
     db.refresh(mv)
     cache_service.delete(f"spare_part:{part_id}")
     cache_service.invalidate_pattern("stock_alerts:*")
-    logger.info(f"[SparePart] 领用 {part.part_code} x{data.quantity}，库存 {before} -> {after}")
+    logger.info(f"[SparePart] 领用 {part.part_code} x{data.quantity}，库存 {before} -> {part.stock_quantity}")
     return {"message": "领用成功", "stock_quantity": float(part.stock_quantity),
             "movement": _movement_to_dict(mv)}
 
@@ -394,7 +455,6 @@ def consume_part(part_id: int, data: ConsumeIn, db: Session = Depends(get_db),
 @router.post("/{part_id}/stock-in", summary="入库（管理员/主管）")
 def stock_in_part(part_id: int, data: StockInIn, db: Session = Depends(get_db),
                   current_user: User = Depends(require_supervisor)):
-    from app.models.stock_movement import StockMovement
 
     part = lock_part(db, part_id)  # 行锁：与领用/盘点串行，避免出入库互相覆盖
     if not part:
@@ -417,43 +477,37 @@ def stock_in_part(part_id: int, data: StockInIn, db: Session = Depends(get_db),
                        f"当前填了 {len(serials)} 个",
             )
 
-    before = float(part.stock_quantity or 0)
-    after = before + data.quantity
-    part.stock_quantity = int(after) if float(after).is_integer() else after
+    # SN 数量 / 重复登记先校验，再动库存：数量账和实例账必须同时成立
+    if serials and len(serials) != int(float(data.quantity)):
+        raise HTTPException(
+            status_code=400,
+            detail=f"SN 数量（{len(serials)} 个）与入库数量（{float(data.quantity):g}）不一致；一个 SN 只能对应一件",
+        )
+    if serials:
+        from app.models.part_instance import PartInstance
+        dup = [r[0] for r in db.query(PartInstance.sn).filter(
+            PartInstance.part_id == part.id, PartInstance.sn.in_(serials)).all()]
+        if dup:
+            raise HTTPException(
+                status_code=400,
+                detail=f"这些 SN 已经登记过：{'、'.join(dup)}；拆回来的件请走备件实例的「拆回入库」，不要重复登记",
+            )
+
     price = data.unit_price if data.unit_price is not None else (part.unit_price or 0)
     if data.unit_price is not None:
         part.unit_price = data.unit_price
 
-    mv = StockMovement(
-        part_id=part.id, part_code=part.part_code, part_name=part.part_name,
-        movement_type="IN", quantity=data.quantity,
-        before_qty=before, after_qty=after,
-        unit_price=price, amount=round(price * data.quantity, 2),
-        operator_id=current_user.id, operator_name=current_user.real_name,
-        serial_no=data.serial_no, attachments=data.attachments,
-        remark=data.remark,
+    mv = apply_stock_change(
+        db, part, "IN", data.quantity, unit_price=price,
+        operator=current_user, remark=data.remark,
     )
-    db.add(mv)
+    mv.serial_no = data.serial_no
+    mv.attachments = data.attachments
     db.flush()
     # 按 SN 生成实物实例（一物一码），库存中心可逐件查看
-    serials = []
-    if data.serial_no:
-        for s in data.serial_no.replace("，", ",").replace("、", ",").split(","):
-            s = s.strip()
-            if s and s not in serials:
-                serials.append(s)
-    if serials and len(serials) != int(data.quantity):
-        raise HTTPException(
-            status_code=400,
-            detail=f"SN 数量（{len(serials)} 个）与入库数量（{data.quantity:g}）不一致；一个 SN 只能对应一件",
-        )
     if serials:
         from app.models.part_instance import PartInstance, PartInstanceStatus
-        existing = {r[0] for r in db.query(PartInstance.sn).filter(
-            PartInstance.part_id == part.id, PartInstance.sn.in_(serials)).all()}
         for sn in serials:
-            if sn in existing:
-                continue
             db.add(PartInstance(
                 part_id=part.id, part_code=part.part_code, part_name=part.part_name,
                 sn=sn, status=PartInstanceStatus.IN_STOCK,
@@ -500,35 +554,39 @@ def import_purchase_orders(req: PurchaseImportRequest, db: Session = Depends(get
             continue
 
         if existing:
-            # 已有备件：累加库存
-            existing.stock_quantity += item.quantity
+            # 已有备件：累加库存（走统一入口记流水，不做裸改数字）
+            part = lock_part(db, existing.id) or existing
+            price = (item.unit_price if item.unit_price and item.unit_price > 0
+                     else (part.unit_price or 0))
+            apply_stock_change(db, part, "IN", item.quantity, unit_price=price,
+                               operator=current_user, remark=f"进货单批量导入（{item.part_code}）")
             if item.unit_price and item.unit_price > 0:
-                existing.unit_price = item.unit_price
+                part.unit_price = item.unit_price
             if item.supplier:
-                existing.supplier = item.supplier
+                part.supplier = item.supplier
             if item.location:
-                existing.location = item.location
+                part.location = item.location
             if item.safety_stock > 0:
-                existing.safety_stock = item.safety_stock
-            if item.part_name and not existing.part_name:
-                existing.part_name = item.part_name
-            if item.specification and not existing.specification:
-                existing.specification = item.specification
+                part.safety_stock = item.safety_stock
+            if item.part_name and not part.part_name:
+                part.part_name = item.part_name
+            if item.specification and not part.specification:
+                part.specification = item.specification
             result.updated += 1
             details.append({
                 "part_code": item.part_code,
                 "action": "updated",
                 "quantity_added": item.quantity,
-                "new_stock": existing.stock_quantity,
+                "new_stock": float(part.stock_quantity or 0),
             })
         else:
-            # 新备件：创建
+            # 新备件：先建 0 库存，再记一条期初入库流水
             part = SparePart(
                 part_code=item.part_code,
                 part_name=item.part_name or item.part_code,
                 specification=item.specification,
                 unit=item.unit or "个",
-                stock_quantity=item.quantity,
+                stock_quantity=0,
                 safety_stock=item.safety_stock or 0,
                 unit_price=item.unit_price or 0,
                 device_type=item.device_type,
@@ -536,6 +594,10 @@ def import_purchase_orders(req: PurchaseImportRequest, db: Session = Depends(get
                 supplier=item.supplier,
             )
             db.add(part)
+            db.flush()
+            apply_stock_change(db, part, "IN", item.quantity, unit_price=item.unit_price or 0,
+                               operator=current_user, remark="进货单批量导入（新建备件期初）",
+                               source_type="OPENING", source_id=part.id)
             result.created += 1
             details.append({
                 "part_code": item.part_code,
