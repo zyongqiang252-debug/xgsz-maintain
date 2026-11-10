@@ -4,6 +4,7 @@ from sqlalchemy import cast, Date, or_, and_
 from typing import Optional, List, Dict, Any
 from loguru import logger
 from datetime import date, datetime
+import json
 
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -11,6 +12,7 @@ from app.services import sla as sla_service
 from app.core import alert_level as AL
 from app.core import status_group as SG
 from app.models.work_order import WorkOrder, WorkOrderStatus
+from app.models.work_order_edit_log import WorkOrderEditLog
 from app.models.device import Device
 from app.models.spare_part import SparePart
 from app.models.user import User, UserRole
@@ -27,6 +29,19 @@ from app.agents.tools import extract_error_codes
 from app.models.knowledge import KnowledgeItem, KnowledgeStatus
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
+
+
+def _audit_value(v):
+    """把字段值转成可写入 JSONB 的形式"""
+    if v is None or isinstance(v, (str, int, float, bool)):
+        return v
+    if isinstance(v, (datetime, date)):
+        return v.isoformat()
+    try:
+        json.dumps(v)
+        return v
+    except Exception:
+        return str(v)
 def _wo_to_dict(w: WorkOrder) -> dict:
     return {c.name: getattr(w, c.name) for c in w.__table__.columns}
 
@@ -473,6 +488,8 @@ def update_work_order(work_order_id: int, data: WorkOrderUpdate, db: Session = D
         raise HTTPException(status_code=404, detail="工单不存在")
     if work_order.status == WorkOrderStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="已完成工单不可修改")
+    if work_order.status == WorkOrderStatus.ARCHIVED and current_user.role != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="已归档工单仅管理员可修改")
 
     # 权限校验：创建者 / 被指派维修员（主管派工场景）/ 管理员可编辑
     is_assigned_tech = (
@@ -487,10 +504,14 @@ def update_work_order(work_order_id: int, data: WorkOrderUpdate, db: Session = D
     ):
         raise HTTPException(status_code=403, detail="仅工单创建者、被指派维修员或管理员可编辑此工单")
 
+    changes: Dict[str, Any] = {}
     for key, val in data.model_dump(exclude_unset=True).items():
         # 维修员和创建者不可通过更新修改（维修员锁定为创建者）
         if key in ("technician_id", "created_by"):
             continue
+        before = getattr(work_order, key, None)
+        if before != val:
+            changes[key] = {"before": _audit_value(before), "after": _audit_value(val)}
         setattr(work_order, key, val)
     # 修复：保存草稿不再偷偷把 DRAFT 改成 IN_PROGRESS。
     # 状态推进统一走 /transition（提交报修 → 派工 → 接单 → 到场 → 检查 → 维修），
@@ -501,9 +522,43 @@ def update_work_order(work_order_id: int, data: WorkOrderUpdate, db: Session = D
             sla_service.recompute_cost(work_order, db)
     except Exception as e:
         logger.warning(f"[WorkOrder] 成本重算失败（忽略）: {e}")
+    # 已归档工单：管理员修改留痕（审计）
+    if work_order.status == WorkOrderStatus.ARCHIVED and changes:
+        db.add(WorkOrderEditLog(
+            work_order_id=work_order.id,
+            editor_id=current_user.id,
+            editor_name=current_user.real_name,
+            status_at_edit="ARCHIVED",
+            changes=changes,
+        ))
+        logger.info(f"[WorkOrder] 管理员 {current_user.real_name} 修改已归档工单 "
+                    f"{work_order.work_order_no}，字段: {', '.join(changes)}")
     db.commit()
     db.refresh(work_order)
     return _build_work_order_response(work_order, db)
+
+
+@router.get("/{work_order_id}/edit-logs", summary="工单修改记录（已归档工单管理员修改审计）")
+def list_work_order_edit_logs(work_order_id: int, db: Session = Depends(get_db)):
+    rows = (
+        db.query(WorkOrderEditLog)
+        .filter(WorkOrderEditLog.work_order_id == work_order_id)
+        .order_by(WorkOrderEditLog.id.desc())
+        .all()
+    )
+    return {
+        "total": len(rows),
+        "items": [
+            {
+                "id": r.id,
+                "editor_name": r.editor_name,
+                "status_at_edit": r.status_at_edit,
+                "changes": r.changes or {},
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+    }
 
 
 @router.post("/{work_order_id}/analyze", response_model=TicketAnalysisResponse, summary="AI 分析工单")

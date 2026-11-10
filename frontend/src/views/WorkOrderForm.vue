@@ -119,6 +119,23 @@
           <el-button type="primary" @click="$router.push('/work-orders')">返回列表</el-button>
         </div>
       </el-card>
+
+      <!-- 修改记录（已归档工单的管理员修改审计） -->
+      <el-card v-if="editLogs.length" shadow="never" class="section-card edit-log-card">
+        <div class="edit-log-title">修改记录</div>
+        <div v-for="log in editLogs" :key="log.id" class="edit-log-item">
+          <div class="edit-log-head">
+            <span class="edit-log-editor">{{ log.editor_name || '管理员' }}</span>
+            <span class="edit-log-time">{{ fmt(log.created_at) }}</span>
+          </div>
+          <div v-for="(val, key) in log.changes" :key="key" class="edit-log-change">
+            <span class="edit-log-key">{{ key }}</span>
+            <span class="edit-log-before">{{ auditText(val.before) }}</span>
+            <span class="edit-log-arrow">→</span>
+            <span class="edit-log-after">{{ auditText(val.after) }}</span>
+          </div>
+        </div>
+      </el-card>
     </template>
 
     <!-- 派工 -->
@@ -178,6 +195,13 @@
           <el-button type="primary" @click="router.push('/work-orders')">返回列表</el-button>
         </div>
       </div>
+
+      <el-alert
+        v-if="!isNew && form.status === 'ARCHIVED'"
+        type="warning" :closable="false" show-icon
+        title="该工单已归档，保存的修改会写入「修改记录」留痕"
+        style="margin-bottom:12px"
+      />
 
       <!-- SLA / 成本 / 评价 概览条 -->
       <div v-if="!isNew" class="sla-bar">
@@ -652,7 +676,7 @@
         <div class="form-footer">
           <el-button type="info" @click="$router.back()">取消</el-button>
           <el-button type="primary" plain :loading="saving" @click="handleSaveDraft">
-            {{ saving ? '保存中...' : '保存草稿' }}
+            {{ saving ? '保存中...' : (form.status === 'ARCHIVED' ? '保存修改' : '保存草稿') }}
           </el-button>
           <template v-if="form.status === 'ARCHIVING'">
             <el-button type="primary" :loading="archiving" @click="handleArchiveCheck">
@@ -963,6 +987,22 @@ const flattenTree = (nodes, result = []) => {
     if (node.children && node.children.length > 0) flattenTree(node.children, result)
   }
   return result
+}
+
+const editLogs = ref([])
+
+const loadEditLogs = async () => {
+  if (!route.params.id) return
+  try {
+    const res = await request.get(`/work-orders/${route.params.id}/edit-logs`)
+    editLogs.value = res.items || []
+  } catch { editLogs.value = [] }
+}
+
+const auditText = (v) => {
+  if (v === null || v === undefined || v === '') return '空'
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
 }
 
 const form = reactive({
@@ -1713,7 +1753,12 @@ const handleSaveDraft = async () => {
   saving.value = true
   try {
     await saveForm()
-    ElMessage.success('草稿已保存')
+    if (form.status === 'ARCHIVED') {
+      ElMessage.success('修改已保存，已写入修改记录')
+      loadEditLogs()
+    } else {
+      ElMessage.success('草稿已保存')
+    }
   } catch { /* error handled in saveForm */ }
   finally { saving.value = false }
 }
@@ -1951,6 +1996,7 @@ onMounted(async () => {
     try {
       const res = await request.get(`/work-orders/${route.params.id}`)
       Object.assign(form, res)
+      if (res.status === 'ARCHIVED') loadEditLogs()
 
       if (typeof res.fault_code === 'string' && res.fault_code) {
         form.fault_code = res.fault_code.split(',').map(c => c.trim()).filter(Boolean)
@@ -2090,6 +2136,18 @@ onMounted(async () => {
 .detail-header h3 { font-size: 18px; font-weight: 600; color: #1D2129; margin: 0; }
 .detail-pre { margin: 0; white-space: pre-wrap; font-family: inherit; font-size: 14px; line-height: 1.7; }
 .detail-footer { margin-top: 24px; display: flex; justify-content: center; }
+.edit-log-card { margin-top: 16px; }
+.edit-log-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 12px; }
+.edit-log-item { padding: 10px 0; border-bottom: 1px dashed #EDEFF3; }
+.edit-log-item:last-child { border-bottom: none; }
+.edit-log-head { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; font-size: 13px; }
+.edit-log-editor { font-weight: 600; color: #1D2129; }
+.edit-log-time { color: #86909C; font-size: 12px; }
+.edit-log-change { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; font-size: 12.5px; line-height: 1.7; }
+.edit-log-key { color: #4E5969; background: #F2F3F5; border-radius: 3px; padding: 0 6px; }
+.edit-log-before { color: #86909C; text-decoration: line-through; }
+.edit-log-arrow { color: #C9CDD4; }
+.edit-log-after { color: #0FC6C2; }
 .fc-dialog-footer { display: flex; gap: 8px; justify-content: flex-end; }
 .submit-confirm-dialog .el-message-box__btns .el-button:not(.el-button--primary) {
   background: var(--color-primary) !important;

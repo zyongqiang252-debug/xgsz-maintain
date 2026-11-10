@@ -296,7 +296,8 @@ const dispatchConfirmText = computed(() => {
   return dispatch.row?.status === 'ASSIGNED' ? '确认改派' : '确认派工'
 })
 const editDenyReason = (row) => {
-  if (['COMPLETED', 'ARCHIVED'].includes(row.status)) return '已归档/已完成，不可编辑'
+  if (row.status === 'COMPLETED') return '已完成工单不可编辑'
+  if (row.status === 'ARCHIVED') return '已归档工单仅管理员可修改'
   return '仅创建者、被指派人或管理员可编辑'
 }
 
@@ -305,9 +306,12 @@ const deleteDenyReason = (row) => {
   return '仅创建者或管理员可删除'
 }
 
-const canEditRow = (row) =>
-  !['COMPLETED', 'ARCHIVED'].includes(row.status) &&
-  (isCreatedByMe(row) || isAdmin || isAssignedTech(row))
+const canEditRow = (row) => {
+  if (row.status === 'COMPLETED') return false
+  // 已归档：仅管理员可改（改动会写入修改记录）
+  if (row.status === 'ARCHIVED') return isAdmin
+  return isCreatedByMe(row) || isAdmin || isAssignedTech(row)
+}
 
 const canDeleteRow = (row) =>
   !['COMPLETED', 'ARCHIVED'].includes(row.status) &&
