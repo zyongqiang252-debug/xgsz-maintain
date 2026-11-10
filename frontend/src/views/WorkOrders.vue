@@ -111,9 +111,27 @@
         <el-table-column prop="created_at" label="创建时间" width="140">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="208" align="right" header-align="left">
+        <el-table-column label="操作" width="212" header-align="left">
           <template #default="{ row }">
             <div class="op-cell">
+              <div class="op-actions">
+                <IconAction :icon="PrinterIcon" title="打印 / PDF" @click="onRowCommand('print', row)" />
+                <template v-if="!isSupervisor || isAdmin">
+                  <IconAction
+                    :icon="EditIcon"
+                    :title="canEditRow(row) ? '编辑' : editDenyReason(row)"
+                    :disabled="!canEditRow(row)"
+                    @click="onRowCommand('edit', row)"
+                  />
+                  <IconAction
+                    :icon="DeleteIcon"
+                    :title="canDeleteRow(row) ? '删除' : deleteDenyReason(row)"
+                    type="danger"
+                    :disabled="!canDeleteRow(row)"
+                    @click="onRowCommand('delete', row)"
+                  />
+                </template>
+              </div>
               <div class="op-primary" v-if="hasPrimaryAction(row)">
                 <el-button
                   v-if="isSupervisor && ['SUBMITTED', 'ASSIGNED'].includes(row.status)"
@@ -160,24 +178,6 @@
                     size="small" type="primary"
                     @click="$router.push(`/work-orders/${row.id}?edit=1`)"
                   >去归档</el-button>
-                </template>
-              </div>
-              <div class="op-actions">
-                <IconAction :icon="PrinterIcon" title="打印 / PDF" @click="onRowCommand('print', row)" />
-                <template v-if="!isSupervisor || isAdmin">
-                  <IconAction
-                    :icon="EditIcon"
-                    :title="canEditRow(row) ? '编辑' : editDenyReason(row)"
-                    :disabled="!canEditRow(row)"
-                    @click="onRowCommand('edit', row)"
-                  />
-                  <IconAction
-                    :icon="DeleteIcon"
-                    :title="canDeleteRow(row) ? '删除' : deleteDenyReason(row)"
-                    type="danger"
-                    :disabled="!canDeleteRow(row)"
-                    @click="onRowCommand('delete', row)"
-                  />
                 </template>
               </div>
             </div>
@@ -674,9 +674,9 @@ const handleExport = async () => {
 .wo-table :deep(.el-button.is-link) { padding: 0 2px; height: auto; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
 .op-cell { display: flex; align-items: center; min-height: 28px; white-space: nowrap; }
-.op-primary { display: flex; align-items: center; gap: 6px; margin-right: 12px; }
+.op-primary { display: flex; align-items: center; gap: 6px; margin-right: 0; }
 .op-primary:empty { display: none; }
-.op-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.op-actions { display: flex; align-items: center; gap: 4px; margin-right: 12px; }
 
 .status-tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; }
 .status-DRAFT { background: #F2F3F5; color: #4E5969; }
