@@ -9,13 +9,31 @@
     </div>
 
     <el-card class="filter-card" shadow="never">
-      <div class="filter-bar">
+      <div class="filter-bar" :class="{ 'filter-bar-wrap': isSupervisor }">
         <el-input v-model="keyword" placeholder="搜索工单编号/故障描述" clearable class="filter-input" @clear="handleSearch" @keyup.enter="handleSearch" />
+        <el-select
+          v-if="isSupervisor"
+          v-model="userFilter"
+          placeholder="按用户名"
+          filterable
+          clearable
+          class="filter-select user-select"
+          title="按用户名筛选：该用户报修、上报或负责的工单"
+          @change="handleSearch"
+        >
+          <el-option
+            v-for="u in userOptions"
+            :key="u.id"
+            :label="userOptionLabel(u)"
+            :value="u.id"
+          />
+        </el-select>
         <el-select v-model="orderTypeFilter" placeholder="工单类型" clearable class="filter-select" @change="handleSearch">
           <el-option label="报修工单" value="REPAIR" />
           <el-option label="保养工单" value="MAINTENANCE" />
           <el-option label="点检工单" value="INSPECTION" />
           <el-option label="导入工单" value="IMPORT" />
+          <el-option label="交付工单" value="DELIVERY" />
         </el-select>
         <el-date-picker
           v-model="dateRange"
@@ -79,9 +97,12 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="86">
+        <el-table-column label="状态" width="100">
           <template #default="{ row }">
             <span class="status-tag" :class="'status-' + (row.status_group || row.status)">{{ row.status_group_label || statusLabel(row.status) }}</span>
+            <el-tag v-if="row.is_on_hold" size="small" type="warning" effect="dark" class="hold-chip">挂起</el-tag>
+            <el-tag v-else-if="row.status === 'ARCHIVING' && row.customer_id && row.customer_accept_status !== 'ACCEPTED'"
+                    size="small" type="info" effect="plain" class="hold-chip">待客户确认</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="负责人" width="150" show-overflow-tooltip>
@@ -527,12 +548,27 @@ const isPoolView = !!props.poolMode
 const pageTitle = computed(() => isPoolView ? '工单池' : (isMineView ? '我的工单' : '全部工单'))
 const statusFilter = ref('')
 const orderTypeFilter = ref('')
-const ORDER_TYPE_LABEL = { REPAIR: '报修', MAINTENANCE: '保养', INSPECTION: '点检', IMPORT: '导入' }
+const ORDER_TYPE_LABEL = { REPAIR: '报修', MAINTENANCE: '保养', INSPECTION: '点检', IMPORT: '导入', DELIVERY: '交付' }
 const orderTypeLabel = (t) => ORDER_TYPE_LABEL[(t || 'REPAIR').toUpperCase()] || t
 const dateRange = ref(null)
 const page = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
+
+// 按用户名筛选（仅管理员/主管）：选项来自用户列表，匹配该用户报修/上报/负责的工单
+const userFilter = ref(null)
+const userOptions = ref([])
+const userOptionLabel = (u) => {
+  const name = u.real_name || u.username || `#${u.id}`
+  return u.employee_id ? `${name}（${u.employee_id}）` : name
+}
+const loadUserOptions = async () => {
+  if (!isSupervisor) return
+  try {
+    const res = await request.get('/users/', { params: { page: 1, page_size: 200 } })
+    userOptions.value = res.items || []
+  } catch { userOptions.value = [] }
+}
 
 const statusOptions = [
   { value: 'DRAFT', label: '草稿', desc: '已建单未提交，可修改或删除' },
@@ -611,6 +647,7 @@ const fetchData = async () => {
     else if (isMineView) params.mine = 'all'        // 我的工单：只看自己
     if (statusFilter.value) params.status_group = statusFilter.value
     if (orderTypeFilter.value) params.order_type = orderTypeFilter.value
+    if (userFilter.value) params.user_id = userFilter.value
     if (dateRange.value) {
       params.date_from = dayjs(dateRange.value[0]).format('YYYY-MM-DD')
       params.date_to = dayjs(dateRange.value[1]).format('YYYY-MM-DD')
@@ -630,6 +667,7 @@ const saveFilter = () => {
   if (keyword.value) data.keyword = keyword.value
   if (statusFilter.value) data.status = statusFilter.value
   if (orderTypeFilter.value) data.order_type = orderTypeFilter.value
+  if (userFilter.value) data.user_id = userFilter.value
   if (dateRange.value) {
     data.date_from = dayjs(dateRange.value[0]).format('YYYY-MM-DD')
     data.date_to = dayjs(dateRange.value[1]).format('YYYY-MM-DD')
@@ -671,6 +709,7 @@ const handleReset = () => {
   keyword.value = ''
   statusFilter.value = ''
   orderTypeFilter.value = ''
+  userFilter.value = null
   dateRange.value = null
   page.value = 1
   sessionStorage.removeItem(STORAGE_KEY)
@@ -695,12 +734,14 @@ onMounted(() => {
       if (data.keyword) keyword.value = data.keyword
       if (data.status) statusFilter.value = data.status
       if (data.order_type) orderTypeFilter.value = data.order_type
+      if (data.user_id) userFilter.value = data.user_id
       if (data.date_from && data.date_to) {
         dateRange.value = [new Date(data.date_from), new Date(data.date_to)]
       }
       if (data.page) page.value = data.page
     } catch { /* ignore bad data */ }
   }
+  loadUserOptions()
   fetchData()
 })
 
@@ -741,6 +782,7 @@ const handleExport = async () => {
 .table-card { min-height: 300px; overflow: hidden; }
 .muted { color: #C9CDD4; }
 .collab-line { font-size: 11px; color: #86909C; line-height: 1.4; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hold-chip { margin-top: 3px; }
 .fault-cell { display: flex; flex-direction: column; gap: 2px; line-height: 1.4; }
 .fault-device { font-size: 12px; color: #86909C; }
 .fault-desc { font-size: 13px; color: #1D2129; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -808,7 +850,9 @@ const handleExport = async () => {
 /* 输入控件恢复原宽度 */
 .filter-input { width: 200px !important; }
 .filter-select { width: 128px !important; }
+.user-select { width: 168px !important; }
 .filter-bar { gap: 8px !important; flex-wrap: nowrap; }
+.filter-bar.filter-bar-wrap { flex-wrap: wrap !important; }
 .filter-bar :deep(.el-date-editor) { flex: 1; min-width: 240px; }
 .filter-date { width: auto !important; }
 

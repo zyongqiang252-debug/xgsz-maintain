@@ -53,6 +53,16 @@
               <el-tag size="small" :type="statusType(row.status)" effect="plain">{{ row.status_label }}</el-tag>
             </template>
           </el-table-column>
+          <el-table-column label="验收" width="150">
+            <template #default="{ row }">
+              <template v-if="row.status === 'ARCHIVING'">
+                <el-button size="small" type="success" plain @click="acceptReport(row, true)">确认解决</el-button>
+                <el-button size="small" type="danger" link @click="acceptReport(row, false)">未解决</el-button>
+              </template>
+              <span v-else-if="row.customer_accept_status === 'ACCEPTED'" class="accept-done">已确认</span>
+              <span v-else class="rate-muted">—</span>
+            </template>
+          </el-table-column>
           <el-table-column label="评价" width="120">
             <template #default="{ row }">
               <span v-if="row.satisfaction_score" class="rate-done">{{ row.satisfaction_score }} 分</span>
@@ -113,7 +123,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import customerRequest from '../../api/customer'
 
 const router = useRouter()
@@ -196,8 +206,35 @@ const submitReport = async () => {
   }
 }
 
-const openRate = (row) => {
-  rate.row = row
+const acceptReport = async (row, accepted) => {
+  let remark = null
+  if (accepted) {
+    try {
+      await ElMessageBox.confirm(
+        `确认工单 ${row.work_order_no} 已解决？确认后服务方才能归档。`, '确认解决',
+        { type: 'success', confirmButtonText: '确认解决' })
+    } catch { return }
+  } else {
+    try {
+      const res = await ElMessageBox.prompt('请说明未解决的原因，服务方会重新处理', '反馈未解决', {
+        inputType: 'textarea', inputPlaceholder: '例如：重启后仍报错',
+        inputValidator: (v) => (v && v.trim() ? true : '请填写原因'),
+      })
+      remark = res.value
+    } catch { return }
+  }
+  try {
+    const res = await customerRequest.post(`/customer/reports/${row.id}/accept`, {
+      accepted, remark,
+    })
+    ElMessage.success(res.message || '已提交')
+    loadReports()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '提交失败')
+  }
+}
+
+const openRate = (row) => {  rate.row = row
   rate.score = 5
   rate.comment = ''
   rate.visible = true
@@ -258,6 +295,7 @@ onMounted(() => {
   .cp-user span { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 .rate-done { color: #FF7D00; font-weight: 600; }
+.accept-done { color: #00B42A; font-weight: 600; }
 .rate-muted { color: #C9CDD4; }
 .rate-order { color: #86909C; font-size: 13px; margin-bottom: 14px; }
 .rate-line { display: flex; align-items: center; gap: 14px; }

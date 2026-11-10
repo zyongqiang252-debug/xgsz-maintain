@@ -45,6 +45,11 @@ class CustomerRatingIn(BaseModel):
     comment: Optional[str] = Field(None, max_length=500)
 
 
+class CustomerAcceptIn(BaseModel):
+    accepted: bool = True
+    remark: Optional[str] = Field(None, max_length=500)
+
+
 def create_customer_token(customer: Customer) -> str:
     expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     return jwt.encode(
@@ -145,6 +150,7 @@ def submit_report(data: CustomerReportIn,
         location=device.location,
         status=WorkOrderStatus.SUBMITTED,
         order_type="REPAIR",
+        service_mode="REMOTE",
         tags=["客户报修"],
         customer_id=customer.id,
         customer_name=customer.name,
@@ -152,7 +158,19 @@ def submit_report(data: CustomerReportIn,
         customer_phone=customer.phone,
         customer_contact_name=data.contact_name or customer.name,
         customer_contact_phone=data.contact_phone or customer.phone,
+        customer_accept_status="PENDING",
     )
+    # SLA：客户合同时限优先，未配置则按中优先级默认
+    from app.services import sla as sla_service
+    _now = datetime.now()
+    _resp, _resv = sla_service.compute_due("MEDIUM", _now)
+    if customer.sla_response_hours is not None:
+        _resp = _now + timedelta(hours=customer.sla_response_hours)
+    if customer.sla_resolve_hours is not None:
+        _resv = _now + timedelta(hours=customer.sla_resolve_hours)
+    wo.response_due_at = _resp
+    wo.resolve_due_at = _resv
+    wo.sla_status = "ON_TIME"
     db.add(wo)
     db.flush()
     db.add(WorkOrderProgressLog(
@@ -211,8 +229,48 @@ def my_reports(customer: Customer = Depends(get_current_customer),
             "satisfaction_score": w.satisfaction_score,
             "satisfaction_comment": w.satisfaction_comment,
             "can_rate": (w.status == WorkOrderStatus.ARCHIVED and w.satisfaction_score is None),
+            "customer_accept_status": w.customer_accept_status,
+            "can_accept": (w.status == WorkOrderStatus.ARCHIVING
+                           and w.customer_accept_status != "ACCEPTED"),
         })
     return {"items": items}
+
+
+@router.post("/reports/{work_order_id}/accept", summary="客户确认解决 / 未解决")
+def accept_report(work_order_id: int, data: CustomerAcceptIn,
+                  customer: Customer = Depends(get_current_customer),
+                  db: Session = Depends(get_db)):
+    w = db.query(WorkOrder).filter(
+        WorkOrder.id == work_order_id,
+        WorkOrder.customer_id == customer.id,
+    ).first()
+    if not w:
+        raise HTTPException(status_code=404, detail="报修工单不存在")
+    if w.status != WorkOrderStatus.ARCHIVING:
+        raise HTTPException(status_code=400, detail="工单尚未进入待确认阶段")
+    now = datetime.now()
+    if data.accepted:
+        w.customer_accept_status = "ACCEPTED"
+        w.customer_accept_at = now
+        w.customer_accept_by = customer.name
+        w.customer_accept_remark = data.remark
+        remark = "客户确认解决"
+    else:
+        w.customer_accept_status = "REJECTED"
+        w.customer_accept_at = now
+        w.customer_accept_by = customer.name
+        w.customer_accept_remark = data.remark
+        w.status = WorkOrderStatus.IN_PROGRESS
+        w.resolved_at = None
+        remark = f"客户反馈未解决：{data.remark or '未填写原因'}"
+    db.add(WorkOrderProgressLog(
+        work_order_id=w.id, from_status=WorkOrderStatus.ARCHIVING,
+        to_status=w.status, operator_name=customer.name,
+        source="CUSTOMER", remark=remark,
+    ))
+    db.commit()
+    return {"message": "已确认解决" if data.accepted else "已反馈未解决，工单退回处理",
+            "status": w.status.value if hasattr(w.status, "value") else str(w.status)}
 
 
 @router.post("/reports/{work_order_id}/rating", summary="客户评价已完成的工单")

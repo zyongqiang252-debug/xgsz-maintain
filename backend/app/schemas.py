@@ -132,6 +132,29 @@ class WorkOrderCreate(BaseModel):
     fault_device_sn: Optional[str] = None
     service_mode: Optional[str] = None
     need_rma: Optional[bool] = None
+    is_on_hold: Optional[bool] = None
+    hold_reason: Optional[str] = None
+    hold_remark: Optional[str] = None
+    hold_started_at: Optional[datetime] = None
+    hold_total_minutes: Optional[int] = None
+    rma_vendor: Optional[str] = None
+    rma_no: Optional[str] = None
+    rma_status: Optional[str] = None
+    rma_shipped_at: Optional[datetime] = None
+    rma_vendor_received_at: Optional[datetime] = None
+    rma_returned_at: Optional[datetime] = None
+    rma_replacement_sn: Optional[str] = None
+    rma_remark: Optional[str] = None
+    customer_accept_status: Optional[str] = None
+    customer_accept_at: Optional[datetime] = None
+    customer_accept_by: Optional[str] = None
+    customer_accept_remark: Optional[str] = None
+    project_name: Optional[str] = None
+    delivery_batch: Optional[str] = None
+    rack_location: Optional[str] = None
+    power_on_at: Optional[datetime] = None
+    warranty_start: Optional[datetime] = None
+    warranty_end: Optional[datetime] = None
     fault_description: str
     fault_category: Optional[str] = None
     fault_phenomenon_type: Optional[str] = None
@@ -170,6 +193,29 @@ class WorkOrderUpdate(BaseModel):
     fault_device_sn: Optional[str] = None
     service_mode: Optional[str] = None
     need_rma: Optional[bool] = None
+    is_on_hold: Optional[bool] = None
+    hold_reason: Optional[str] = None
+    hold_remark: Optional[str] = None
+    hold_started_at: Optional[datetime] = None
+    hold_total_minutes: Optional[int] = None
+    rma_vendor: Optional[str] = None
+    rma_no: Optional[str] = None
+    rma_status: Optional[str] = None
+    rma_shipped_at: Optional[datetime] = None
+    rma_vendor_received_at: Optional[datetime] = None
+    rma_returned_at: Optional[datetime] = None
+    rma_replacement_sn: Optional[str] = None
+    rma_remark: Optional[str] = None
+    customer_accept_status: Optional[str] = None
+    customer_accept_at: Optional[datetime] = None
+    customer_accept_by: Optional[str] = None
+    customer_accept_remark: Optional[str] = None
+    project_name: Optional[str] = None
+    delivery_batch: Optional[str] = None
+    rack_location: Optional[str] = None
+    power_on_at: Optional[datetime] = None
+    warranty_start: Optional[datetime] = None
+    warranty_end: Optional[datetime] = None
     fault_description: Optional[str] = None
     fault_category: Optional[str] = None
     fault_phenomenon_type: Optional[str] = None
@@ -208,6 +254,29 @@ class WorkOrderResponse(BaseModel):
     fault_device_sn: Optional[str] = None
     service_mode: Optional[str] = None
     need_rma: Optional[bool] = None
+    is_on_hold: Optional[bool] = None
+    hold_reason: Optional[str] = None
+    hold_remark: Optional[str] = None
+    hold_started_at: Optional[datetime] = None
+    hold_total_minutes: Optional[int] = None
+    rma_vendor: Optional[str] = None
+    rma_no: Optional[str] = None
+    rma_status: Optional[str] = None
+    rma_shipped_at: Optional[datetime] = None
+    rma_vendor_received_at: Optional[datetime] = None
+    rma_returned_at: Optional[datetime] = None
+    rma_replacement_sn: Optional[str] = None
+    rma_remark: Optional[str] = None
+    customer_accept_status: Optional[str] = None
+    customer_accept_at: Optional[datetime] = None
+    customer_accept_by: Optional[str] = None
+    customer_accept_remark: Optional[str] = None
+    project_name: Optional[str] = None
+    delivery_batch: Optional[str] = None
+    rack_location: Optional[str] = None
+    power_on_at: Optional[datetime] = None
+    warranty_start: Optional[datetime] = None
+    warranty_end: Optional[datetime] = None
     fault_description: str
     fault_category: Optional[str] = None
     fault_phenomenon_type: Optional[str] = None
@@ -450,13 +519,14 @@ class SparePartCreate(BaseModel):
     serial_no: Optional[str] = None
     attachments: Optional[List[str]] = None
     warehouse_id: Optional[int] = None
+    need_sn: Optional[bool] = False
 
 
 class SparePartUpdate(BaseModel):
+    """备件资料维护：不含库存数量（库存只能通过入库/出库/盘点流水改变）"""
     part_name: Optional[str] = None
     specification: Optional[str] = None
     unit: Optional[str] = None
-    stock_quantity: Optional[int] = None
     safety_stock: Optional[int] = None
     unit_price: Optional[float] = None
     device_type: Optional[str] = None
@@ -465,6 +535,7 @@ class SparePartUpdate(BaseModel):
     serial_no: Optional[str] = None
     attachments: Optional[List[str]] = None
     warehouse_id: Optional[int] = None
+    need_sn: Optional[bool] = False
 
 
 class SparePartResponse(BaseModel):
@@ -482,6 +553,7 @@ class SparePartResponse(BaseModel):
     warehouse_id: Optional[int] = None
     serial_no: Optional[str] = None
     attachments: Optional[Any] = None
+    need_sn: Optional[bool] = False
     reserved_quantity: Optional[int] = 0
     available_quantity: Optional[float] = None
     created_at: datetime

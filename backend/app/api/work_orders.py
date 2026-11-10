@@ -1,9 +1,10 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import cast, Date, or_, and_
 from typing import Optional, List, Dict, Any
 from loguru import logger
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import json
 
 from app.core.database import get_db
@@ -99,6 +100,7 @@ def list_work_orders(
     status_group: Optional[str] = Query(None, description="状态分组：DRAFT/SUBMITTED/PROCESSING/ARCHIVING/ARCHIVED/REJECTED"),
     mine: Optional[str] = Query(None, description="我的工单：assigned(派给我) / processing(我在处理) / created(我报修) / completed(我完成)"),
     keyword: Optional[str] = None,
+    user_id: Optional[int] = Query(None, description="按用户名筛选：报修人 / 上报人 / 负责人"),
     device_type: Optional[str] = Query(None, description="设备类型筛选"),
     date_from: Optional[date] = Query(None, description="创建日期起始"),
     date_to: Optional[date] = Query(None, description="创建日期截止"),
@@ -115,7 +117,6 @@ def list_work_orders(
         if statuses:
             query = query.filter(WorkOrder.status.in_(statuses))
     if mine:
-        from sqlalchemy import or_
         me = current_user.id
         if mine == "pool":
             # 工单池：仅「待派工且尚未指派」的单，供维修员抢单
@@ -159,6 +160,14 @@ def list_work_orders(
             WorkOrder.work_order_no.ilike(f"%{keyword}%") |
             WorkOrder.fault_description.ilike(f"%{keyword}%")
         )
+    if user_id:
+        # 按用户名筛选（管理员/主管）：该用户报修的、上报的、或当前负责的工单
+        query = query.filter(or_(
+            WorkOrder.created_by == user_id,
+            WorkOrder.reporter_id == user_id,
+            WorkOrder.technician_id == user_id,
+            WorkOrder.assignee_id == user_id,
+        ))
     if device_type:
         query = query.join(WorkOrder.device).filter(Device.device_type == device_type)
     if date_from:
@@ -397,13 +406,17 @@ def start_processing(work_order_id: int, db: Session = Depends(get_db),
 
     status_val = wo.status.value if wo.status else None
     path = []
+    mode = (wo.service_mode or "").upper()
+    remote_skip = mode in ("REMOTE", "RMA", "VENDOR")
     if status_val == WorkOrderStatus.SUBMITTED.value:
         path = [WorkOrderStatus.ASSIGNED.value]
     if status_val in (WorkOrderStatus.SUBMITTED.value, WorkOrderStatus.ASSIGNED.value):
-        path += [WorkOrderStatus.ACCEPTED.value, WorkOrderStatus.ARRIVED.value,
-                 WorkOrderStatus.INSPECTING.value, WorkOrderStatus.IN_PROGRESS.value]
+        path += ([WorkOrderStatus.ACCEPTED.value, WorkOrderStatus.IN_PROGRESS.value] if remote_skip
+                 else [WorkOrderStatus.ACCEPTED.value, WorkOrderStatus.ARRIVED.value,
+                       WorkOrderStatus.INSPECTING.value, WorkOrderStatus.IN_PROGRESS.value])
     elif status_val == WorkOrderStatus.ACCEPTED.value:
-        path = [WorkOrderStatus.ARRIVED.value, WorkOrderStatus.INSPECTING.value, WorkOrderStatus.IN_PROGRESS.value]
+        path = ([WorkOrderStatus.IN_PROGRESS.value] if remote_skip
+                else [WorkOrderStatus.ARRIVED.value, WorkOrderStatus.INSPECTING.value, WorkOrderStatus.IN_PROGRESS.value])
     elif status_val == WorkOrderStatus.ARRIVED.value:
         path = [WorkOrderStatus.INSPECTING.value, WorkOrderStatus.IN_PROGRESS.value]
     elif status_val == WorkOrderStatus.INSPECTING.value:
@@ -536,6 +549,16 @@ def create_work_order(data: WorkOrderCreate, db: Session = Depends(get_db), curr
     # SLA：按优先级算出响应/修复截止时间
     try:
         resp_due, resv_due = sla_service.compute_due(work_order.priority or "MEDIUM")
+        # 客户合同 SLA 优先于优先级默认值
+        if work_order.customer_id:
+            from app.models.customer import Customer
+            cust = db.query(Customer).filter(Customer.id == work_order.customer_id).first()
+            if cust:
+                base = datetime.now()
+                if cust.sla_response_hours is not None:
+                    resp_due = base + timedelta(hours=cust.sla_response_hours)
+                if cust.sla_resolve_hours is not None:
+                    resv_due = base + timedelta(hours=cust.sla_resolve_hours)
         work_order.response_due_at = resp_due
         work_order.resolve_due_at = resv_due
         work_order.sla_status = "ON_TIME"
@@ -914,9 +937,10 @@ def _auto_publish_knowledge(wo: WorkOrder, db: Session) -> bool:
 
 
 def _deduct_spare_parts(wo: WorkOrder, db: Session) -> List[dict]:
-    """
-    工单完成时，扣减 used_parts 中备件的库存数量
-    返回扣减明细列表
+    """工单完成时的备件核对（不再直接扣库存）
+
+    库存只能由「出库 / 领用 / 装机」动作扣减并留流水。工单完成时如果再去改库存，
+    同一批料会被扣两次、而且没有凭证。这里只核对 used_parts 与当前库存，提示缺口。
     """
     used_parts = wo.used_parts
     if not used_parts or not isinstance(used_parts, list) or len(used_parts) == 0:
@@ -924,44 +948,30 @@ def _deduct_spare_parts(wo: WorkOrder, db: Session) -> List[dict]:
 
     details = []
     for part in used_parts:
-        code = part.get("code", "").strip()
-        qty = part.get("qty", 0)
-        if not code or qty <= 0:
+        code = str(part.get("code") or "").strip()
+        if not code:
             continue
+        qty = part.get("count", part.get("qty", 0)) or 0
 
         spare = db.query(SparePart).filter(SparePart.part_code == code).first()
         if not spare:
-            logger.warning(f"[WorkOrder] 备件 {code} 不存在于库存中，跳过扣减")
+            logger.warning(f"[WorkOrder] used_parts 里的备件 {code} 不在备件台账中（跳过核对）")
             details.append({
                 "part_code": code,
                 "part_name": part.get("name", ""),
-                "qty": qty,
-                "status": "skipped",
-                "reason": "备件不存在于库存",
+                "requested": qty,
+                "status": "not_in_ledger",
             })
             continue
-
-        # 确保库存不会为负
-        actual_deduct = min(qty, spare.stock_quantity)
-        spare.stock_quantity -= actual_deduct
-
-        if actual_deduct < qty:
-            logger.warning(
-                f"[WorkOrder] 备件 {code} 库存不足: 需要 {qty}, 实际扣减 {actual_deduct}, 剩余 {spare.stock_quantity}"
-            )
 
         details.append({
             "part_code": code,
             "part_name": spare.part_name,
-            "deducted": actual_deduct,
             "requested": qty,
-            "remaining_stock": spare.stock_quantity,
-            "status": "partial" if actual_deduct < qty else "deducted",
+            "remaining_stock": float(spare.stock_quantity or 0),
+            "status": "recorded",
+            "hint": "库存已在领用/出库时扣减；未走出库的请补一张出库单",
         })
-        logger.info(
-            f"[WorkOrder] 备件扣减: {code} {spare.part_name} -{actual_deduct} (剩余 {spare.stock_quantity})"
-        )
-
     return details
 
 
@@ -1301,11 +1311,21 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
             logger.warning(f"[WorkOrder] 改派通知失败（忽略）: {e}")
         return _build_work_order_response(work_order, db)
 
-    if not _is_allowed_transition(from_status_val, to_status_val):
+    # 远程/返厂/第三方现场：接单后可直接进入处理中，不强制「到场/检查」
+    mode = (work_order.service_mode or "").upper()
+    remote_skip = mode in ("REMOTE", "RMA", "VENDOR")
+    allowed = _is_allowed_transition(from_status_val, to_status_val)
+    if (not allowed and remote_skip
+            and from_status_val == WorkOrderStatus.ACCEPTED.value
+            and to_status_val == WorkOrderStatus.IN_PROGRESS.value):
+        allowed = True
+    if not allowed:
         raise HTTPException(
             status_code=400,
             detail=f"非法状态流转: {from_status_val} → {to_status_val}，允许的目标状态: {VALID_TRANSITIONS.get(from_status_val, [])}"
         )
+    if work_order.is_on_hold:
+        raise HTTPException(status_code=400, detail="工单处于挂起状态，请先恢复后再流转")
 
     is_admin = current_user.role == UserRole.ADMIN.value
     is_supervisor = current_user.role == UserRole.SUPERVISOR.value
@@ -1589,6 +1609,131 @@ def _archive_field_check(work_order: WorkOrder) -> dict:
     }
 
 
+class HoldIn(BaseModel):
+    reason: str = Field(..., max_length=20, description="VENDOR/SPARE/CUSTOMER/IDC/OTHER")
+    remark: Optional[str] = None
+
+
+class RmaIn(BaseModel):
+    vendor: Optional[str] = None
+    rma_no: Optional[str] = None
+    status: Optional[str] = None
+    shipped_at: Optional[datetime] = None
+    vendor_received_at: Optional[datetime] = None
+    returned_at: Optional[datetime] = None
+    replacement_sn: Optional[str] = None
+    remark: Optional[str] = None
+
+
+HOLD_LABELS = {"VENDOR": "等厂商", "SPARE": "等备件", "CUSTOMER": "等客户", "IDC": "等 IDC", "OTHER": "其他"}
+
+
+def _can_operate(wo: WorkOrder, user: User) -> bool:
+    return (user.role in (UserRole.ADMIN.value, UserRole.SUPERVISOR.value)
+            or wo.technician_id == user.id or wo.assignee_id == user.id)
+
+
+@router.post("/{work_order_id}/hold", summary="挂起工单（等厂商/备件/客户/IDC）")
+def hold_work_order(work_order_id: int, data: HoldIn,
+                    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    wo = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
+    if not wo:
+        raise HTTPException(status_code=404, detail="工单不存在")
+    if not _can_operate(wo, current_user):
+        raise HTTPException(status_code=403, detail="仅负责人、主管或管理员可挂起")
+    if wo.is_on_hold:
+        raise HTTPException(status_code=400, detail="工单已在挂起中")
+    active = {WorkOrderStatus.ACCEPTED.value, WorkOrderStatus.ARRIVED.value,
+              WorkOrderStatus.INSPECTING.value, WorkOrderStatus.IN_PROGRESS.value}
+    status_val = wo.status.value if hasattr(wo.status, "value") else str(wo.status)
+    if status_val not in active:
+        raise HTTPException(status_code=400, detail="当前状态不能挂起")
+    reason = (data.reason or "OTHER").upper()
+    if reason not in HOLD_LABELS:
+        reason = "OTHER"
+    wo.is_on_hold = True
+    wo.hold_reason = reason
+    wo.hold_remark = data.remark
+    wo.hold_started_at = datetime.now()
+    wo.sla_status = "ON_HOLD"
+    db.add(WorkOrderProgressLog(
+        work_order_id=wo.id, from_status=wo.status, to_status=wo.status,
+        operator_id=current_user.id, operator_name=current_user.real_name,
+        source="WEB", remark=f"挂起：{HOLD_LABELS[reason]} {data.remark or ''}".strip(),
+    ))
+    db.commit()
+    return {"message": "已挂起，SLA 暂停计时", "hold_reason": reason,
+            "hold_label": HOLD_LABELS[reason]}
+
+
+@router.post("/{work_order_id}/resume", summary="恢复挂起的工单")
+def resume_work_order(work_order_id: int,
+                      db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    wo = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
+    if not wo:
+        raise HTTPException(status_code=404, detail="工单不存在")
+    if not _can_operate(wo, current_user):
+        raise HTTPException(status_code=403, detail="仅负责人、主管或管理员可恢复")
+    if not wo.is_on_hold:
+        raise HTTPException(status_code=400, detail="工单未挂起")
+    now = datetime.now()
+    minutes = 0
+    if wo.hold_started_at:
+        minutes = max(0, int((now - wo.hold_started_at).total_seconds() // 60))
+    wo.hold_total_minutes = int(wo.hold_total_minutes or 0) + minutes
+    if wo.response_due_at:
+        wo.response_due_at = wo.response_due_at + timedelta(minutes=minutes)
+    if wo.resolve_due_at:
+        wo.resolve_due_at = wo.resolve_due_at + timedelta(minutes=minutes)
+    wo.is_on_hold = False
+    wo.hold_started_at = None
+    try:
+        info = sla_service.evaluate(wo)
+        wo.sla_status = info["sla_status"]
+    except Exception:
+        wo.sla_status = "ON_TIME"
+    db.add(WorkOrderProgressLog(
+        work_order_id=wo.id, from_status=wo.status, to_status=wo.status,
+        operator_id=current_user.id, operator_name=current_user.real_name,
+        source="WEB", remark=f"恢复处理（本次挂起 {minutes} 分钟，累计 {wo.hold_total_minutes} 分钟）",
+    ))
+    db.commit()
+    return {"message": "已恢复，SLA 继续计时", "hold_minutes": minutes,
+            "hold_total_minutes": wo.hold_total_minutes, "sla_status": wo.sla_status}
+
+
+@router.put("/{work_order_id}/rma", summary="更新 RMA / 厂商返修进度")
+def update_rma(work_order_id: int, data: RmaIn,
+               db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    wo = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
+    if not wo:
+        raise HTTPException(status_code=404, detail="工单不存在")
+    if not _can_operate(wo, current_user):
+        raise HTTPException(status_code=403, detail="仅负责人、主管或管理员可更新 RMA")
+    mapping = {
+        "rma_vendor": data.vendor, "rma_no": data.rma_no, "rma_status": data.status,
+        "rma_shipped_at": data.shipped_at, "rma_vendor_received_at": data.vendor_received_at,
+        "rma_returned_at": data.returned_at, "rma_replacement_sn": data.replacement_sn,
+        "rma_remark": data.remark,
+    }
+    for key, val in mapping.items():
+        if val is not None:
+            setattr(wo, key, val)
+    if data.vendor or data.rma_no:
+        wo.need_rma = True
+        if (wo.service_mode or "") != "SITE":
+            wo.service_mode = "RMA"
+    db.add(WorkOrderProgressLog(
+        work_order_id=wo.id, from_status=wo.status, to_status=wo.status,
+        operator_id=current_user.id, operator_name=current_user.real_name,
+        source="WEB",
+        remark=f"更新 RMA：{wo.rma_vendor or '-'} / {wo.rma_no or '-'} / {wo.rma_status or '-'}",
+    ))
+    db.commit()
+    return {"message": "RMA 信息已保存", "rma_venue": wo.rma_vendor,
+            "rma_no": wo.rma_no, "rma_status": wo.rma_status}
+
+
 @router.post("/{work_order_id}/archive-check", summary="工单归档校验（关键字段齐全性）")
 def archive_check(
     work_order_id: int,
@@ -1633,6 +1778,8 @@ def archive_complete(
     if not (is_assigned_tech or is_admin):
         raise HTTPException(status_code=403, detail="仅被指派的维修员或管理员可归档")
 
+    if work_order.customer_id and work_order.customer_accept_status != "ACCEPTED":
+        raise HTTPException(status_code=400, detail="客户尚未确认解决，请客户在门户确认后再归档")
     result = _archive_field_check(work_order)
     if not result["passed"]:
         logger.warning(

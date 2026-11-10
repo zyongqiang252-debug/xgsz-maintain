@@ -50,6 +50,13 @@
               v-if="['ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(form.status)"
               type="primary" size="small" :loading="starting" @click="startProcessing"
             >{{ startActionLabel }}</el-button>
+            <el-button
+              v-if="canHold"
+              size="small" :type="form.is_on_hold ? 'success' : 'warning'" plain
+              :loading="holdSaving" @click="onHoldAction"
+            >{{ form.is_on_hold ? '恢复处理' : '挂起' }}</el-button>
+            <el-button v-if="canRma" size="small" plain @click="openRma">RMA</el-button>
+            <el-tag v-if="form.is_on_hold" type="warning" effect="dark" size="small">挂起 · {{ holdLabel }}</el-tag>
             <el-button size="small" :loading="printing" @click="printPdf">打印 / PDF</el-button>
             <el-tag v-if="form.transfer_from_name" type="warning" effect="plain" size="small">转派自 {{ form.transfer_from_name }}</el-tag>
             <el-tag :type="statusTagType" size="large">{{ statusGroupLabel }}</el-tag>
@@ -86,8 +93,24 @@
           <el-descriptions-item label="故障 GPU">{{ form.gpu_index || '-' }}</el-descriptions-item>
           <el-descriptions-item label="故障件 SN">{{ form.fault_device_sn || '-' }}</el-descriptions-item>
           <el-descriptions-item label="服务方式">
-            {{ { REMOTE: '远程处理', SITE: '现场处理', RMA: '返厂维修' }[form.service_mode] || '-' }}
+            {{ { REMOTE: '远程处理', SITE: '现场处理', RMA: '返厂维修', VENDOR: '第三方现场' }[form.service_mode] || '-' }}
             <el-tag v-if="form.need_rma" size="small" type="warning" style="margin-left:6px">需返厂</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item v-if="form.customer_id" label="客户验收">
+            <el-tag v-if="form.customer_accept_status === 'ACCEPTED'" size="small" type="success">已确认解决</el-tag>
+            <el-tag v-else-if="form.customer_accept_status === 'REJECTED'" size="small" type="danger">客户反馈未解决</el-tag>
+            <el-tag v-else size="small" type="warning">待客户确认</el-tag>
+            <span v-if="form.customer_accept_at" class="hint" style="margin-left:6px">
+              {{ dayjs(form.customer_accept_at).format('MM-DD HH:mm') }}
+            </span>
+          </el-descriptions-item>
+          <el-descriptions-item v-if="form.is_on_hold || form.hold_total_minutes" label="挂起">
+            <el-tag v-if="form.is_on_hold" size="small" type="warning">挂起中 · {{ holdLabel }}</el-tag>
+            <span v-else class="hint">累计 {{ form.hold_total_minutes || 0 }} 分钟</span>
+            <span v-if="form.hold_remark" class="hint" style="margin-left:6px">{{ form.hold_remark }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item v-if="form.rma_vendor || form.rma_no" label="RMA">
+            {{ form.rma_vendor || '-' }} / {{ form.rma_no || '-' }} / {{ rmaStatusLabel(form.rma_status) }}
           </el-descriptions-item>
           <el-descriptions-item label="技术员">{{ technicianName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="故障现象" :span="2">
@@ -476,6 +499,14 @@
               <el-form-item label="故障件 SN">
                 <el-input v-model="form.fault_device_sn" placeholder="出故障的 GPU 卡 / 内存条 / 电源模块序列号" />
               </el-form-item>
+              <el-form-item label="工单类型">
+                <el-select v-model="form.order_type" :disabled="!isNew" style="width:100%">
+                  <el-option label="报修工单" value="REPAIR" />
+                  <el-option label="保养工单" value="MAINTENANCE" />
+                  <el-option label="点检工单" value="INSPECTION" />
+                  <el-option label="交付 / 验收单" value="DELIVERY" />
+                </el-select>
+              </el-form-item>
               <el-form-item label="服务方式">
                 <el-radio-group v-model="form.service_mode">
                   <el-radio label="REMOTE">远程处理</el-radio>
@@ -483,6 +514,18 @@
                   <el-radio label="RMA">返厂维修</el-radio>
                 </el-radio-group>
               </el-form-item>
+              <template v-if="form.order_type === 'DELIVERY'">
+                <el-form-item label="项目名称">
+                  <el-input v-model="form.project_name" maxlength="100" placeholder="例如：XX 智算中心一期" />
+                </el-form-item>
+                <el-row :gutter="12">
+                  <el-col :span="12"><el-form-item label="交付批次"><el-input v-model="form.delivery_batch" maxlength="50" /></el-form-item></el-col>
+                  <el-col :span="12"><el-form-item label="机柜 / U 位"><el-input v-model="form.rack_location" maxlength="100" /></el-form-item></el-col>
+                </el-row>
+                <el-form-item label="加电时间">
+                  <el-date-picker v-model="form.power_on_at" type="datetime" style="width:100%" />
+                </el-form-item>
+              </template>
               <el-form-item label="需要返厂">
                 <el-switch v-model="form.need_rma" />
                 <span class="hint" style="margin-left:8px">勾选后会标记为需 RMA 的工单</span>
@@ -535,7 +578,7 @@
                 </el-form-item>
               </template>
               <!-- 故障码：日志录入模式下复用顶部解析出的识别报警码，与日志区联动；标准录入使用故障码下拉 -->
-              <el-form-item v-if="entryMode === 'error_code'" label="故障码（识别报警码）" required>
+              <el-form-item v-if="entryMode === 'error_code'" label="报警码（可选）">
                 <div class="ec-codes-row">
                   <span class="ec-codes-label">识别报警码</span>
                   <el-tag
@@ -555,9 +598,9 @@
                   />
                   <span v-if="!extractedCodes.length" class="ec-code-empty">未识别到报警码可手动补充</span>
                 </div>
-                <div class="cascader-hint">日志解析后自动填入报警码，可手动增删；切换录入模式不会丢失解析结果</div>
+                <div class="cascader-hint">日志解析后自动填入报警码，可手动增删；识别不到可留空，不影响提交</div>
               </el-form-item>
-              <el-form-item v-else label="故障码" required>
+              <el-form-item v-else label="故障码（可选）">
                 <div class="fault-code-row">
                   <el-select
                     v-model="form.fault_code"
@@ -586,7 +629,7 @@
                     + 新增
                   </el-button>
                 </div>
-                <div class="cascader-hint">如故障码不存在可点击「+ 新增」填写描述自动生成</div>
+                <div class="cascader-hint">有就选，没有可留空；不确定故障码不用勉强编一个，故障描述写清楚即可</div>
               </el-form-item>
             </div>
 
@@ -639,55 +682,13 @@
                     <div class="supplement-sub">
                       <div class="section-header">备件记录</div>
                       <div class="parts-list">
-                        <div v-for="(part, idx) in usedParts" :key="idx" class="part-row">
-                          <el-select
-                            v-model="part.code"
-                            filterable
-                            :filter-method="(q) => filterSpareParts(q)"
-                            placeholder="选择备件 (输入编码或名称搜索)"
-                            style="width: 280px"
-                            @change="(val) => onPartSelected(val, idx)"
-                            @visible-change="(visible) => onSelectVisible(visible)"
-                            clearable
-                          >
-                            <el-option
-                              v-for="sp in sparePartOptions"
-                              :key="sp.part_code"
-                              :label="`${sp.part_code} - ${sp.part_name}`"
-                              :value="sp.part_code"
-                            >
-                              <div class="spare-option">
-                                <span class="spare-code">{{ sp.part_code }}</span>
-                                <span class="spare-name">{{ sp.part_name }}</span>
-                                <span v-if="sp.specification" class="spare-spec">{{ sp.specification }}</span>
-                              </div>
-                              <div class="spare-option-info">
-                                <span class="spare-stock" :class="{ 'stock-low': sp.stock_quantity <= sp.safety_stock, 'stock-out': sp.stock_quantity <= 0 }">
-                                  库存: {{ sp.stock_quantity }}
-                                </span>
-                                <span v-if="sp.location" class="spare-location">库位: {{ sp.location }}</span>
-                              </div>
-                            </el-option>
-                          </el-select>
-                          <el-input-number
-                            v-model="part.qty"
-                            :min="1"
-                            :max="999"
-                            style="width: 100px"
-                            :class="{ 'qty-over-stock': part.stock !== undefined && part.qty > part.stock && part.stock >= 0 }"
-                          />
-                          <span v-if="part.stock !== undefined" class="part-stock-tip" :class="{ 'stock-warning': part.qty > part.stock && part.stock >= 0 }">
-                            可用: {{ part.stock }}
-                            <span v-if="part.qty > part.stock && part.stock >= 0" class="stock-short">（缺 {{ part.qty - part.stock }}）</span>
-                          </span>
-                          <div v-if="part.qty > part.stock && part.stock >= 0">
-                            <el-button type="warning" size="small" plain @click="handleUrgentOrder(part)">
-                              紧急采购
-                            </el-button>
-                          </div>
-                          <el-button type="danger" size="small" @click="usedParts.splice(idx,1)">删除</el-button>
+                        <div v-if="!usedParts.length" class="parts-empty">备件由「备件出库 / 领用发料」自动写入，这里只做展示</div>
+                        <div v-for="(part, idx) in usedParts" :key="idx" class="part-row part-row-readonly">
+                          <span class="part-name">{{ part.name || part.code }}</span>
+                          <span class="part-code">{{ part.code }}</span>
+                          <span class="part-qty">× {{ part.count ?? part.qty ?? 1 }}</span>
+                          <span v-if="part.unit_price" class="part-price">¥{{ part.unit_price }}</span>
                         </div>
-                        <el-button type="primary" size="small" @click="usedParts.push({name:'',code:'',qty:1,stock:0,maxStock:999})">+ 添加备件</el-button>
                       </div>
                     </div>
                   </div>
@@ -722,7 +723,10 @@
             </el-button>
           </template>
         </div>
-        <p v-if="!isNew && form.status === 'ARCHIVING'" class="submit-hint">
+        <p v-if="!isNew && form.status === 'ARCHIVING' && form.customer_id && form.customer_accept_status !== 'ACCEPTED'" class="submit-hint warn">
+          客户尚未在门户确认解决，客户确认后才能完成归档
+        </p>
+        <p v-else-if="!isNew && form.status === 'ARCHIVING'" class="submit-hint">
           {{ archiveCheckResult
               ? (archiveCheckResult.passed
                   ? `归档校验通过（完成度 ${Math.round(archiveCheckResult.completeness * 100)}%），可点击「归档完成」`
@@ -841,6 +845,58 @@
           </div>
         </div>
       </div>
+    </el-dialog>
+
+    <!-- 挂起 -->
+    <el-dialog v-model="holdDlg.visible" title="挂起工单" width="440px">
+      <el-form label-width="90px">
+        <el-form-item label="挂起原因" required>
+          <el-select v-model="holdDlg.reason" style="width:100%">
+            <el-option label="等厂商返修 / RMA" value="VENDOR" />
+            <el-option label="等备件到货" value="SPARE" />
+            <el-option label="等客户回复 / 配合" value="CUSTOMER" />
+            <el-option label="等 IDC / 机房配合" value="IDC" />
+            <el-option label="其他" value="OTHER" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="holdDlg.remark" type="textarea" :rows="3" maxlength="300"
+                    placeholder="例如：已寄回 NVIDIA，等待返修或换件" />
+        </el-form-item>
+        <el-alert title="挂起期间暂停修复 SLA，恢复后继续计时" type="info" :closable="false" show-icon />
+      </el-form>
+      <template #footer>
+        <el-button @click="holdDlg.visible = false">取消</el-button>
+        <el-button type="primary" :loading="holdSaving" @click="submitHold">确认挂起</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- RMA -->
+    <el-dialog v-model="rmaDlg.visible" title="RMA / 厂商返修" width="560px">
+      <el-form label-width="110px">
+        <el-row :gutter="12">
+          <el-col :span="12"><el-form-item label="厂商"><el-input v-model="rmaDlg.vendor" maxlength="100" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="RMA / 案例号"><el-input v-model="rmaDlg.rma_no" maxlength="80" /></el-form-item></el-col>
+        </el-row>
+        <el-form-item label="当前状态">
+          <el-select v-model="rmaDlg.status" style="width:100%">
+            <el-option v-for="o in RMA_STATUS_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
+          </el-select>
+        </el-form-item>
+        <el-row :gutter="12">
+          <el-col :span="12"><el-form-item label="寄出时间"><el-date-picker v-model="rmaDlg.shipped_at" type="datetime" style="width:100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="厂商收到"><el-date-picker v-model="rmaDlg.vendor_received_at" type="datetime" style="width:100%" /></el-form-item></el-col>
+        </el-row>
+        <el-row :gutter="12">
+          <el-col :span="12"><el-form-item label="返回时间"><el-date-picker v-model="rmaDlg.returned_at" type="datetime" style="width:100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="换件 SN"><el-input v-model="rmaDlg.replacement_sn" maxlength="100" /></el-form-item></el-col>
+        </el-row>
+        <el-form-item label="备注"><el-input v-model="rmaDlg.remark" type="textarea" :rows="2" maxlength="300" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="rmaDlg.visible = false">取消</el-button>
+        <el-button type="primary" :loading="rmaDlg.saving" @click="saveRma">保存</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -976,7 +1032,7 @@ const rejectAssignment = async () => {
 const dispatchTitle = computed(() => (!canDispatch.value && form.status === 'ASSIGNED') ? '转派工单' : (form.status === 'SUBMITTED' ? '工单派工' : '工单改派'))
 const startActionLabel = computed(() => ({
   ASSIGNED: '开始处理',
-  ACCEPTED: '到场',
+  ACCEPTED: form.service_mode === 'SITE' ? '到场' : (form.service_mode === 'RMA' ? '开始返厂处理' : '开始远程处理'),
   ARRIVED: '开始检查',
   INSPECTING: '开始维修',
 }[form.status] || '开始处理'))
@@ -1100,7 +1156,8 @@ const form = reactive({
   // GPU 维修专有字段
   gpu_index: '',
   fault_device_sn: '',
-  service_mode: '',
+  order_type: 'REPAIR',
+  service_mode: 'REMOTE',
   need_rma: false,
   fault_code: [],
   device_error_code: '',
@@ -1139,8 +1196,6 @@ const deviceFiltered = ref([])
 const users = ref([])
 const timeRange = ref(null)
 const usedParts = ref([])
-const spareParts = ref([])
-const sparePartOptions = ref([])
 const analyzing = ref(false)
 const submitting = ref(false)
 const saving = ref(false)
@@ -1341,7 +1396,7 @@ const applyCaseItem = (c) => {
 }
 const archiving = ref(false)
 const archiveCheckResult = ref(null)
-const canArchiveComplete = computed(() => !!archiveCheckResult.value?.passed)
+const canArchiveComplete = computed(() => !!archiveCheckResult.value?.passed && (!form.customer_id || form.customer_accept_status === 'ACCEPTED'))
 const deviceMaintenance = ref(null)
 const deviceTypeOptions = ref([...DEFAULT_DEVICE_TYPES])
 const deviceTypeFiltered = ref([...DEFAULT_DEVICE_TYPES])
@@ -1628,66 +1683,6 @@ const searchDevices = (query) => {
   )
 }
 
-let sparePartSearchTimer = null
-const filterSpareParts = (query) => {
-  if (sparePartSearchTimer) clearTimeout(sparePartSearchTimer)
-  if (!query) { sparePartOptions.value = [...spareParts.value]; return }
-  
-  // 清理关键词：去掉常见干扰词
-  const cleanedQuery = query.replace(/(库存|记录|备件|零件|等)/g, '').trim() || query
-  
-  sparePartSearchTimer = setTimeout(async () => {
-    try {
-      const res = await request.get('/spare-parts/', { 
-        params: { keyword: cleanedQuery, page_size: 50 } 
-      })
-      sparePartOptions.value = res.items || []
-    } catch {
-      // 降级为本地过滤
-      const q = query.toLowerCase()
-      sparePartOptions.value = spareParts.value.filter(sp =>
-        sp.part_code.toLowerCase().includes(q) ||
-        sp.part_name.toLowerCase().includes(q) ||
-        (sp.specification && sp.specification.toLowerCase().includes(q))
-      )
-    }
-  }, 300)
-}
-
-const onSelectVisible = (visible) => {
-  if (visible) sparePartOptions.value = [...spareParts.value]
-}
-
-const onPartSelected = (code, idx) => {
-  if (!code) {
-    usedParts.value[idx].name = ''
-    usedParts.value[idx].stock = 0
-    usedParts.value[idx].maxStock = 999
-    return
-  }
-  const sp = spareParts.value.find(s => s.part_code === code)
-  if (sp) {
-    usedParts.value[idx].name = sp.part_name
-    usedParts.value[idx].stock = sp.stock_quantity
-    usedParts.value[idx].maxStock = sp.stock_quantity
-    if (usedParts.value[idx].qty > sp.stock_quantity) {
-      usedParts.value[idx].qty = sp.stock_quantity > 0 ? sp.stock_quantity : 1
-    }
-  }
-}
-
-const handleUrgentOrder = (part) => {
-  const sp = spareParts.value.find(s => s.part_code === part.code)
-  const name = sp ? `${sp.part_code} - ${sp.part_name}` : part.code
-  ElMessageBox.confirm(
-    `备件「${name}」库存不足（缺 ${part.qty - part.stock} 个），是否发起紧急采购申请？`,
-    '紧急采购',
-    { confirmButtonText: '确认申请', cancelButtonText: '取消', type: 'warning' }
-  ).then(() => {
-    ElMessage.success(`已提交紧急采购申请: ${name}`)
-  }).catch(() => {})
-}
-
 const disabledDate = (time) => time.getTime() > Date.now()
 
 const saveForm = async () => {
@@ -1698,7 +1693,7 @@ const saveForm = async () => {
       'root_cause','root_cause_category','root_cause_type',
       'solution_steps','solution_ref_knowledge_id',
       'repair_result','follow_up_plan','work_hours',
-      'used_parts','assignee_id',
+      'assignee_id',
       'location','status','tags','attachments',
       'device_error_code','log_text',
     ]
@@ -1718,7 +1713,6 @@ const saveForm = async () => {
       data.start_time = timeRange.value[0]?.toISOString()
       data.end_time = timeRange.value[1]?.toISOString()
     }
-    if (usedParts.value.length) data.used_parts = usedParts.value
     if (attachments.value.length) data.attachments = attachments.value
 
     if (isNew.value) {
@@ -2037,6 +2031,82 @@ const printPdf = async () => {
 
 
 const starting = ref(false)
+const HOLD_LABELS = { VENDOR: '等厂商', SPARE: '等备件', CUSTOMER: '等客户', IDC: '等 IDC', OTHER: '其他' }
+const holdLabel = computed(() => HOLD_LABELS[form.hold_reason] || '其他')
+const canHold = computed(() => ['ACCEPTED', 'ARRIVED', 'INSPECTING', 'IN_PROGRESS'].includes(form.status)
+  && (isMyTask.value || canDispatch.value))
+const canRma = computed(() => ['ACCEPTED', 'ARRIVED', 'INSPECTING', 'IN_PROGRESS'].includes(form.status)
+  && (form.need_rma || form.service_mode === 'RMA' || canDispatch.value))
+const holdDlg = reactive({ visible: false, reason: 'VENDOR', remark: '' })
+const holdSaving = ref(false)
+const RMA_STATUS_OPTIONS = [
+  { value: 'PENDING', label: '待寄出' }, { value: 'SHIPPED', label: '已寄出' },
+  { value: 'RECEIVED', label: '厂商已收' }, { value: 'REPAIRED', label: '已修复' },
+  { value: 'RETURNED', label: '已返回' }, { value: 'CLOSED', label: '已关闭' },
+]
+const rmaDlg = reactive({
+  visible: false, vendor: '', rma_no: '', status: 'PENDING', shipped_at: null,
+  vendor_received_at: null, returned_at: null, replacement_sn: '', remark: '', saving: false,
+})
+const rmaStatusLabel = (s) => (RMA_STATUS_OPTIONS.find((x) => x.value === s)?.label || s || '-')
+const rmaDateTime = (v) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : null)
+const reloadForm = async () => {
+  const res = await request.get(`/work-orders/${form.id}`)
+  Object.assign(form, res)
+}
+const onHoldAction = async () => {
+  if (form.is_on_hold) {
+    holdSaving.value = true
+    try {
+      const res = await request.post(`/work-orders/${form.id}/resume`)
+      ElMessage.success(`已恢复，本次挂起 ${res.hold_minutes} 分钟`)
+      await reloadForm()
+    } catch (e) { ElMessage.error(e?.response?.data?.detail || '恢复失败') }
+    finally { holdSaving.value = false }
+    return
+  }
+  Object.assign(holdDlg, { visible: true, reason: 'VENDOR', remark: '' })
+}
+const submitHold = async () => {
+  holdSaving.value = true
+  try {
+    await request.post(`/work-orders/${form.id}/hold`, {
+      reason: holdDlg.reason, remark: holdDlg.remark || null,
+    })
+    ElMessage.success('已挂起，SLA 暂停计时')
+    holdDlg.visible = false
+    await reloadForm()
+  } catch (e) { ElMessage.error(e?.response?.data?.detail || '挂起失败') }
+  finally { holdSaving.value = false }
+}
+const openRma = () => {
+  Object.assign(rmaDlg, {
+    visible: true, vendor: form.rma_vendor || '', rma_no: form.rma_no || '',
+    status: form.rma_status || 'PENDING',
+    shipped_at: form.rma_shipped_at || null,
+    vendor_received_at: form.rma_vendor_received_at || null,
+    returned_at: form.rma_returned_at || null,
+    replacement_sn: form.rma_replacement_sn || '', remark: form.rma_remark || '', saving: false,
+  })
+}
+const saveRma = async () => {
+  rmaDlg.saving = true
+  try {
+    await request.put(`/work-orders/${form.id}/rma`, {
+      vendor: rmaDlg.vendor || null, rma_no: rmaDlg.rma_no || null,
+      status: rmaDlg.status || null,
+      shipped_at: rmaDateTime(rmaDlg.shipped_at),
+      vendor_received_at: rmaDateTime(rmaDlg.vendor_received_at),
+      returned_at: rmaDateTime(rmaDlg.returned_at),
+      replacement_sn: rmaDlg.replacement_sn || null, remark: rmaDlg.remark || null,
+    })
+    ElMessage.success('RMA 信息已保存')
+    rmaDlg.visible = false
+    await reloadForm()
+  } catch (e) { ElMessage.error(e?.response?.data?.detail || '保存失败') }
+  finally { rmaDlg.saving = false }
+}
+
 const startProcessing = async () => {
   if (!form.id) return
   starting.value = true
@@ -2057,16 +2127,13 @@ onMounted(async () => {
   fetchRootCauses()
 
   try {
-    const [dRes, uRes, spRes] = await Promise.all([
+    const [dRes, uRes] = await Promise.all([
       request.get('/devices/', { params: { page_size: 200 } }),
       request.get('/users/', { params: { page_size: 200 } }),
-      request.get('/spare-parts/', { params: { page_size: 100 } }),
     ])
     devices.value = dRes.items || []
     deviceFiltered.value = dRes.items || []
     users.value = uRes.items || []
-    spareParts.value = spRes.items || []
-    sparePartOptions.value = spRes.items || []
     // 维修员由后端强制设为当前登录用户（号主），前端无需设置 technician_id
   } catch { /* ignore */ }
 
@@ -2089,10 +2156,7 @@ onMounted(async () => {
         calcWorkHours()
       }
 
-      usedParts.value = (res.used_parts || []).map(p => {
-        const sp = spareParts.value.find(s => s.part_code === p.code)
-        return { name: p.name || '', code: p.code || '', qty: p.qty || 1, stock: sp?.stock_quantity ?? 0, maxStock: sp?.stock_quantity ?? 999 }
-      })
+      usedParts.value = Array.isArray(res.used_parts) ? res.used_parts : []
 
       if (res.attachments && Array.isArray(res.attachments)) {
         attachments.value = res.attachments
@@ -2168,6 +2232,11 @@ onMounted(async () => {
 .submit-hint { font-size: 12px; color: #FF7D00; text-align: center; margin-top: 8px; }
 .parts-list { display: flex; flex-direction: column; gap: 8px; }
 .part-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.part-row-readonly { padding: 3px 0; font-size: 13px; color: #4E5969; }
+.part-row-readonly .part-name { color: #1D2129; }
+.part-row-readonly .part-code { color: #86909C; font-size: 12px; }
+.part-row-readonly .part-price { color: #86909C; font-size: 12px; }
+.parts-empty { font-size: 12px; color: #86909C; line-height: 1.6; }
 .part-stock-tip { font-size: 12px; color: #86909C; white-space: nowrap; }
 .part-stock-tip.stock-warning { color: #F53F3F; }
 .stock-short { font-weight: 600; }
