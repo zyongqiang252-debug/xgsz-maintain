@@ -524,11 +524,20 @@ const handleNoticeClick = async (item) => {
     }
   } catch { /* 静默 */ }
   noticeVisible.value = false
-  // 根据通知类型跳转
-  if (item.type === 'work_order') {
-    router.push('/work-orders')
+  // 优先按关联工单跳详情；没有工单号再按通知类型跳对应页面
+  if (item.work_order_id) {
+    router.push(`/work-orders/${item.work_order_id}`)
+    return
+  }
+  const t = String(item.type || '').toLowerCase()
+  if (t.includes('work_order') || t.includes('dispatch')) {
+    router.push('/orders?tab=list')
+  } else if (t.includes('stock')) {
+    router.push('/stock')
+  } else if (t.includes('leave')) {
+    router.push('/me?tab=leave')
   } else {
-    router.push('/dashboard')
+    router.push('/me?tab=notifications')
   }
 }
 
