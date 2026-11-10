@@ -41,7 +41,7 @@
             <el-button
               v-if="['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(form.status)"
               type="primary" size="small" :loading="starting" @click="startProcessing"
-            >开始处理</el-button>
+            >{{ startActionLabel }}</el-button>
             <el-button size="small" :loading="printing" @click="printPdf">打印 / PDF</el-button>
             <el-tag :type="statusTagType" size="large">{{ statusGroupLabel }}</el-tag>
           </div>
@@ -912,6 +912,12 @@ const claimTask = async () => {
 }
 
 const dispatchTitle = computed(() => (!canDispatch.value && form.status === 'ASSIGNED') ? '转派工单' : (form.status === 'SUBMITTED' ? '工单派工' : '工单改派'))
+const startActionLabel = computed(() => ({
+  ASSIGNED: '开始处理',
+  ACCEPTED: '到场',
+  ARRIVED: '开始检查',
+  INSPECTING: '开始维修',
+}[form.status] || '开始处理'))
 const dispatchNeedsReason = computed(() => ['ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(form.status))
 const dispatchDlg = reactive({ visible: false, technicianId: null, remark: '', technicians: [], saving: false })
 const openDispatch = async () => {

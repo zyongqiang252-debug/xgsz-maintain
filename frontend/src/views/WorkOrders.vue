@@ -166,7 +166,7 @@
                     :disabled="!isAssignedTech(row) && !isSupervisor"
                     :loading="startingId === row.id"
                     @click="handleStart(row)"
-                  >开始处理</el-button>
+                  >{{ startActionLabel(row) }}</el-button>
                   <el-button
                     v-if="row.status === 'IN_PROGRESS'"
                     size="small" type="success"
@@ -319,6 +319,14 @@ const canEditRow = (row) => {
 const canDeleteRow = (row) =>
   !['COMPLETED', 'ARCHIVED'].includes(row.status) &&
   (isCreatedByMe(row) || isAdmin)
+
+// 处理中各行按当前节点显示下一步动作，避免已接单/已到场还写“开始处理”
+const startActionLabel = (row) => ({
+  ASSIGNED: '开始处理',
+  ACCEPTED: '到场',
+  ARRIVED: '开始检查',
+  INSPECTING: '开始维修',
+}[row.status] || '开始处理')
 
 // 一行里可能存在的「非主操作」动作文案：派工/改派/领取/转派
 const rowActionText = (row) => {
