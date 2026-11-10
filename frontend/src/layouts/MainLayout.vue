@@ -165,9 +165,22 @@
                 <el-icon><DataAnalysis /></el-icon>
                 <template #title>数据驾驶舱</template>
               </el-menu-item>
-              <el-menu-item index="/orders">
+              <div class="menu-group-label">工单管理</div>
+              <el-menu-item index="/orders?tab=list">
                 <el-icon><Document /></el-icon>
-                <template #title>工单中心</template>
+                <template #title>全部工单</template>
+              </el-menu-item>
+              <el-menu-item index="/orders?tab=progress">
+                <el-icon><Histogram /></el-icon>
+                <template #title>进度看板</template>
+              </el-menu-item>
+              <el-menu-item index="/orders?tab=import">
+                <el-icon><Upload /></el-icon>
+                <template #title>历史导入</template>
+              </el-menu-item>
+              <el-menu-item index="/orders?tab=dispatch">
+                <el-icon><Connection /></el-icon>
+                <template #title>快速派工</template>
               </el-menu-item>
               <el-menu-item v-if="FEATURES.deviceMonitor" index="/devices">
                 <el-icon><Monitor /></el-icon>
@@ -196,10 +209,39 @@
                 <el-icon><DataAnalysis /></el-icon>
                 <template #title>数据驾驶舱</template>
               </el-menu-item>
-              <el-menu-item index="/orders">
-                <el-icon><Document /></el-icon>
-                <template #title>工单中心</template>
-              </el-menu-item>
+              <div class="menu-group-label">工单管理</div>
+              <template v-if="isSupervisor">
+                <el-menu-item index="/orders?tab=list">
+                  <el-icon><Document /></el-icon>
+                  <template #title>全部工单</template>
+                </el-menu-item>
+                <el-menu-item index="/orders?tab=progress">
+                  <el-icon><Histogram /></el-icon>
+                  <template #title>进度看板</template>
+                </el-menu-item>
+                <el-menu-item index="/orders?tab=import">
+                  <el-icon><Upload /></el-icon>
+                  <template #title>历史导入</template>
+                </el-menu-item>
+                <el-menu-item index="/orders?tab=dispatch">
+                  <el-icon><Connection /></el-icon>
+                  <template #title>快速派工</template>
+                </el-menu-item>
+              </template>
+              <template v-else>
+                <el-menu-item index="/orders?tab=mine">
+                  <el-icon><Tickets /></el-icon>
+                  <template #title>我的工单</template>
+                </el-menu-item>
+                <el-menu-item index="/orders?tab=pool">
+                  <el-icon><Box /></el-icon>
+                  <template #title>工单池</template>
+                </el-menu-item>
+                <el-menu-item index="/orders?tab=import">
+                  <el-icon><Upload /></el-icon>
+                  <template #title>历史导入</template>
+                </el-menu-item>
+              </template>
               <el-menu-item v-if="FEATURES.deviceMonitor" index="/devices">
                 <el-icon><Monitor /></el-icon>
                 <template #title>服务器监控</template>
@@ -262,8 +304,17 @@
                 <el-menu-item index="/dashboard">
                   <el-icon><DataAnalysis /></el-icon>
                 </el-menu-item>
-                <el-menu-item index="/orders">
+                <el-menu-item index="/orders?tab=list">
                   <el-icon><Document /></el-icon>
+                </el-menu-item>
+                <el-menu-item index="/orders?tab=progress">
+                  <el-icon><Histogram /></el-icon>
+                </el-menu-item>
+                <el-menu-item index="/orders?tab=import">
+                  <el-icon><Upload /></el-icon>
+                </el-menu-item>
+                <el-menu-item index="/orders?tab=dispatch">
+                  <el-icon><Connection /></el-icon>
                 </el-menu-item>
                 <el-menu-item v-if="FEATURES.deviceMonitor" index="/devices">
                   <el-icon><Monitor /></el-icon>
@@ -283,9 +334,31 @@
                 <el-menu-item index="/dashboard">
                   <el-icon><DataAnalysis /></el-icon>
                 </el-menu-item>
-                <el-menu-item index="/orders">
-                  <el-icon><Document /></el-icon>
-                </el-menu-item>
+                <template v-if="isSupervisor">
+                  <el-menu-item index="/orders?tab=list">
+                    <el-icon><Document /></el-icon>
+                  </el-menu-item>
+                  <el-menu-item index="/orders?tab=progress">
+                    <el-icon><Histogram /></el-icon>
+                  </el-menu-item>
+                  <el-menu-item index="/orders?tab=import">
+                    <el-icon><Upload /></el-icon>
+                  </el-menu-item>
+                  <el-menu-item index="/orders?tab=dispatch">
+                    <el-icon><Connection /></el-icon>
+                  </el-menu-item>
+                </template>
+                <template v-else>
+                  <el-menu-item index="/orders?tab=mine">
+                    <el-icon><Tickets /></el-icon>
+                  </el-menu-item>
+                  <el-menu-item index="/orders?tab=pool">
+                    <el-icon><Box /></el-icon>
+                  </el-menu-item>
+                  <el-menu-item index="/orders?tab=import">
+                    <el-icon><Upload /></el-icon>
+                  </el-menu-item>
+                </template>
                 <el-menu-item v-if="FEATURES.deviceMonitor" index="/devices">
                   <el-icon><Monitor /></el-icon>
                 </el-menu-item>
@@ -375,7 +448,14 @@ const CRUMB_GROUPS = [
 ]
 const crumbs = computed(() => {
   const path = route.path || '/'
-  const page = route.meta?.title || ''
+  let page = route.meta?.title || ''
+  if (path.startsWith('/orders')) {
+    const tab = String(route.query.tab || 'list')
+    page = {
+      list: '全部工单', progress: '进度看板', import: '历史导入',
+      dispatch: '快速派工', mine: '我的工单', pool: '工单池',
+    }[tab] || page
+  }
   if (path === '/dashboard') return { group: '', page: '' }
   const hit = CRUMB_GROUPS.find(([prefixes]) => prefixes.some((p) => path.startsWith(p)))
   return { group: hit ? hit[1] : '', page }
@@ -408,7 +488,11 @@ function onMenuSelect(index) {
 
 const activeMenu = computed(() => {
   const path = route.path
-  if (path.startsWith('/work-orders')) return '/work-orders'
+  if (path.startsWith('/orders') || path.startsWith('/work-orders')) {
+    const role = currentUser.role
+    const fallback = (role === 'ADMIN' || role === 'SUPERVISOR') ? 'list' : 'mine'
+    return `/orders?tab=${route.query.tab || fallback}`
+  }
   if (path.startsWith('/devices')) return '/devices'
   if (path.startsWith('/knowledge/manuals')) return '/knowledge/manuals'
   if (path.startsWith('/knowledge/list')) return '/knowledge/list'

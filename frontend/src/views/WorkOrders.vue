@@ -1,7 +1,7 @@
 <template>
   <div class="page">
     <div class="page-header">
-      <h2 class="page-title">维修报表</h2>
+      <h2 class="page-title">{{ pageTitle }}</h2>
       <div style="display:flex;gap:8px">
         <el-button :loading="exporting" @click="handleExport">导出 Excel</el-button>
         <el-button type="primary" @click="$router.push('/work-orders/new')">新建工单</el-button>
@@ -530,6 +530,7 @@ const loading = ref(false)
 const keyword = ref('')
 const isMineView = !!props.defaultMine
 const isPoolView = !!props.poolMode
+const pageTitle = computed(() => isPoolView ? '工单池' : (isMineView ? '我的工单' : '全部工单'))
 const statusFilter = ref('')
 const orderTypeFilter = ref('')
 const alertLevelFilter = ref('')
