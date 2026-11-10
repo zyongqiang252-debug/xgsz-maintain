@@ -69,15 +69,17 @@ def list_users(
     return {"total": total, "items": rows, "page": page, "page_size": page_size}
 
 
-@router.get("/login-logs", summary="登录审计记录（管理员）")
+@router.get("/login-logs", summary="登录审计记录（管理员看全部，其他角色只看自己）")
 def list_login_logs(
     limit: int = Query(20, ge=1, le=200),
     only_failed: bool = Query(False),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(get_current_user),
 ):
     from app.models.login_log import LoginLog
     q = db.query(LoginLog)
+    if _role_value(current_user).upper() != "ADMIN":
+        q = q.filter(LoginLog.user_id == current_user.id)
     if only_failed:
         q = q.filter(LoginLog.success.is_(False))
     rows = q.order_by(LoginLog.created_at.desc(), LoginLog.id.desc()).limit(limit).all()
