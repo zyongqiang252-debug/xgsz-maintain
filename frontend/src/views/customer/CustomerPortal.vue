@@ -53,6 +53,14 @@
               <el-tag size="small" :type="statusType(row.status)" effect="plain">{{ row.status_label }}</el-tag>
             </template>
           </el-table-column>
+          <el-table-column label="评价" width="120">
+            <template #default="{ row }">
+              <span v-if="row.satisfaction_score" class="rate-done">{{ row.satisfaction_score }} 分</span>
+              <el-button v-else-if="row.can_rate" size="small" type="primary" plain
+                         @click="openRate(row)">评价</el-button>
+              <span v-else class="rate-muted">—</span>
+            </template>
+          </el-table-column>
           <el-table-column label="提交时间" width="160">
             <template #default="{ row }">{{ (row.created_at || '').replace('T', ' ').slice(0, 16) }}</template>
           </el-table-column>
@@ -85,6 +93,20 @@
         <el-button type="primary" :loading="dlg.submitting" @click="submitReport">提交报修</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="rate.visible" title="服务评价" width="420px">
+      <div class="rate-order">{{ rate.row?.work_order_no }} · {{ rate.row?.device_code }}</div>
+      <div class="rate-line">
+        <span class="rate-label">服务评分</span>
+        <el-rate v-model="rate.score" />
+      </div>
+      <el-input v-model="rate.comment" type="textarea" :rows="3" maxlength="300" show-word-limit
+                placeholder="选填：说说这次服务的感受" style="margin-top:12px" />
+      <template #footer>
+        <el-button @click="rate.visible = false">取消</el-button>
+        <el-button type="primary" :loading="rate.saving" :disabled="!rate.score" @click="submitRate">提交评价</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -107,6 +129,7 @@ const dlg = reactive({
   contactName: customer.name || '', contactPhone: customer.phone || '',
   submitting: false,
 })
+const rate = reactive({ visible: false, row: null, score: 5, comment: '', saving: false })
 
 const runStatusLabel = (s) => ({
   ONLINE: '运行中', ALARM: '告警', FAULT: '故障', OFFLINE: '离线', UNKNOWN: '未知',
@@ -173,8 +196,28 @@ const submitReport = async () => {
   }
 }
 
-const logout = () => {
-  localStorage.removeItem('customer_token')
+const openRate = (row) => {
+  rate.row = row
+  rate.score = 5
+  rate.comment = ''
+  rate.visible = true
+}
+const submitRate = async () => {
+  if (!rate.score) return ElMessage.warning('请选择评分')
+  rate.saving = true
+  try {
+    await customerRequest.post(`/customer/reports/${rate.row.id}/rating`, {
+      score: rate.score, comment: rate.comment.trim() || null,
+    })
+    ElMessage.success('感谢评价')
+    rate.visible = false
+    loadReports()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '评价失败')
+  } finally { rate.saving = false }
+}
+
+const logout = () => {  localStorage.removeItem('customer_token')
   localStorage.removeItem('customer_user')
   router.replace('/c/login')
 }
@@ -214,4 +257,9 @@ onMounted(() => {
   .cp-header { padding: 0 14px; }
   .cp-user span { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
+.rate-done { color: #FF7D00; font-weight: 600; }
+.rate-muted { color: #C9CDD4; }
+.rate-order { color: #86909C; font-size: 13px; margin-bottom: 14px; }
+.rate-line { display: flex; align-items: center; gap: 14px; }
+.rate-label { color: #4E5969; font-size: 14px; }
 </style>

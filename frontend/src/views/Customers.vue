@@ -5,52 +5,136 @@
       <el-button type="primary" @click="openCreate">新建客户</el-button>
     </div>
 
+    <el-card class="filter-card" shadow="never">
+      <div class="filter-bar">
+        <el-input v-model="keyword" placeholder="搜索编码/公司/联系人/手机" clearable
+                  class="filter-input" @clear="load" @keyup.enter="load" />
+        <el-select v-model="levelFilter" placeholder="客户级别" clearable class="filter-select" @change="load">
+          <el-option label="普通" value="NORMAL" />
+          <el-option label="重点" value="KEY" />
+          <el-option label="VIP" value="VIP" />
+        </el-select>
+        <el-select v-model="activeFilter" placeholder="状态" clearable class="filter-select" @change="load">
+          <el-option label="启用" :value="true" />
+          <el-option label="停用" :value="false" />
+        </el-select>
+        <el-button type="primary" @click="load">查询</el-button>
+        <el-button @click="reset">重置</el-button>
+      </div>
+    </el-card>
+
     <el-card shadow="never">
-      <el-table :data="customers" v-loading="loading" stripe>
-        <el-table-column label="客户" min-width="140">
+      <el-table :data="customers" v-loading="loading" stripe class="cust-table" @row-click="openDetail">
+        <el-table-column prop="code" label="客户编码" width="100" />
+        <el-table-column label="客户 / 公司" min-width="170">
           <template #default="{ row }">
-            <div class="cust-name">{{ row.name }}</div>
-            <div class="cust-company">{{ row.company || '-' }}</div>
+            <div class="cust-name">{{ row.company || row.name }}</div>
+            <div class="cust-company">{{ row.name }} · {{ row.phone }}</div>
           </template>
         </el-table-column>
-        <el-table-column prop="phone" label="手机号" width="140" />
-        <el-table-column label="绑定设备" min-width="240">
+        <el-table-column label="级别 / 标签" min-width="140">
           <template #default="{ row }">
-            <span v-if="row.devices && row.devices.length" class="dev-list">
-              {{ row.devices.map(d => d.device_code).join('、') }}
-            </span>
-            <span v-else class="muted">未绑定</span>
+            <el-tag size="small" :type="levelType(row.level)" effect="plain">{{ row.level_label }}</el-tag>
+            <el-tag v-for="t in (row.tags || []).slice(0, 2)" :key="t" size="small" effect="plain" class="tag-gap">{{ t }}</el-tag>
+            <span v-if="(row.tags || []).length > 2" class="muted">+{{ row.tags.length - 2 }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="80">
+        <el-table-column label="设备" width="70" align="center">
+          <template #default="{ row }">{{ row.device_count }}</template>
+        </el-table-column>
+        <el-table-column label="工单" width="110" align="center">
+          <template #default="{ row }">
+            <span class="order-count">{{ row.order_count }}</span>
+            <span v-if="row.open_count" class="open-count">未完成 {{ row.open_count }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="最近报修" width="140">
+          <template #default="{ row }">{{ fmt(row.last_order_at) }}</template>
+        </el-table-column>
+        <el-table-column label="满意度" width="80" align="center">
+          <template #default="{ row }">
+            <span v-if="row.avg_satisfaction" class="score">{{ row.avg_satisfaction }}</span>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="70">
           <template #default="{ row }">
             <el-tag size="small" :type="row.is_active ? 'success' : 'info'" effect="plain">
               {{ row.is_active ? '启用' : '停用' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150" header-align="left">
+        <el-table-column label="操作" width="130" header-align="left">
           <template #default="{ row }">
             <div class="cust-op">
               <IconAction :icon="Edit" title="编辑" @click="openEdit(row)" />
               <IconAction :icon="Link" title="绑定设备" @click="openBind(row)" />
-              <IconAction :icon="Delete" title="删除" type="danger" @click="removeCustomer(row)" />
+              <IconAction v-if="row.is_active" :icon="SwitchButton" title="停用" type="danger" @click="deactivate(row)" />
             </div>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
-    <el-dialog v-model="form.visible" :title="form.id ? '编辑客户' : '新建客户'" width="480px" :close-on-click-modal="false">
-      <el-form label-width="90px">
-        <el-form-item label="联系人" required><el-input v-model="form.name" maxlength="50" /></el-form-item>
-        <el-form-item label="手机号" required><el-input v-model="form.phone" maxlength="20" /></el-form-item>
-        <el-form-item :label="form.id ? '重置密码' : '登录密码'">
-          <el-input v-model="form.password" type="password" show-password maxlength="72"
-                    :placeholder="form.id ? '留空则不修改' : '不填默认 123456'" />
+    <!-- 新建/编辑 -->
+    <el-dialog v-model="form.visible" :title="form.id ? '编辑客户' : '新建客户'" width="720px" :close-on-click-modal="false">
+      <el-form label-width="96px">
+        <el-divider content-position="left">基本信息</el-divider>
+        <el-row :gutter="16">
+          <el-col :span="12"><el-form-item label="公司名称"><el-input v-model="form.company" maxlength="100" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="联系人" required><el-input v-model="form.name" maxlength="50" /></el-form-item></el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12"><el-form-item label="手机号" required><el-input v-model="form.phone" maxlength="20" /></el-form-item></el-col>
+          <el-col :span="12">
+            <el-form-item :label="form.id ? '重置密码' : '登录密码'">
+              <el-input v-model="form.password" type="password" show-password maxlength="72"
+                        :placeholder="form.id ? '留空不修改' : '不填默认 123456'" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="客户级别">
+              <el-select v-model="form.level" style="width:100%">
+                <el-option label="普通" value="NORMAL" /><el-option label="重点" value="KEY" /><el-option label="VIP" value="VIP" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="归属人">
+              <el-select v-model="form.owner_id" clearable filterable style="width:100%">
+                <el-option v-for="u in users" :key="u.id" :label="`${u.real_name}（${u.username}）`" :value="u.id" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="客户标签">
+          <el-select v-model="form.tags" multiple filterable allow-create default-first-option
+                     placeholder="输入后回车，例如：GPU集群 / 年框客户" style="width:100%" />
         </el-form-item>
-        <el-form-item label="公司"><el-input v-model="form.company" maxlength="100" /></el-form-item>
-        <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item label="上级客户">
+          <el-select v-model="form.parent_id" clearable filterable placeholder="选填，集团/母公司" style="width:100%">
+            <el-option v-for="c in parentOptions" :key="c.id" :label="`${c.code} ${c.company || c.name}`" :value="c.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="地址 / 机房"><el-input v-model="form.address" maxlength="300" /></el-form-item>
+
+        <el-divider content-position="left">合同与 SLA</el-divider>
+        <el-row :gutter="16">
+          <el-col :span="12"><el-form-item label="合同号"><el-input v-model="form.contract_no" maxlength="100" /></el-form-item></el-col>
+          <el-col :span="12">
+            <el-form-item label="服务期限">
+              <el-date-picker v-model="form.serviceRange" type="daterange" value-format="YYYY-MM-DD"
+                              start-placeholder="开始" end-placeholder="到期" style="width:100%" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12"><el-form-item label="响应时限(h)"><el-input-number v-model="form.sla_response_hours" :min="0" :max="720" style="width:100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="修复时限(h)"><el-input-number v-model="form.sla_resolve_hours" :min="0" :max="720" style="width:100%" /></el-form-item></el-col>
+        </el-row>
+        <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" :rows="2" maxlength="500" /></el-form-item>
         <el-form-item label="状态"><el-switch v-model="form.is_active" active-text="启用" /></el-form-item>
       </el-form>
       <template #footer>
@@ -59,6 +143,7 @@
       </template>
     </el-dialog>
 
+    <!-- 绑定设备 -->
     <el-dialog v-model="bind.visible" :title="`绑定设备 · ${bind.customerName}`" width="560px" :close-on-click-modal="false">
       <el-select v-model="bind.deviceIds" multiple filterable placeholder="选择该客户名下的服务器"
                  style="width:100%" :loading="bind.loading">
@@ -76,51 +161,93 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Edit, Delete, Link } from '@element-plus/icons-vue'
+import { Edit, Delete, Link, SwitchButton } from '@element-plus/icons-vue'
 import request from '../api'
 import IconAction from '../components/IconAction.vue'
 
+const router = useRouter()
 const customers = ref([])
 const devices = ref([])
+const users = ref([])
 const loading = ref(false)
+const keyword = ref('')
+const levelFilter = ref('')
+const activeFilter = ref(null)
 
 const form = reactive({
-  visible: false, id: null, name: '', phone: '', password: '',
-  company: '', remark: '', is_active: true, saving: false,
+  visible: false, id: null, name: '', phone: '', password: '', company: '',
+  address: '', level: 'NORMAL', tags: [], owner_id: null, parent_id: null,
+  contract_no: '', serviceRange: [], sla_response_hours: null, sla_resolve_hours: null,
+  remark: '', is_active: true, saving: false,
 })
 const bind = reactive({
   visible: false, customerId: null, customerName: '', deviceIds: [], loading: false, saving: false,
 })
 
+const levelType = (lv) => ({ VIP: 'danger', KEY: 'warning', NORMAL: 'info' }[lv] || 'info')
+const fmt = (t) => t ? t.replace('T', ' ').slice(0, 16) : '—'
+
+const parentOptions = ref([])
+
 const load = async () => {
   loading.value = true
   try {
-    const res = await request.get('/customers/')
+    const res = await request.get('/customers/', {
+      params: {
+        keyword: keyword.value || undefined,
+        level: levelFilter.value || undefined,
+        active: activeFilter.value === null ? undefined : activeFilter.value,
+      },
+    })
     customers.value = res.items || []
+    parentOptions.value = customers.value.filter((c) => c.is_active)
   } catch { /* ignore */ }
   finally { loading.value = false }
 }
 
+const loadUsers = async () => {
+  try {
+    const res = await request.get('/users/', { params: { page: 1, page_size: 200 } })
+    users.value = res.items || []
+  } catch { users.value = [] }
+}
+
 const loadDevices = async () => {
   try {
-    const res = await request.get('/devices/', { params: { page: 1, page_size: 200 } })
+    const res = await request.get('/devices/', { params: { page: 1, page_size: 300 } })
     devices.value = res.items || []
   } catch { devices.value = [] }
 }
 
+const reset = () => {
+  keyword.value = ''
+  levelFilter.value = ''
+  activeFilter.value = null
+  load()
+}
+
 const openCreate = () => {
   Object.assign(form, {
-    visible: true, id: null, name: '', phone: '', password: '',
-    company: '', remark: '', is_active: true,
+    visible: true, id: null, name: '', phone: '', password: '', company: '',
+    address: '', level: 'NORMAL', tags: [], owner_id: null, parent_id: null,
+    contract_no: '', serviceRange: [], sla_response_hours: null, sla_resolve_hours: null,
+    remark: '', is_active: true, saving: false,
   })
 }
 const openEdit = (row) => {
   Object.assign(form, {
     visible: true, id: row.id, name: row.name, phone: row.phone, password: '',
-    company: row.company || '', remark: row.remark || '', is_active: !!row.is_active,
+    company: row.company || '', address: row.address || '', level: row.level || 'NORMAL',
+    tags: [...(row.tags || [])], owner_id: row.owner_id, parent_id: row.parent_id,
+    contract_no: row.contract_no || '',
+    serviceRange: row.service_start && row.service_end ? [row.service_start, row.service_end] : [],
+    sla_response_hours: row.sla_response_hours, sla_resolve_hours: row.sla_resolve_hours,
+    remark: row.remark || '', is_active: !!row.is_active, saving: false,
   })
 }
+
 const saveCustomer = async () => {
   if (!form.name.trim() || !form.phone.trim()) {
     ElMessage.warning('请填写联系人和手机号')
@@ -130,6 +257,13 @@ const saveCustomer = async () => {
   try {
     const payload = {
       name: form.name.trim(), phone: form.phone.trim(), company: form.company || null,
+      address: form.address || null, level: form.level, tags: form.tags || [],
+      owner_id: form.owner_id || null, parent_id: form.parent_id || null,
+      contract_no: form.contract_no || null,
+      service_start: form.serviceRange?.[0] || null,
+      service_end: form.serviceRange?.[1] || null,
+      sla_response_hours: form.sla_response_hours,
+      sla_resolve_hours: form.sla_resolve_hours,
       remark: form.remark || null, is_active: form.is_active,
     }
     if (form.password) payload.password = form.password
@@ -143,9 +277,14 @@ const saveCustomer = async () => {
   } finally { form.saving = false }
 }
 
+const openDetail = (row, column, event) => {
+  if (event?.target?.closest('.cust-op')) return
+  router.push(`/customers/${row.id}`)
+}
+
 const openBind = async (row) => {
   bind.customerId = row.id
-  bind.customerName = row.name
+  bind.customerName = row.company || row.name
   bind.deviceIds = (row.devices || []).map((d) => d.id)
   bind.visible = true
   bind.loading = true
@@ -164,28 +303,37 @@ const saveBind = async () => {
   } finally { bind.saving = false }
 }
 
-const removeCustomer = async (row) => {
+const deactivate = async (row) => {
   try {
-    await ElMessageBox.confirm(`确定删除客户「${row.name}」？设备绑定会一并解除。`, '删除确认',
-      { type: 'warning' })
+    await ElMessageBox.confirm(
+      `确定停用客户「${row.company || row.name}」？停用后客户无法登录门户，历史工单与设备绑定保留。`,
+      '停用确认', { type: 'warning' })
   } catch { return }
   try {
     await request.delete(`/customers/${row.id}`)
-    ElMessage.success('已删除')
+    ElMessage.success('已停用')
     load()
-  } catch (e) { ElMessage.error(e?.response?.data?.detail || '删除失败') }
+  } catch (e) { ElMessage.error(e?.response?.data?.detail || '操作失败') }
 }
 
-onMounted(load)
+onMounted(() => { load(); loadUsers() })
 </script>
 
 <style scoped>
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .page-title { margin: 0; font-size: 20px; font-weight: 600; color: #1D2129; }
+.filter-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.filter-input { width: 240px; }
+.filter-select { width: 130px; }
+.filter-card { margin-bottom: 14px; }
+.cust-table :deep(tbody tr) { cursor: pointer; }
 .cust-name { font-weight: 600; color: #1D2129; }
 .cust-company { font-size: 12px; color: #86909C; margin-top: 2px; }
-.dev-list { font-size: 13px; color: #4E5969; }
+.tag-gap { margin-left: 4px; }
 .muted { color: #C9CDD4; }
+.order-count { font-weight: 600; }
+.open-count { display: block; font-size: 11px; color: #FF7D00; }
+.score { color: #FF7D00; font-weight: 600; }
 .cust-op { display: flex; align-items: center; gap: 4px; }
 .bind-hint { margin: 10px 0 0; font-size: 12px; color: #86909C; }
 </style>

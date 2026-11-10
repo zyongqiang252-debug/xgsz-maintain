@@ -21,10 +21,14 @@ from app.models.work_order_edit_log import WorkOrderEditLog
 from app.models.work_order_collaborator import WorkOrderCollaborator
 from app.models.customer import Customer
 from app.models.customer_device import CustomerDevice
+from app.models.customer_contact import CustomerContact
 from app.models.stock_movement import StockMovement
 from app.models.spare_part_requisition import (
     SparePartRequisition, SparePartRequisitionStatus,
 )
+from app.models.warehouse import Warehouse, WarehouseLocation
+from app.models.part_instance import PartInstance, PartInstanceStatus
+from app.models.stocktake import Stocktake, StocktakeItem, StocktakeStatus
 from app.models.login_log import LoginLog
 from app.models.maintenance import (
     MaintenancePlan, MaintenanceRecord, InspectionTemplate, InspectionRecord,
@@ -49,9 +53,12 @@ __all__ = [
     "WorkOrderImportBatch", "WorkOrderImportItem",
     "WorkOrderEditLog",
     "WorkOrderCollaborator",
-    "Customer", "CustomerDevice",
+    "Customer", "CustomerDevice", "CustomerContact",
     "StockMovement",
     "SparePartRequisition", "SparePartRequisitionStatus",
+    "Warehouse", "WarehouseLocation",
+    "PartInstance", "PartInstanceStatus",
+    "Stocktake", "StocktakeItem", "StocktakeStatus",
     "LoginLog",
     "MaintenancePlan", "MaintenanceRecord",
     "InspectionTemplate", "InspectionRecord",

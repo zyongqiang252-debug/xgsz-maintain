@@ -40,6 +40,11 @@ class CustomerReportIn(BaseModel):
     contact_phone: Optional[str] = Field(None, max_length=20)
 
 
+class CustomerRatingIn(BaseModel):
+    score: int = Field(..., ge=1, le=5)
+    comment: Optional[str] = Field(None, max_length=500)
+
+
 def create_customer_token(customer: Customer) -> str:
     expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     return jwt.encode(
@@ -203,5 +208,28 @@ def my_reports(customer: Customer = Depends(get_current_customer),
             "status": w.status.value if hasattr(w.status, "value") else str(w.status),
             "status_label": SG.label_of(w.status),
             "created_at": w.created_at.isoformat() if w.created_at else None,
+            "satisfaction_score": w.satisfaction_score,
+            "satisfaction_comment": w.satisfaction_comment,
+            "can_rate": (w.status == WorkOrderStatus.ARCHIVED and w.satisfaction_score is None),
         })
     return {"items": items}
+
+
+@router.post("/reports/{work_order_id}/rating", summary="客户评价已完成的工单")
+def rate_report(work_order_id: int, data: CustomerRatingIn,
+                customer: Customer = Depends(get_current_customer),
+                db: Session = Depends(get_db)):
+    w = db.query(WorkOrder).filter(
+        WorkOrder.id == work_order_id,
+        WorkOrder.customer_id == customer.id,
+    ).first()
+    if not w:
+        raise HTTPException(status_code=404, detail="报修工单不存在")
+    if w.status != WorkOrderStatus.ARCHIVED:
+        raise HTTPException(status_code=400, detail="工单完成后才能评价")
+    w.satisfaction_score = data.score
+    w.satisfaction_comment = data.comment
+    w.feedback_at = datetime.now()
+    db.commit()
+    logger.info(f"[Customer] {customer.name} 评价工单 {w.work_order_no}: {data.score}")
+    return {"message": "评价已提交", "score": data.score}
