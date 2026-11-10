@@ -13,6 +13,7 @@ from app.core import alert_level as AL
 from app.core import status_group as SG
 from app.models.work_order import WorkOrder, WorkOrderStatus
 from app.models.work_order_edit_log import WorkOrderEditLog
+from app.models.work_order_collaborator import WorkOrderCollaborator
 from app.models.device import Device
 from app.models.spare_part import SparePart
 from app.models.user import User, UserRole
@@ -42,6 +43,39 @@ def _audit_value(v):
         return v
     except Exception:
         return str(v)
+
+
+def _set_collaborators(db: Session, work_order_id: int, collaborator_ids, primary_id=None) -> list:
+    """覆盖式设置协作人：去重、排除主责、只允许启用中的维修员"""
+    ids = []
+    for i in collaborator_ids or []:
+        try:
+            i = int(i)
+        except (TypeError, ValueError):
+            continue
+        if i and i != primary_id and i not in ids:
+            ids.append(i)
+    db.query(WorkOrderCollaborator).filter(
+        WorkOrderCollaborator.work_order_id == work_order_id
+    ).delete(synchronize_session=False)
+    if ids:
+        users = db.query(User).filter(
+            User.id.in_(ids),
+            User.is_active == True,
+            User.role == UserRole.TECHNICIAN.value,
+        ).all()
+        for u in users:
+            db.add(WorkOrderCollaborator(work_order_id=work_order_id, user_id=u.id))
+    db.flush()
+    return ids
+
+
+def _collaborators_of(db: Session, work_order_id: int) -> list:
+    rows = (db.query(WorkOrderCollaborator, User)
+            .join(User, User.id == WorkOrderCollaborator.user_id)
+            .filter(WorkOrderCollaborator.work_order_id == work_order_id)
+            .order_by(WorkOrderCollaborator.id.asc()).all())
+    return [{"id": u.id, "name": u.real_name} for _, u in rows]
 def _wo_to_dict(w: WorkOrder) -> dict:
     return {c.name: getattr(w, c.name) for c in w.__table__.columns}
 
@@ -145,6 +179,14 @@ def list_work_orders(
         user_name_map = {u.id: u.real_name for u in users_q}
     # 是否为“别人转派给我”的单：批量取每人最近一条「改派：A → B」日志
     transfer_map = {}
+    collab_map = {}
+    item_ids = [w.id for w in items]
+    if item_ids:
+        collab_rows = (db.query(WorkOrderCollaborator, User)
+                       .join(User, User.id == WorkOrderCollaborator.user_id)
+                       .filter(WorkOrderCollaborator.work_order_id.in_(item_ids)).all())
+        for c, u in collab_rows:
+            collab_map.setdefault(c.work_order_id, []).append({"id": u.id, "name": u.real_name})
     assigned_ids = [w.id for w in items if w.status == WorkOrderStatus.ASSIGNED]
     if assigned_ids:
         logs = (db.query(WorkOrderProgressLog)
@@ -170,6 +212,7 @@ def list_work_orders(
         d['order_type'] = getattr(w, 'order_type', None) or 'REPAIR'
         d['dispatcher_name'] = user_name_map.get(getattr(w, 'dispatcher_id', None))
         d['dispatched_at'] = getattr(w, 'dispatched_at', None)
+        d['collaborators'] = collab_map.get(w.id, [])
         d['status_group'] = SG.group_of(w.status)
         d['status_group_label'] = SG.label_of(w.status)
         result_items.append(d)
@@ -449,6 +492,7 @@ def get_work_order(work_order_id: int, db: Session = Depends(get_db)):
                     break
     except Exception:
         resp.transfer_from_name = None
+    resp.collaborators = _collaborators_of(db, work_order.id)
     return resp
 
 
@@ -1075,6 +1119,20 @@ def _notify_inapp(wo: WorkOrder, event: str, actor: str = "", extra: str = "") -
             elif event == "assigned":
                 tech = db.query(User).filter(User.id == wo.technician_id).first() if wo.technician_id else None
                 users = [tech] if tech else []
+                # 协作人另发一条「协作通知」
+                collab_users = (db.query(User)
+                                .join(WorkOrderCollaborator, WorkOrderCollaborator.user_id == User.id)
+                                .filter(WorkOrderCollaborator.work_order_id == wo.id).all())
+                for cu in collab_users:
+                    if tech and cu.id == tech.id:
+                        continue
+                    create_notification(
+                        db, user_id=cu.id, type="WORK_ORDER", title="工单协作通知",
+                        content=f"你被加入工单 {wo_no}（{device}）协作，主责："
+                                f"{(tech.real_name if tech else '-')}。故障：{fault}"
+                                + (f"（{extra}）" if extra else ""),
+                        work_order_id=wo.id, level=level,
+                    )
             else:
                 creator = db.query(User).filter(User.id == wo.created_by).first() if wo.created_by else None
                 users = [creator] if creator else []
@@ -1207,6 +1265,8 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
         work_order.assignee_id = tech.id
         work_order.dispatcher_id = current_user.id
         work_order.dispatched_at = datetime.now()
+        if data.collaborator_ids is not None:
+            _set_collaborators(db, work_order.id, data.collaborator_ids, primary_id=tech.id)
         _add_progress_log(
             db=db, work_order_id=work_order.id,
             from_status=work_order.status, to_status=work_order.status,
@@ -1291,6 +1351,8 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
                     raise HTTPException(status_code=400, detail="指定的维修员不存在或已停用")
                 work_order.technician_id = tech.id
                 work_order.assignee_id = tech.id
+                if data.collaborator_ids is not None:
+                    _set_collaborators(db, work_order.id, data.collaborator_ids, primary_id=tech.id)
             elif not work_order.technician_id:
                 raise HTTPException(status_code=400, detail="派工必须指定维修员（technician_id）")
         elif is_technician:
@@ -1323,6 +1385,8 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
                     raise HTTPException(status_code=400, detail="只能转派给维修员")
                 work_order.technician_id = tech.id
                 work_order.assignee_id = tech.id
+                if data.collaborator_ids is not None:
+                    _set_collaborators(db, work_order.id, data.collaborator_ids, primary_id=tech.id)
         else:
             raise HTTPException(status_code=403, detail="仅主管/管理员可派工，维修员可领取或转派")
 
@@ -1334,6 +1398,9 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
         work_order.technician_id = None
         work_order.assignee_id = None
         work_order.dispatched_at = None
+        db.query(WorkOrderCollaborator).filter(
+            WorkOrderCollaborator.work_order_id == work_order.id
+        ).delete(synchronize_session=False)
 
     # 派工/改派：记录分配人（谁把单分出去的）
     if to_status_val == WorkOrderStatus.ASSIGNED.value:
@@ -1765,6 +1832,7 @@ def create_work_order_from_dispatch(
     )
     db.add(work_order)
     db.flush()
+    _set_collaborators(db, work_order.id, data.collaborator_ids, primary_id=data.technician_id)
 
     _add_progress_log(
         db=db,
@@ -1792,6 +1860,20 @@ def create_work_order_from_dispatch(
             work_order_id=work_order.id,
             level=AL.from_priority(getattr(work_order, 'priority', None)),
         )
+        for cu in (db.query(User)
+                   .join(WorkOrderCollaborator, WorkOrderCollaborator.user_id == User.id)
+                   .filter(WorkOrderCollaborator.work_order_id == work_order.id).all()):
+            if cu.id == data.technician_id:
+                continue
+            create_notification(
+                db,
+                user_id=cu.id,
+                type="work_order",
+                title="工单协作通知",
+                content=f"你被加入工单 {work_order_no}（{device_desc}）协作。故障：{(data.fault_description or '')[:60]}",
+                work_order_id=work_order.id,
+                level=AL.from_priority(getattr(work_order, 'priority', None)),
+            )
         logger.info(f"[Notification] 站内通知已写入: 工单{work_order_no} → 维修员#{data.technician_id}")
     except Exception as e:
         logger.warning(f"[Notification] 站内通知写入失败（不影响工单创建）: {e}")
@@ -1850,6 +1932,7 @@ def _build_work_order_response(work_order: WorkOrder, db: Session) -> WorkOrderR
                     break
     except Exception:
         resp.transfer_from_name = None
+    resp.collaborators = _collaborators_of(db, work_order.id)
     if work_order.progress_logs:
         resp.progress_logs = [
             WorkOrderProgressLogResponse(

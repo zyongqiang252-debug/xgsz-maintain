@@ -123,6 +123,9 @@
             {{ form.start_time ? dayjs(form.start_time).format('YYYY-MM-DD HH:mm') : '-' }}
             ~ {{ form.end_time ? dayjs(form.end_time).format('YYYY-MM-DD HH:mm') : '-' }}
           </el-descriptions-item>
+          <el-descriptions-item label="协作人" :span="2">
+            {{ (form.collaborators && form.collaborators.length) ? form.collaborators.map(c => c.name).join('、') : '-' }}
+          </el-descriptions-item>
         </el-descriptions>
         <div class="detail-footer">
           <el-button type="primary" @click="$router.push('/work-orders')">返回列表</el-button>
@@ -155,6 +158,13 @@
             <el-option v-for="t in dispatchDlg.technicians" :key="t.id"
                        :label="`${t.real_name}（在办 ${t.current_workload_count} · 近7天完成 ${t.recent7d_completed}）`"
                        :value="t.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="协作人">
+          <el-select v-model="dispatchDlg.collaboratorIds" multiple filterable placeholder="可选，多人一起处理时选择" style="width:100%">
+            <el-option v-for="t in dispatchDlg.technicians" :key="t.id"
+                       :label="t.real_name" :value="t.id"
+                       :disabled="t.id === dispatchDlg.technicianId" />
           </el-select>
         </el-form-item>
         <el-form-item :label="dispatchNeedsReason ? '改派原因' : '备注'" :required="dispatchNeedsReason">
@@ -973,9 +983,13 @@ const startActionLabel = computed(() => ({
   INSPECTING: '开始维修',
 }[form.status] || '开始处理'))
 const dispatchNeedsReason = computed(() => ['ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(form.status))
-const dispatchDlg = reactive({ visible: false, technicianId: null, remark: '', technicians: [], saving: false })
+const dispatchDlg = reactive({ visible: false, technicianId: null, collaboratorIds: [], remark: '', technicians: [], saving: false })
 const openDispatch = async () => {
-  Object.assign(dispatchDlg, { visible: true, technicianId: null, remark: '', saving: false })
+  Object.assign(dispatchDlg, {
+    visible: true, technicianId: null,
+    collaboratorIds: (form.collaborators || []).map((c) => c.id),
+    remark: '', saving: false,
+  })
   try {
     const res = await request.get('/dispatch/technicians')
     const all = Array.isArray(res) ? res : (res.items || [])
@@ -994,6 +1008,7 @@ const submitDispatch = async () => {
     await request.post(`/work-orders/${form.id}/transition`, {
       to_status: toStatus,
       technician_id: dispatchDlg.technicianId,
+      collaborator_ids: dispatchDlg.collaboratorIds,
       source: 'SUPERVISOR_DISPATCH',
       remark: dispatchDlg.remark || null,
     })

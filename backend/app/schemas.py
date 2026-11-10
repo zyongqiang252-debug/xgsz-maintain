@@ -242,6 +242,7 @@ class WorkOrderResponse(BaseModel):
     created_by_employee_id: Optional[str] = None
     technician_name: Optional[str] = None
     transfer_from_name: Optional[str] = None
+    collaborators: Optional[Any] = None
     progress_logs: List["WorkOrderProgressLogResponse"] = []
     # SLA / 回访 / 成本
     response_due_at: Optional[datetime] = None
@@ -273,6 +274,7 @@ class WorkOrderFeedbackIn(BaseModel):
 class WorkOrderTransition(BaseModel):
     to_status: str
     technician_id: Optional[int] = Field(None, description="派工/改派时指定的维修员 ID")
+    collaborator_ids: Optional[List[int]] = Field(None, description="协作人（维修员）ID 列表，主责之外")
     source: Optional[str] = "WEB"
     remark: Optional[str] = None
     location: Optional[str] = None
@@ -288,6 +290,7 @@ class WorkOrderDispatchCreate(BaseModel):
     priority: Optional[str] = "MEDIUM"
     location: Optional[str] = None
     technician_id: int
+    collaborator_ids: Optional[List[int]] = Field(None, description="协作人 ID 列表")
     tags: Optional[List[str]] = None
     fault_category: Optional[str] = None
     fault_phenomenon_type: Optional[str] = None

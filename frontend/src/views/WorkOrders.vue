@@ -89,7 +89,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="负责人" width="116" show-overflow-tooltip>
+        <el-table-column label="负责人" width="150" show-overflow-tooltip>
           <template #default="{ row }">
             <span v-if="row.technician_name">{{ row.technician_name }}</span>
             <span v-else class="muted">未指派</span>
@@ -99,6 +99,9 @@
               :title="`由 ${row.transfer_from_name} 转派给你`"
               style="margin-left:4px"
             >转派</el-tag>
+            <div v-if="row.collaborators && row.collaborators.length" class="collab-line">
+              协：{{ row.collaborators.map(c => c.name).join('、') }}
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="时效" width="104" align="center">
@@ -234,6 +237,15 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="协作人">
+          <el-select v-model="dispatch.collaboratorIds" multiple filterable placeholder="可选，多人一起处理时选择" style="width:100%">
+            <el-option
+              v-for="t in dispatch.technicians" :key="t.id"
+              :label="t.real_name" :value="t.id"
+              :disabled="t.id === dispatch.technicianId"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="dispatchNeedsReason ? '改派原因' : '备注'" :required="dispatchNeedsReason">
           <el-input v-model="dispatch.remark" type="textarea" :rows="2" maxlength="100"
                     :placeholder="dispatchNeedsReason ? '必填，例如：维修员不熟悉该设备/临时请假' : '选填，例如：优先处理、带好备件'" />
@@ -298,7 +310,7 @@ const hasPrimaryAction = (row) =>
   canOperateProgress(row)
 
 // ===== 派工（把 SUBMITTED 指派给维修员 → ASSIGNED）=====
-const dispatch = reactive({ visible: false, row: null, technicianId: null, remark: '', technicians: [], submitting: false })
+const dispatch = reactive({ visible: false, row: null, technicianId: null, collaboratorIds: [], remark: '', technicians: [], submitting: false })
 const isSelfDispatch = computed(() => {
   const r = dispatch.row
   if (!r) return false
@@ -461,7 +473,11 @@ const claimTask = async (row) => {
 }
 
 const openDispatch = async (row) => {
-  Object.assign(dispatch, { visible: true, row, technicianId: null, remark: '', submitting: false })
+  Object.assign(dispatch, {
+    visible: true, row, technicianId: null,
+    collaboratorIds: (row.collaborators || []).map((c) => c.id),
+    remark: '', submitting: false,
+  })
   try {
     const res = await request.get('/dispatch/technicians')
     const all = Array.isArray(res) ? res : (res.items || [])
@@ -484,6 +500,7 @@ const submitDispatch = async () => {
     await request.post(`/work-orders/${dispatch.row.id}/transition`, {
       to_status: toStatus,
       technician_id: dispatch.technicianId,
+      collaborator_ids: dispatch.collaboratorIds,
       source: 'SUPERVISOR_DISPATCH',
       remark: dispatch.remark || null,
     })
@@ -749,6 +766,7 @@ const handleExport = async () => {
 .secondary-btn { background: #fff; border-color: #d9d9d9; color: #333; }
 .table-card { min-height: 300px; overflow: hidden; }
 .muted { color: #C9CDD4; }
+.collab-line { font-size: 11px; color: #86909C; line-height: 1.4; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* 表格统一行高，避免按钮把行撑高 */
 .wo-table :deep(.el-table__cell) { padding: 8px 0; }
 .wo-table :deep(.el-table__row) { cursor: pointer; }
