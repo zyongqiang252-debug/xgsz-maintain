@@ -140,14 +140,6 @@
       <!-- 侧边栏 (220px) -->
       <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }">
         <template v-if="!sidebarCollapsed">
-          <!-- Logo 区 -->
-          <div class="sidebar-logo logo-clickable" title="返回首页" @click="goHome">
-            <div class="sidebar-logo-icon">
-              <img src="/logo-icon.png" alt="芯光智数" />
-            </div>
-            <span class="sidebar-logo-text">管理台</span>
-          </div>
-
           <!-- 菜单 -->
           <el-menu
             :default-active="activeMenu"
