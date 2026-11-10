@@ -2106,7 +2106,15 @@ onMounted(async () => {
       }
 
       if (res.device_id) onDeviceChange(res.device_id)
-    } catch { ElMessage.error('加载工单失败') }
+    } catch (e) {
+      const detail = e?.response?.data?.detail
+      if (e?.response?.status === 404) {
+        ElMessage.error(typeof detail === 'string' ? detail : '工单不存在或已被删除')
+        router.replace('/orders?tab=list')
+      } else {
+        ElMessage.error(typeof detail === 'string' ? detail : '加载工单失败')
+      }
+    }
   }
 })
 

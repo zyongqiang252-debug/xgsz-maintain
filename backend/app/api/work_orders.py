@@ -737,6 +737,14 @@ def delete_work_order(work_order_id: int, db: Session = Depends(get_db), current
     # 权限校验：仅创建者或管理员可删除
     if work_order.created_by and current_user.id != work_order.created_by and current_user.role != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="仅工单创建者或管理员可删除此工单")
+    # 删除工单前清理关联站内通知，避免通知点进去指向已删除工单
+    try:
+        from app.models.notification import Notification
+        db.query(Notification).filter(
+            Notification.work_order_id == work_order.id
+        ).delete(synchronize_session=False)
+    except Exception as e:
+        logger.warning(f"[WorkOrder] 清理关联通知失败（忽略）: {e}")
     db.delete(work_order)
     db.commit()
     return {"message": "工单已删除"}
