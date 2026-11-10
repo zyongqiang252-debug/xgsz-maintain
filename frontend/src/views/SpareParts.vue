@@ -33,6 +33,7 @@
           <el-option v-for="d in deviceTypeOptions" :key="d.value" :label="d.label" :value="d.value" />
         </el-select>
         <el-select v-model="stockFilter" placeholder="库存状态" clearable class="filter-select" @change="handleSearch">
+          <el-option label="库存充足" value="sufficient" />
           <el-option label="库存不足" value="low_stock" />
           <el-option label="已缺货" value="out_of_stock" />
         </el-select>

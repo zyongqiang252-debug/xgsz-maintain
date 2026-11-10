@@ -53,7 +53,7 @@ def list_spare_parts(
     page_size: int = Query(10, ge=1, le=100),
     device_type: Optional[str] = None,
     keyword: Optional[str] = None,
-    stock_status: Optional[str] = Query(None, description="low_stock / out_of_stock"),
+    stock_status: Optional[str] = Query(None, description="sufficient / low_stock / out_of_stock"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -66,7 +66,9 @@ def list_spare_parts(
             | SparePart.part_code.ilike(f"%{keyword}%")
             | SparePart.specification.ilike(f"%{keyword}%")
         )
-    if stock_status == "low_stock":
+    if stock_status == "sufficient":
+        query = query.filter(SparePart.stock_quantity > SparePart.safety_stock)
+    elif stock_status == "low_stock":
         query = query.filter(
             SparePart.stock_quantity > 0,
             SparePart.stock_quantity <= SparePart.safety_stock
