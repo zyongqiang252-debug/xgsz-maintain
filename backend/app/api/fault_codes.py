@@ -18,6 +18,10 @@ class FaultCodeCreateRequest(BaseModel):
     fault_description: str = Field(..., min_length=2, max_length=500, description="故障描述")
     device_type: Optional[str] = Field(None, description="设备类型，用于自动匹配前缀")
 
+class FaultCodeUpdateRequest(BaseModel):
+    fault_description: str = Field(..., min_length=2, max_length=500, description="故障描述")
+    device_type: Optional[str] = Field(None, description="设备类型，可清空")
+
 class FaultCodeCreateResponse(BaseModel):
     id: int
     fault_code: str
@@ -101,6 +105,40 @@ def get_fault_code(mapping_id: int, db: Session = Depends(get_db)):
     if not item:
         raise HTTPException(status_code=404, detail="故障码不存在")
     return _to_dict(item)
+
+
+@router.put("/{mapping_id}", summary="修改故障码描述/设备类型（编码不变）")
+def update_fault_code(
+    mapping_id: int,
+    req: FaultCodeUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    item = db.query(FaultCodeMapping).filter(FaultCodeMapping.id == mapping_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="故障码不存在")
+    item.fault_description = req.fault_description.strip()
+    item.device_type = (req.device_type or "").strip() or None
+    db.commit()
+    db.refresh(item)
+    logger.info(f"[FaultCode] {current_user.real_name} 修改故障码 {item.fault_code}: {item.fault_description[:40]}")
+    return _to_dict(item)
+
+
+@router.delete("/{mapping_id}", summary="删除故障码映射")
+def delete_fault_code(
+    mapping_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    item = db.query(FaultCodeMapping).filter(FaultCodeMapping.id == mapping_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="故障码不存在")
+    code = item.fault_code
+    db.delete(item)
+    db.commit()
+    logger.info(f"[FaultCode] {current_user.real_name} 删除故障码 {code}")
+    return {"message": "故障码已删除", "fault_code": code}
 
 
 @router.post("/create", summary="新增故障码（自动生成 + 重复检测）")

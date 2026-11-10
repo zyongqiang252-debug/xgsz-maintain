@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="page-header-left">
         <h2 class="page-title">故障码映射管理</h2>
-        <p class="page-desc">故障码与故障描述一一对应，由系统自动生成，不可修改或删除</p>
+        <p class="page-desc">故障码编码由系统生成；可修改故障描述、设备类型，或删除错误映射</p>
       </div>
       <el-button type="warning" @click="openCreateDialog">+ 新增故障码</el-button>
     </div>
@@ -38,7 +38,7 @@
     </div>
 
     <!-- 表格 -->
-    <el-table :data="items" stripe v-loading="loading" class="fault-table">
+    <el-table :data="items" stripe v-loading="loading" class="fault-table" @row-click="onRowClick">
       <el-table-column prop="fault_code" label="故障码" width="200">
         <template #default="{ row }">
           <el-tag type="warning" size="large">{{ row.fault_code }}</el-tag>
@@ -58,10 +58,11 @@
           {{ formatTime(row.created_at) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="64" align="right" header-align="left">
+      <el-table-column label="操作" width="104" align="right" header-align="left">
         <template #default="{ row }">
           <div class="fc-op">
-            <IconAction :icon="View" title="详情" @click="showDetail(row)" />
+            <IconAction :icon="Edit" title="修改" @click="openEditDialog(row)" />
+            <IconAction :icon="Delete" title="删除" type="danger" @click="handleDelete(row)" />
           </div>
         </template>
       </el-table-column>
@@ -92,6 +93,27 @@
       </template>
       <template #footer>
         <el-button @click="dialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 修改故障码 -->
+    <el-dialog v-model="editDialog.visible" title="修改故障码" width="500px" :close-on-click-modal="false">
+      <el-form label-width="90px">
+        <el-form-item label="故障码">
+          <el-input :model-value="editDialog.faultCode" disabled />
+        </el-form-item>
+        <el-form-item label="设备类型">
+          <el-select v-model="editDialog.deviceType" clearable filterable placeholder="可选" style="width:100%">
+            <el-option v-for="d in allDeviceTypes" :key="d" :label="d" :value="d" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="故障描述" required>
+          <el-input v-model="editDialog.description" type="textarea" :rows="4" maxlength="500" show-word-limit />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="editDialog.saving" @click="handleSaveEdit">保存</el-button>
       </template>
     </el-dialog>
 
@@ -155,8 +177,8 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { Search, View } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { Search, Edit, Delete } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import IconAction from '../components/IconAction.vue'
 import request from '../api'
 import dayjs from 'dayjs'
@@ -179,6 +201,15 @@ const createDialog = reactive({
   description: '',
   creating: false,
   result: null,
+})
+
+const editDialog = reactive({
+  visible: false,
+  id: null,
+  faultCode: '',
+  deviceType: '',
+  description: '',
+  saving: false,
 })
 
 const loadDeviceTypes = async () => {
@@ -210,6 +241,60 @@ const handleSearch = () => {
 const showDetail = (row) => {
   currentItem.value = row
   dialogVisible.value = true
+}
+
+// 整行点击查看详情（点在按钮上不触发）
+const onRowClick = (row, column, event) => {
+  if (event?.target?.closest?.('.fc-op, button, a')) return
+  showDetail(row)
+}
+
+const openEditDialog = (row) => {
+  editDialog.id = row.id
+  editDialog.faultCode = row.fault_code
+  editDialog.deviceType = row.device_type || ''
+  editDialog.description = row.fault_description || ''
+  editDialog.visible = true
+}
+
+const handleSaveEdit = async () => {
+  if (!editDialog.description.trim()) {
+    ElMessage.warning('请填写故障描述')
+    return
+  }
+  editDialog.saving = true
+  try {
+    await request.put(`/fault-codes/${editDialog.id}`, {
+      fault_description: editDialog.description.trim(),
+      device_type: editDialog.deviceType || null,
+    })
+    ElMessage.success('修改成功')
+    editDialog.visible = false
+    loadData()
+    loadDeviceTypes()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '修改失败')
+  } finally {
+    editDialog.saving = false
+  }
+}
+
+const handleDelete = async (row) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除故障码 ${row.fault_code}？删除后该映射不再出现在字典中，历史工单里的编码不受影响。`,
+      '删除确认',
+      { type: 'warning', confirmButtonText: '确定删除' },
+    )
+  } catch { return }
+  try {
+    await request.delete(`/fault-codes/${row.id}`)
+    ElMessage.success('已删除')
+    loadData()
+    loadDeviceTypes()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '删除失败')
+  }
 }
 
 const formatTime = (t) => {
@@ -264,7 +349,8 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.fc-op { display: flex; justify-content: flex-end; align-items: center; }
+.fc-op { display: flex; justify-content: flex-end; align-items: center; gap: 4px; }
+.fault-table :deep(.el-table__row) { cursor: pointer; }
 .fault-codes-page { padding: 0 4px; }
 
 .page-header {
