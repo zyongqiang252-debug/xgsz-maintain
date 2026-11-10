@@ -57,7 +57,7 @@ def list_technicians(
     # 近7天已完成工单数：一次聚合查询避免 N+1
     from datetime import datetime, timedelta
     from sqlalchemy import func
-    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    seven_days_ago = datetime.now() - timedelta(days=7)
     completed_count_rows = (
         db.query(
             WorkOrder.technician_id,

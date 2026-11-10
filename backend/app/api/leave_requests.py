@@ -304,7 +304,7 @@ def submit_leave_request(
         leave_reason=payload.leave_reason,
         status=LeaveRequestStatus.PENDING.value,
         correlation_id=payload.correlation_id,
-        submitted_at=datetime.utcnow(),
+        submitted_at=datetime.now(),
     )
     db.add(lr)
     db.flush()  # 拿到 lr.id
@@ -486,7 +486,7 @@ def approve_leave_request(
     # 3) 事务性写入：更新主表状态 + 写入 LEAVE 排班 + (可选) 写入 SUBSTITUTE 顶岗排班
     # ------------------------------------------------------------------
     try:
-        now = datetime.utcnow()
+        now = datetime.now()
         lr.status = LeaveRequestStatus.APPROVED.value
         lr.approver_id = current_user.id
         lr.approver_comment = payload.approver_comment
@@ -591,7 +591,7 @@ def reject_leave_request(
     lr.status = LeaveRequestStatus.REJECTED.value
     lr.approver_id = current_user.id
     lr.approver_comment = payload.approver_comment
-    lr.handled_at = datetime.utcnow()
+    lr.handled_at = datetime.now()
     db.commit()
     db.refresh(lr)
     logger.info(f"[Leave] 拒绝成功 lr_id={lr.id} 审批人={current_user.id}")
@@ -615,7 +615,7 @@ def cancel_leave_request(
     if lr.status != LeaveRequestStatus.PENDING.value:
         raise HTTPException(status_code=409, detail=f"当前状态 {lr.status} 不可撤销，仅 PENDING 可操作")
     lr.status = LeaveRequestStatus.CANCELLED.value
-    lr.handled_at = datetime.utcnow()
+    lr.handled_at = datetime.now()
     db.commit()
     db.refresh(lr)
     logger.info(f"[Leave] 撤销成功 lr_id={lr.id} 申请人={current_user.id}")

@@ -171,7 +171,7 @@ def get_device_maintenance_summary(device_id: int, db: Session = Depends(get_db)
     if not device:
         raise HTTPException(status_code=404, detail="设备不存在")
 
-    six_months_ago = datetime.utcnow() - timedelta(days=180)
+    six_months_ago = datetime.now() - timedelta(days=180)
 
     # 近6个月维修次数（已完成工单）
     recent_count = db.query(WorkOrder).filter(
@@ -267,7 +267,7 @@ def sync_device_status(
     匹配优先级：ext_system_id > device_code > device_id。
     所有设备找不到时计入 failures，找到则原子更新监控字段。
     """
-    now = datetime.utcnow()
+    now = datetime.now()
     success = 0
     failures = []
     for i, item in enumerate(items):
@@ -341,7 +341,7 @@ def report_fault_tags(report: FaultTagReport, db: Session = Depends(get_db)):
     if not device:
         raise HTTPException(status_code=404, detail="未找到匹配设备")
 
-    now = datetime.utcnow()
+    now = datetime.now()
     new_tags = [t.model_dump() for t in report.tags]
     # 补 triggered_at
     for t in new_tags:
@@ -390,7 +390,7 @@ def clear_fault_tags(
     if not device:
         raise HTTPException(status_code=404, detail="设备不存在")
     device.fault_tags = []
-    now = datetime.utcnow()
+    now = datetime.now()
     device.last_sync_time = now
     # 证据链：恢复时若无新证据，保守恢复为 UNKNOWN 或保留原状态，不默认 ONLINE
     if device.run_status in ("ALARM", "FAULT"):

@@ -60,7 +60,7 @@ def _coerce(raw: Optional[str], default: Any, cast=None) -> Any:
 
 def get(db: Session, key: str, default: Any = None, use_cache: bool = True) -> Any:
     """读配置；default 的类型决定了返回类型（自动转换）"""
-    now = datetime.utcnow()
+    now = datetime.now()
     if use_cache:
         with _lock:
             entry = _cache.get(key)

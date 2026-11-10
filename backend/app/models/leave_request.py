@@ -61,7 +61,7 @@ class LeaveRequest(BaseModel):
     correlation_id = Column(String(100), nullable=False, unique=True, index=True,
                             comment="钉钉 outTrackId / processInstanceId，唯一索引做幂等，防钉钉重试重复提交")
 
-    submitted_at = Column(TIMESTAMP, nullable=False, default=datetime.utcnow, comment="师傅提交时间")
+    submitted_at = Column(TIMESTAMP, nullable=False, default=datetime.now, comment="师傅提交时间")
     handled_at = Column(TIMESTAMP, nullable=True, comment="主管审批/拒绝时间")
 
     requester = relationship("User", foreign_keys=[requester_id])

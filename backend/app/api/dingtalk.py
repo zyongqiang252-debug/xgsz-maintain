@@ -385,7 +385,7 @@ def dingtalk_login(req: DingTalkLoginRequest, db: Session = Depends(get_db)):
                 pass
         db.commit()
 
-    user.last_login_at = datetime.utcnow()
+    user.last_login_at = datetime.now()
     db.commit()
 
     logger.info(f"[DingTalk] 用户登录: {user.real_name} ({dingtalk_userid}), 角色={user.role}")
@@ -634,7 +634,7 @@ def tech_start_work(work_order_id: int, db: Session = Depends(get_db),
     if wo.status != WorkOrderStatus.ASSIGNED:
         raise HTTPException(status_code=400, detail=f"工单状态为 {wo.status.value}，无法接单")
     wo.status = WorkOrderStatus.IN_PROGRESS
-    wo.start_time = datetime.utcnow()
+    wo.start_time = datetime.now()
     db.commit()
     return {"message": "已开始维修", "status": wo.status.value}
 
@@ -654,7 +654,7 @@ def tech_complete_work(
         raise HTTPException(status_code=400, detail=f"工单状态为 {wo.status.value}，无法完成")
 
     wo.status = WorkOrderStatus.COMPLETED
-    wo.end_time = datetime.utcnow()
+    wo.end_time = datetime.now()
     wo.completion_report = {
         "work_hours": report.work_hours,
         "used_parts": report.used_parts,
@@ -1204,7 +1204,7 @@ def _cmd_submit_leave(u, tail: str, db: Session) -> List[str]:
             leave_reason=payload.leave_reason,
             status=LeaveRequestStatus.PENDING.value,
             correlation_id=payload.correlation_id,
-            submitted_at=_dt.utcnow(),
+            submitted_at=_dt.now(),
         )
         db.add(lr)
         db.flush()
@@ -1447,7 +1447,7 @@ def leave_urgent_check(token: str = Query(..., description="调度 token"),
     if token != getattr(settings, "SCHEDULER_TOKEN", "sched_token_2026"):
         raise HTTPException(status_code=403, detail="token 不正确")
     timeout = sys_conf.get(db, "leave_pending_timeout_hours", 4)
-    threshold = datetime.utcnow() - timedelta(hours=timeout)
+    threshold = datetime.now() - timedelta(hours=timeout)
     pending = (
         db.query(LeaveRequest)
         .filter(LeaveRequest.status == LeaveRequestStatus.PENDING.value)
