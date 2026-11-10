@@ -170,7 +170,7 @@ def test_group_robot(current_user: User = Depends(require_admin)):
     if not group_robot.enabled:
         raise HTTPException(status_code=400, detail="还没配置群机器人 Webhook")
     res = group_robot.send_markdown(
-        "芯光数智 · 测试消息",
+        "芯光智数 · 测试消息",
         f"### ✅ 群机器人连通测试\n\n- 操作人：{current_user.real_name}\n\n"
         f"收到这条说明配置成功。",
     )

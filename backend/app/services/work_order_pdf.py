@@ -170,7 +170,7 @@ def build_work_order_pdf(wo, technician_name=None, creator_name=None, progress_l
         # 页眉
         canvas.setFont(_FONT, 8)
         canvas.setFillColor(GREY)
-        canvas.drawString(MARGIN_LR, HEADER_Y + 6 * mm, "芯光数智 · 设备维修管理平台")
+        canvas.drawString(MARGIN_LR, HEADER_Y + 6 * mm, "芯光智数 · 设备维修管理平台")
         canvas.drawRightString(PAGE_W - MARGIN_LR, HEADER_Y + 6 * mm, f"工单 {wo.work_order_no}")
         canvas.setStrokeColor(LINE)
         canvas.setLineWidth(0.6)
@@ -187,8 +187,8 @@ def build_work_order_pdf(wo, technician_name=None, creator_name=None, progress_l
         buf, pagesize=A4,
         leftMargin=MARGIN_LR, rightMargin=MARGIN_LR,
         topMargin=22 * mm, bottomMargin=18 * mm,
-        title=f"设备维修工单 {wo.work_order_no}", author="芯光数智",
-        subject="设备维修工单", creator="芯光数智 · 设备维修管理平台",
+        title=f"设备维修工单 {wo.work_order_no}", author="芯光智数",
+        subject="设备维修工单", creator="芯光智数 · 设备维修管理平台",
     )
     story = []
 

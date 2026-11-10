@@ -5,9 +5,9 @@
       <div class="topbar-left">
         <div class="logo-area logo-clickable" title="返回首页" @click="goHome">
           <div class="logo-icon">
-            <img src="/logo-icon.png" alt="芯光数智" />
+            <img src="/logo-icon.png" alt="芯光智数" />
           </div>
-          <span class="system-name">芯光数智</span>
+          <span class="system-name">芯光智数</span>
         </div>
         <div class="topbar-divider"></div>
         <el-breadcrumb class="topbar-crumb" separator="/">
@@ -143,7 +143,7 @@
           <!-- Logo 区 -->
           <div class="sidebar-logo logo-clickable" title="返回首页" @click="goHome">
             <div class="sidebar-logo-icon">
-              <img src="/logo-icon.png" alt="芯光数智" />
+              <img src="/logo-icon.png" alt="芯光智数" />
             </div>
             <span class="sidebar-logo-text">管理台</span>
           </div>

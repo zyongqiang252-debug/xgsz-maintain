@@ -139,7 +139,7 @@ def export_all(db: Session = Depends(get_db)):
     wb.save(buf)
     buf.seek(0)
     stamp = datetime.now().strftime("%Y%m%d%H%M")
-    cn_name = f"芯光数智-全量数据-{stamp}.xlsx"
+    cn_name = f"芯光智数-全量数据-{stamp}.xlsx"
     ascii_name = f"xgsz-all-{stamp}.xlsx"
     disp = f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(cn_name)}"
     return StreamingResponse(

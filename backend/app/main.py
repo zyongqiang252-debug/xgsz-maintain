@@ -100,7 +100,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="芯光数智 - 以工单收录与知识沉淀为核心",
+    description="芯光智数 - 以工单收录与知识沉淀为核心",
     lifespan=lifespan,
     # 生产环境可用 DOCS_ENABLED=false 关掉接口文档，避免暴露全部路由
     docs_url="/docs" if settings.DOCS_ENABLED else None,

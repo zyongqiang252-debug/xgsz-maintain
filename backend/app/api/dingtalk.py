@@ -118,7 +118,7 @@ def group_robot_test(current_user: User = Depends(require_admin)):
     if not group_robot.enabled:
         raise HTTPException(status_code=400, detail="未配置 DINGTALK_GROUP_WEBHOOK，请先在 backend/.env 填写群机器人 webhook")
     res = group_robot.send_markdown(
-        "芯光数智 · 群机器人测试",
+        "芯光智数 · 群机器人测试",
         f"### ✅ 群机器人连通测试\n\n"
         f"- 操作人：{current_user.real_name}\n"
         f"- 时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"

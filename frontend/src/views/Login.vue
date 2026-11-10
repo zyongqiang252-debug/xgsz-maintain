@@ -12,10 +12,10 @@
         <div class="brand-content">
           <div class="brand-logo">
             <div class="logo-icon">
-              <img src="/logo-icon.png" alt="芯光数智" />
+              <img src="/logo-icon.png" alt="芯光智数" />
             </div>
           </div>
-          <h1 class="brand-title">芯光数智</h1>
+          <h1 class="brand-title">芯光智数</h1>
           <p class="brand-slogan">设备维修 · 知识沉淀 · 智能协同</p>
 
           <div class="brand-features">
@@ -43,7 +43,7 @@
           </div>
 
           <div class="brand-footer">
-            <span>© 2026 芯光数智</span>
+            <span>© 2026 芯光智数</span>
           </div>
         </div>
       </div>
@@ -55,7 +55,7 @@
           <div class="auth-header">
             <h2 class="auth-title">{{ isRegister ? '创建账号' : '欢迎回来' }}</h2>
             <p class="auth-subtitle">
-              {{ isRegister ? '仅需几步即可开启芯光数智之旅' : '请登录您的账号继续使用' }}
+              {{ isRegister ? '仅需几步即可开启芯光智数之旅' : '请登录您的账号继续使用' }}
             </p>
           </div>
 

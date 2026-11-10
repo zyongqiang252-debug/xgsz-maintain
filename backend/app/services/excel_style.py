@@ -79,7 +79,7 @@ def add_sheet(wb: Workbook, title: str, headers, rows,
 
         ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=ncol)
         c = ws.cell(row=2, column=1,
-                    value=f"芯光数智 · 设备维修管理平台    导出于 {datetime.now():%Y-%m-%d %H:%M}")
+                    value=f"芯光智数 · 设备维修管理平台    导出于 {datetime.now():%Y-%m-%d %H:%M}")
         c.font = SUB_FONT
         c.alignment = Alignment(horizontal="left", vertical="center")
         ws.row_dimensions[2].height = 20
