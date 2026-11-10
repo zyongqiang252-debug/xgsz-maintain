@@ -44,7 +44,7 @@
 
     <!-- 数据表格 -->
     <el-card class="table-card" shadow="never">
-      <el-table ref="tableRef" :data="list" stripe class="sp-table" @sort-change="onSortChange">
+      <el-table ref="tableRef" :data="list" stripe class="sp-table" @sort-change="onSortChange" @row-click="onPartRowClick">
         <el-table-column prop="part_code" label="备件编码" width="128" show-overflow-tooltip />
         <el-table-column prop="part_name" label="备件名称" min-width="150" show-overflow-tooltip />
         <el-table-column prop="specification" label="规格型号" width="118" show-overflow-tooltip />
@@ -268,9 +268,26 @@
     </el-dialog>
 
     <!-- SN 明细 -->
-    <el-dialog v-model="instances.visible" :title="`SN 明细 · ${instances.row?.part_name || ''}`" width="820px">
+    <el-dialog v-model="instances.visible" :title="`SN 明细 · ${instances.row?.part_name || ''}`" width="880px">
+      <div class="inst-summary">
+        {{ instances.row?.part_code }} · 总库存 {{ instances.row?.stock_quantity }} {{ instances.row?.unit || '' }}
+        · 已登记 SN {{ instances.rows.length }} 件
+      </div>
       <el-table :data="instances.rows" v-loading="instances.loading" size="small" stripe>
-        <el-table-column prop="sn" label="序列号 SN" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="sn" label="序列号 SN" min-width="140" show-overflow-tooltip />
+        <el-table-column label="入库照片" width="150">
+          <template #default="{ row }">
+            <div v-if="row.inbound_attachments && row.inbound_attachments.length" class="inst-photos">
+              <el-image
+                v-for="(u, i) in row.inbound_attachments.slice(0, 3)" :key="u + i"
+                :src="u" :preview-src-list="row.inbound_attachments" :initial-index="i"
+                fit="cover" preview-teleported class="inst-thumb"
+              />
+              <span v-if="row.inbound_attachments.length > 3" class="inst-more">+{{ row.inbound_attachments.length - 3 }}</span>
+            </div>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="90" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="instStatusType(row.status)" effect="plain">{{ row.status_label }}</el-tag>
@@ -291,7 +308,7 @@
           </template>
         </el-table-column>
         <el-table-column label="入库时间" width="150">
-          <template #default="{ row }">{{ (row.created_at || '').replace('T', ' ').slice(0, 16) }}</template>
+          <template #default="{ row }">{{ (row.inbound_at || row.created_at || '').replace('T', ' ').slice(0, 16) }}</template>
         </el-table-column>
       </el-table>
       <div v-if="!instances.loading && !instances.rows.length" class="inst-empty">
@@ -362,8 +379,7 @@ const instances = reactive({ visible: false, row: null, rows: [], loading: false
 const instStatusType = (s) => ({
   IN_STOCK: 'success', INSTALLED: 'primary', RMA: 'warning', SCRAPPED: 'info',
 }[s] || 'info')
-const openInstances = async (row) => {
-  instances.row = row
+const openInstances = async (row) => {  instances.row = row
   instances.rows = []
   instances.visible = true
   instances.loading = true
@@ -377,6 +393,12 @@ const openInstances = async (row) => {
   } finally {
     instances.loading = false
   }
+}
+
+// 点整行看 SN 明细；点操作按钮不触发
+const onPartRowClick = (row, column, event) => {
+  if (event?.target?.closest('.action-group')) return
+  openInstances(row)
 }
 
 const submitConsume = async () => {  if (!consume.row) return
@@ -561,6 +583,11 @@ const handleExport = async () => {
 .part-thumb { width: 36px; height: 36px; border-radius: 4px; vertical-align: middle; }
 .inst-empty { margin-top: 12px; padding: 14px; background: #F7F8FA; border-radius: 6px;
   color: #86909C; font-size: 13px; text-align: center; }
+.inst-summary { margin: -4px 0 10px; color: #86909C; font-size: 13px; }
+.inst-photos { display: flex; align-items: center; gap: 4px; }
+.inst-thumb { width: 30px; height: 30px; border-radius: 4px; }
+.inst-more { font-size: 12px; color: #86909C; }
+.sp-table :deep(tbody tr) { cursor: pointer; }
 .header-actions { display: flex; gap: 12px; }
 
 .alert-banner { margin-bottom: 16px; }

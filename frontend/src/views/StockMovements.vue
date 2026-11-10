@@ -19,7 +19,7 @@
         <el-button @click="reset">重置</el-button>
       </div>
 
-      <el-table :data="rows" v-loading="loading" stripe size="small">
+      <el-table :data="rows" v-loading="loading" stripe size="small" class="mv-table" @row-click="openDetail">
         <el-table-column label="时间" width="150">
           <template #default="{ row }">{{ (row.created_at || '').replace('T', ' ').slice(0, 16) }}</template>
         </el-table-column>
@@ -65,16 +65,57 @@
                        layout="total, prev, pager, next" @current-change="load" />
       </div>
     </el-card>
+
+    <el-drawer v-model="detail.visible" title="出入库详情" size="440px">
+      <template v-if="detail.row">
+        <el-descriptions :column="1" border size="small">
+          <el-descriptions-item label="类型">
+            <el-tag size="small" :type="detail.row.movement_type === 'OUT' ? 'warning' : 'success'">
+              {{ detail.row.movement_type === 'OUT' ? '出库（领用）' : '入库' }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="备件">{{ detail.row.part_name }}（{{ detail.row.part_code }}）</el-descriptions-item>
+          <el-descriptions-item label="数量">{{ detail.row.quantity }}</el-descriptions-item>
+          <el-descriptions-item label="库存变化">{{ detail.row.before_qty }} → {{ detail.row.after_qty }}</el-descriptions-item>
+          <el-descriptions-item label="序列号 SN">{{ detail.row.serial_no || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="金额">{{ detail.row.amount }}</el-descriptions-item>
+          <el-descriptions-item label="关联工单">
+            <el-link v-if="detail.row.work_order_id" type="primary" @click="$router.push(`/work-orders/${detail.row.work_order_id}`)">
+              #{{ detail.row.work_order_id }}
+            </el-link>
+            <span v-else>—</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="操作人">{{ detail.row.operator_name || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="时间">{{ (detail.row.created_at || '').replace('T', ' ').slice(0, 16) }}</el-descriptions-item>
+          <el-descriptions-item label="备注">{{ detail.row.remark || '—' }}</el-descriptions-item>
+        </el-descriptions>
+        <div v-if="detail.row.attachments && detail.row.attachments.length" class="detail-photos">
+          <div class="detail-label">照片附件</div>
+          <div class="photo-grid">
+            <el-image
+              v-for="(u, i) in detail.row.attachments" :key="u + i"
+              :src="u" :preview-src-list="detail.row.attachments" :initial-index="i"
+              fit="cover" preview-teleported class="photo-img"
+            />
+          </div>
+        </div>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import request from '../api'
 import { downloadFile } from '../utils/download'
 
 const rows = ref([])
+const detail = reactive({ visible: false, row: null })
+const openDetail = (row) => {
+  detail.row = row
+  detail.visible = true
+}
 const loading = ref(false)
 const exporting = ref(false)
 const keyword = ref('')
@@ -127,4 +168,9 @@ onMounted(load)
 <style scoped>
 .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
+.mv-table :deep(tbody tr) { cursor: pointer; }
+.detail-photos { margin-top: 16px; }
+.detail-label { font-size: 13px; color: #4E5969; margin-bottom: 8px; }
+.photo-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.photo-img { width: 96px; height: 96px; border-radius: 6px; }
 </style>

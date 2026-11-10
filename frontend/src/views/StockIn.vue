@@ -40,11 +40,21 @@
           </el-form-item>
 
           <el-form-item label="入库数量" required>
-            <el-input-number v-model="form.quantity" :min="0.01" :precision="2" :step="1" style="width: 100%" />
+            <el-input-number
+              v-model="form.quantity"
+              :min="0.01"
+              :precision="needSn ? 0 : 2"
+              :step="1"
+              style="width: 100%"
+            />
           </el-form-item>
 
-          <el-form-item label="序列号 SN">
-            <el-input v-model="form.serialNo" maxlength="500" placeholder="选填，一物一码；多个用逗号分隔" />
+          <el-form-item :label="snLabel" :required="needSn">
+            <el-input v-model="form.serialNo" maxlength="500" :placeholder="snPlaceholder" />
+            <div v-if="needSn" class="field-tip" :class="{ danger: snCount !== needCount }">
+              该件按 SN 管理：需 <b>{{ needCount }}</b> 个 SN，当前 <b>{{ snCount }}</b> 个
+              <span v-if="needCount > 0 && snCount === needCount" class="ok">已对齐</span>
+            </div>
           </el-form-item>
 
           <el-form-item label="照片附件">
@@ -84,60 +94,45 @@
         </template>
 
         <el-table :data="movements.rows" v-loading="movements.loading" stripe size="small">
-          <el-table-column label="时间" width="132">
-            <template #default="{ row }">{{ (row.created_at || '').replace('T', ' ').slice(0, 16) }}</template>
+          <el-table-column label="时间" width="92">
+            <template #default="{ row }">
+              <div class="cell-main">{{ (row.created_at || '').slice(0, 10) }}</div>
+              <div class="cell-sub">{{ (row.created_at || '').slice(11, 16) }}</div>
+            </template>
           </el-table-column>
-          <el-table-column label="备件" min-width="150">
+          <el-table-column label="备件" min-width="130">
             <template #default="{ row }">
               <div class="cell-main">{{ row.part_name }}</div>
               <div class="cell-sub">{{ row.part_code }}</div>
-              <div v-if="row.serial_no" class="cell-sub sn">SN {{ row.serial_no }}</div>
             </template>
           </el-table-column>
-          <el-table-column prop="serial_no" label="SN" width="110" show-overflow-tooltip />
-          <el-table-column label="照片" width="58" align="center">
+          <el-table-column label="SN" width="108">
+            <template #default="{ row }">
+              <span v-if="row.serial_no" class="sn-cell" :title="row.serial_no">{{ row.serial_no }}</span>
+              <span v-else class="muted">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="照片" width="44" align="center">
             <template #default="{ row }">
               <el-image
                 v-if="row.attachments && row.attachments.length"
                 :src="row.attachments[0]" :preview-src-list="row.attachments"
-                fit="cover" preview-teleported style="width:28px;height:28px;border-radius:4px"
+                fit="cover" preview-teleported style="width:26px;height:26px;border-radius:4px"
               />
               <span v-else>—</span>
             </template>
           </el-table-column>
-          <el-table-column label="数量" width="55" align="right">
-            <template #default="{ row }">+{{ row.quantity }}</template>
-          </el-table-column>
-          <el-table-column label="库存变化" width="90" align="center">
-            <template #default="{ row }">{{ row.before_qty }} → {{ row.after_qty }}</template>
-          </el-table-column>
-          <el-table-column label="金额" width="80" align="right">
-            <template #default="{ row }">{{ money(row.amount) }}</template>
-          </el-table-column>
-          <el-table-column label="凭证" width="60" align="center">
+          <el-table-column label="数量" width="95">
             <template #default="{ row }">
-              <el-popover v-if="row.attachments && row.attachments.length" placement="left" :width="252" trigger="click">
-                <template #reference>
-                  <el-button link type="primary">{{ row.attachments.length }} 张</el-button>
-                </template>
-                <div class="pop-photos">
-                  <el-image
-                    v-for="(u, i) in row.attachments"
-                    :key="u + i"
-                    :src="u"
-                    fit="cover"
-                    :preview-src-list="row.attachments"
-                    :initial-index="i"
-                    preview-teleported
-                    class="pop-photo"
-                  />
-                </div>
-              </el-popover>
-              <span v-else class="muted">—</span>
+              <div class="cell-main">+{{ row.quantity }}</div>
+              <div class="cell-sub">{{ row.before_qty }} → {{ row.after_qty }}</div>
             </template>
           </el-table-column>
-          <el-table-column prop="operator_name" label="操作人" width="85" show-overflow-tooltip />
-          <el-table-column prop="remark" label="备注" min-width="90" show-overflow-tooltip />
+          <el-table-column label="金额" width="75" align="right">
+            <template #default="{ row }">{{ money(row.amount) }}</template>
+          </el-table-column>
+          <el-table-column prop="operator_name" label="操作人" width="70" show-overflow-tooltip />
+          <el-table-column prop="remark" label="备注" min-width="80" show-overflow-tooltip />
         </el-table>
 
         <div class="pagination-wrap">
@@ -156,7 +151,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import request from '../api'
@@ -174,6 +169,31 @@ const form = reactive({ partId: null, quantity: 1, serialNo: '', attachments: []
 const movements = reactive({ rows: [], total: 0, page: 1, pageSize: 10, loading: false })
 
 const money = (v) => Number(v || 0).toFixed(2)
+
+// 一个 SN 一件：填了 SN 后数量自动等于 SN 个数，避免一个 SN 对多件
+watch(() => form.serialNo, (v) => {
+  const arr = String(v || '').replace(/，/g, ',').replace(/、/g, ',')
+    .split(',').map((s) => s.trim()).filter(Boolean)
+  if (arr.length) form.quantity = arr.length
+})
+
+// 按 SN 追溯的件：入库必须逐件填 SN，数量与 SN 个数要对得上
+const needSn = computed(() => !!selected.value?.need_sn)
+const snCount = computed(() => {
+  const set = new Set(
+    String(form.serialNo || '')
+      .replace(/[，、；;]/g, ',')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  )
+  return set.size
+})
+const needCount = computed(() => Math.trunc(Number(form.quantity || 0)))
+const snLabel = computed(() => (needSn.value ? '序列号 SN（必填，一物一码）' : '序列号 SN'))
+const snPlaceholder = computed(() =>
+  needSn.value ? `需 ${needCount.value} 个，多个用逗号分隔` : '选填，一物一码；多个用逗号分隔',
+)
 
 const afterStock = computed(() => {
   if (!selected.value) return '-'
@@ -205,13 +225,21 @@ const onPartChange = (id) => {
   const hit = partOptions.value.find((p) => p.id === id)
   selected.value = hit || null
   form.unitPrice = hit ? Number(hit.unit_price || 0) : null
-  form.serialNo = hit?.serial_no || ''
+  form.serialNo = ''  // 不预填：台账上的 SN 是当前在库件，预填会把上次的 SN 重复录一遍
   if (onlySelected.value) loadMovements()
 }
 
 const submit = async () => {
   if (!form.partId) return ElMessage.warning('先选择要入库的备件')
   if (!form.quantity || Number(form.quantity) <= 0) return ElMessage.warning('入库数量要大于 0')
+  if (needSn.value) {
+    if (!Number.isInteger(Number(form.quantity))) {
+      return ElMessage.warning('该件按 SN 管理，入库数量必须是整数')
+    }
+    if (snCount.value !== needCount.value) {
+      return ElMessage.warning(`该件按 SN 管理：需填 ${needCount.value} 个 SN，当前 ${snCount.value} 个`)
+    }
+  }
   submitting.value = true
   try {
     const res = await request.post(`/spare-parts/${form.partId}/stock-in`, {
@@ -276,10 +304,8 @@ onMounted(() => {
 
 .cell-main { color: var(--color-text-primary); line-height: 1.3; }
 .cell-sub { color: var(--color-text-tertiary); font-size: 12px; line-height: 1.3; }
-.cell-sub.sn { color: var(--color-text-secondary); word-break: break-all; }
+.sn-cell { display: block; color: var(--color-text-secondary); font-size: 12px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .muted { color: var(--color-text-disabled); }
-.pop-photos { display: flex; flex-wrap: wrap; gap: 6px; }
-.pop-photo { width: 74px; height: 74px; border-radius: 6px; overflow: hidden; }
 
 .card-head { display: flex; justify-content: space-between; align-items: center; }
 .card-sub { font-size: 12px; color: var(--color-text-tertiary); }
@@ -290,6 +316,8 @@ onMounted(() => {
 .opt-meta { color: var(--color-text-tertiary); font-size: 12px; flex-shrink: 0; }
 
 .field-tip { font-size: 12px; color: var(--color-text-tertiary); line-height: 1.4; margin-top: 2px; }
+.field-tip.danger { color: var(--color-danger); }
+.field-tip .ok { color: var(--color-success); margin-left: 6px; }
 .preview { background: var(--color-primary-light); border-radius: 6px; padding: 10px 12px; margin: 2px 0 14px; }
 .preview b { color: var(--color-primary); font-size: 16px; }
 .preview-sub { font-size: 12px; color: var(--color-text-tertiary); margin-top: 2px; }

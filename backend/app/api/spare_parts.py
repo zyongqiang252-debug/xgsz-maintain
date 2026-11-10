@@ -24,6 +24,18 @@ def _sp_to_dict(s: SparePart) -> dict:
     return d
 
 
+def _split_serials(raw: Optional[str]) -> List[str]:
+    """把逗号/顿号/分号分隔的 SN 串拆成去重列表（中英文标点都认）"""
+    if not raw:
+        return []
+    out: List[str] = []
+    for item in raw.replace("，", ",").replace("、", ",").replace("；", ",").replace(";", ",").split(","):
+        s = item.strip()
+        if s and s not in out:
+            out.append(s)
+    return out
+
+
 # ==================== 进货单导入 Schema ====================
 class PurchaseItem(BaseModel):
     part_code: str = Field(..., max_length=50)
@@ -300,6 +312,17 @@ def consume_part(part_id: int, data: ConsumeIn, db: Session = Depends(get_db),
     before = float(part.stock_quantity or 0)
     reserved = float(part.reserved_quantity or 0)
     avail = before - reserved
+    out_serials = []
+    if data.serial_no:
+        for s in data.serial_no.replace("，", ",").replace("、", ",").split(","):
+            s = s.strip()
+            if s and s not in out_serials:
+                out_serials.append(s)
+        if len(out_serials) != int(data.quantity):
+            raise HTTPException(
+                status_code=400,
+                detail=f"SN 数量（{len(out_serials)} 个）与出库数量（{data.quantity:g}）不一致；一个 SN 只能对应一件",
+            )
     if data.quantity > avail:
         raise HTTPException(
             status_code=400,
@@ -330,12 +353,9 @@ def consume_part(part_id: int, data: ConsumeIn, db: Session = Depends(get_db),
     db.flush()
 
     # 按 SN 把对应实物实例标记为已装机/已出库
-    if data.serial_no:
+    if out_serials:
         from app.models.part_instance import PartInstance, PartInstanceStatus
-        for s in data.serial_no.replace("，", ",").replace("、", ",").split(","):
-            sn = s.strip()
-            if not sn:
-                continue
+        for sn in out_serials:
             inst = (db.query(PartInstance)
                     .filter(PartInstance.part_id == part.id, PartInstance.sn == sn,
                             PartInstance.status == PartInstanceStatus.IN_STOCK).first())
@@ -348,7 +368,6 @@ def consume_part(part_id: int, data: ConsumeIn, db: Session = Depends(get_db),
             if wo is not None:
                 inst.device_id = wo.device_id
                 inst.device_code = wo.device_code
-            break
 
     # 关联工单：把这次领用追加到 used_parts，并重算成本
     if wo is not None:
@@ -381,6 +400,23 @@ def stock_in_part(part_id: int, data: StockInIn, db: Session = Depends(get_db),
     if not part:
         raise HTTPException(status_code=404, detail="备件不存在")
 
+    # 按 SN 管理的高价值件：入库必须一物一码，数量与 SN 个数必须对得上
+    serials = _split_serials(data.serial_no)
+    if getattr(part, "need_sn", False):
+        qty = float(data.quantity)
+        if not qty.is_integer():
+            raise HTTPException(
+                status_code=400,
+                detail="该备件按 SN 管理，入库数量必须是整数（一物一码，不能填小数）",
+            )
+        need = int(qty)
+        if len(serials) != need:
+            raise HTTPException(
+                status_code=400,
+                detail=f"该备件按 SN 管理：入库 {need} 件要填 {need} 个 SN，"
+                       f"当前填了 {len(serials)} 个",
+            )
+
     before = float(part.stock_quantity or 0)
     after = before + data.quantity
     part.stock_quantity = int(after) if float(after).is_integer() else after
@@ -406,6 +442,11 @@ def stock_in_part(part_id: int, data: StockInIn, db: Session = Depends(get_db),
             s = s.strip()
             if s and s not in serials:
                 serials.append(s)
+    if serials and len(serials) != int(data.quantity):
+        raise HTTPException(
+            status_code=400,
+            detail=f"SN 数量（{len(serials)} 个）与入库数量（{data.quantity:g}）不一致；一个 SN 只能对应一件",
+        )
     if serials:
         from app.models.part_instance import PartInstance, PartInstanceStatus
         existing = {r[0] for r in db.query(PartInstance.sn).filter(
@@ -447,6 +488,16 @@ def import_purchase_orders(req: PurchaseImportRequest, db: Session = Depends(get
 
     for item in req.items:
         existing = db.query(SparePart).filter(SparePart.part_code == item.part_code).first()
+
+        # 按 SN 管理的件不能走批量导入（会变成"有数量没实物档案"），引导到入库页逐件登记
+        if existing is not None and getattr(existing, "need_sn", False):
+            result.skipped += 1
+            details.append({
+                "part_code": item.part_code,
+                "action": "skipped",
+                "reason": "该件按 SN 管理，请走「备件入库」页逐件登记 SN",
+            })
+            continue
 
         if existing:
             # 已有备件：累加库存
