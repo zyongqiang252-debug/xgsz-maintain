@@ -376,10 +376,16 @@ const handleChangePassword = async () => {
       old_password: pwdForm.old_password,
       new_password: pwdForm.new_password,
     })
-    ElMessage.success('密码修改成功，下次登录请使用新密码')
+    ElMessage.success('密码修改成功，请使用新密码重新登录')
     pwdForm.old_password = ''
     pwdForm.new_password = ''
     pwdForm.confirm_password = ''
+    // 强制退出，避免继续用旧 token，也避免浏览器自动填充旧密码造成"改了却登不上"的错觉
+    setTimeout(() => {
+      localStorage.removeItem('auth_token')
+      localStorage.removeItem('current_user')
+      window.location.href = '/login'
+    }, 800)
   } catch (e) {
     const detail = e?.response?.data?.detail
     ElMessage.error(typeof detail === 'string' ? detail : '修改失败')

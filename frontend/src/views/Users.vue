@@ -80,7 +80,7 @@
           <el-input v-model="form.username" placeholder="登录用户名" />
         </el-form-item>
         <el-form-item v-if="!editingId" label="密码" required>
-          <el-input v-model="form.password" type="password" placeholder="初始密码" show-password />
+          <el-input v-model="form.password" type="password" placeholder="初始密码" show-password autocomplete="new-password" name="new-user-initial-password" />
         </el-form-item>
         <el-form-item label="姓名" required>
           <el-input v-model="form.real_name" placeholder="真实姓名" />
