@@ -89,10 +89,16 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="负责人" width="88" show-overflow-tooltip>
+        <el-table-column label="负责人" width="116" show-overflow-tooltip>
           <template #default="{ row }">
             <span v-if="row.technician_name">{{ row.technician_name }}</span>
             <span v-else class="muted">未指派</span>
+            <el-tag
+              v-if="row.transfer_from_name"
+              size="small" type="warning" effect="plain"
+              :title="`由 ${row.transfer_from_name} 转派给你`"
+              style="margin-left:4px"
+            >转派</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="时效" width="104" align="center">

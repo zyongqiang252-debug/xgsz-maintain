@@ -143,9 +143,24 @@ def list_work_orders(
         users_q = db.query(User).filter(User.id.in_(user_ids)).all()
         user_emp_map = {u.id: u.employee_id for u in users_q}
         user_name_map = {u.id: u.real_name for u in users_q}
+    # 是否为“别人转派给我”的单：批量取每人最近一条「改派：A → B」日志
+    transfer_map = {}
+    assigned_ids = [w.id for w in items if w.status == WorkOrderStatus.ASSIGNED]
+    if assigned_ids:
+        logs = (db.query(WorkOrderProgressLog)
+                .filter(WorkOrderProgressLog.work_order_id.in_(assigned_ids),
+                        WorkOrderProgressLog.remark.like("改派：%"))
+                .order_by(WorkOrderProgressLog.id.desc()).all())
+        for lg in logs:
+            if lg.work_order_id in transfer_map:
+                continue
+            remark = lg.remark or ""
+            if "→" in remark:
+                transfer_map[lg.work_order_id] = remark.split("：", 1)[1].split("→")[0].strip()
     result_items = []
     for w in items:
         d = _wo_to_dict(w)
+        d['transfer_from_name'] = transfer_map.get(w.id)
         d['created_by_employee_id'] = user_emp_map.get(w.created_by) if w.created_by else None
         d['technician_name'] = user_name_map.get(w.technician_id) if w.technician_id else None
         d['device_type'] = w.device.device_type if w.device else None
@@ -424,6 +439,16 @@ def get_work_order(work_order_id: int, db: Session = Depends(get_db)):
     if work_order.technician_id:
         tech = db.query(User).filter(User.id == work_order.technician_id).first()
         resp.technician_name = tech.real_name if tech else None
+    # 是否为别人转派给我的单（取最近一条「改派：A → B」进度日志）
+    try:
+        if work_order.status == WorkOrderStatus.ASSIGNED and work_order.progress_logs:
+            for l in sorted(work_order.progress_logs, key=lambda x: x.id or 0, reverse=True):
+                remark = (l.remark or "")
+                if remark.startswith("改派：") and "→" in remark:
+                    resp.transfer_from_name = remark.split("：", 1)[1].split("→")[0].strip()
+                    break
+    except Exception:
+        resp.transfer_from_name = None
     return resp
 
 
@@ -1035,7 +1060,8 @@ def _notify_inapp(wo: WorkOrder, event: str, actor: str = "", extra: str = "") -
         }
         content_map = {
             "submitted": f"工单 {wo_no}（{device}）已提交报修，等待派工。故障：{fault}",
-            "assigned": f"工单 {wo_no}（{device}）已派发给你。故障：{fault}",
+            "assigned": f"工单 {wo_no}（{device}）已派发给你。故障：{fault}"
+                        + (f"（{extra}）" if extra else ""),
             "rejected": f"工单 {wo_no}（{device}）被退回。{('原因：' + extra) if extra else ''}",
             "archived": f"工单 {wo_no}（{device}）已归档完成。{extra}",
         }
@@ -1814,6 +1840,16 @@ def _build_work_order_response(work_order: WorkOrder, db: Session) -> WorkOrderR
     if work_order.technician_id:
         tech = db.query(User).filter(User.id == work_order.technician_id).first()
         resp.technician_name = tech.real_name if tech else None
+    # 是否为“别人转派给我”的单：从最近一条「改派：A → B」进度日志取原负责人
+    try:
+        if work_order.status == WorkOrderStatus.ASSIGNED and work_order.progress_logs:
+            for l in sorted(work_order.progress_logs, key=lambda x: x.id or 0, reverse=True):
+                remark = (l.remark or "")
+                if remark.startswith("改派：") and "→" in remark:
+                    resp.transfer_from_name = remark.split("：", 1)[1].split("→")[0].strip()
+                    break
+    except Exception:
+        resp.transfer_from_name = None
     if work_order.progress_logs:
         resp.progress_logs = [
             WorkOrderProgressLogResponse(

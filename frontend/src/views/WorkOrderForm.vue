@@ -51,6 +51,7 @@
               type="primary" size="small" :loading="starting" @click="startProcessing"
             >{{ startActionLabel }}</el-button>
             <el-button size="small" :loading="printing" @click="printPdf">打印 / PDF</el-button>
+            <el-tag v-if="form.transfer_from_name" type="warning" effect="plain" size="small">转派自 {{ form.transfer_from_name }}</el-tag>
             <el-tag :type="statusTagType" size="large">{{ statusGroupLabel }}</el-tag>
           </div>
         </div>

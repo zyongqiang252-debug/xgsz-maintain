@@ -241,6 +241,7 @@ class WorkOrderResponse(BaseModel):
     created_by: Optional[int] = None
     created_by_employee_id: Optional[str] = None
     technician_name: Optional[str] = None
+    transfer_from_name: Optional[str] = None
     progress_logs: List["WorkOrderProgressLogResponse"] = []
     # SLA / 回访 / 成本
     response_due_at: Optional[datetime] = None
