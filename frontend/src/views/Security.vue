@@ -680,7 +680,12 @@ const loadLoginLogs = async () => {
     loginHistory.value = (res.items || []).map((it) => ({
       time: (it.created_at || '').replace('T', ' ').slice(0, 19),
       ip: it.ip || '-',
-      device: simplifyUA(it.user_agent) + (it.login_type === 'code' ? ' · 验证码登录' : (it.login_type === 'dingtalk' ? ' · 钉钉' : '')),
+      device: simplifyUA(it.user_agent) + ({
+        code: ' · 验证码登录',
+        dingtalk: ' · 钉钉',
+        password_change: ' · 修改密码',
+        password_reset: ' · 密码被重置',
+      }[it.login_type] || ''),
       status: it.success ? '成功' : ('失败(' + (it.reason || '') + ')'),
       success: it.success,
     }))

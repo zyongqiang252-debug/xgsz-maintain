@@ -345,7 +345,7 @@ def verify_code(req: VerifyCodeRequest):
 
 
 @router.post("/reset-password", summary="通过手机验证码重置密码")
-def reset_password(req: ResetPasswordRequest, db: Session = Depends(get_db)):
+def reset_password(req: ResetPasswordRequest, request: Request, db: Session = Depends(get_db)):
     """
     忘记密码流程：手机号 + 验证码 → 设置新密码
     """
@@ -371,6 +371,7 @@ def reset_password(req: ResetPasswordRequest, db: Session = Depends(get_db)):
 
     user.password_hash = hash_password(req.new_password)
     db.commit()
+    _log_login(db, request, user, True, "通过手机验证码重置密码", "password_reset", user.username)
 
     logger.info(f"[Auth] 密码重置成功: phone={req.phone}, user={user.real_name}")
     return {"message": "密码重置成功，请使用新密码登录"}
@@ -1108,7 +1109,7 @@ def bind_phone(req: BindPhoneRequest, db: Session = Depends(get_db),
 
 
 @router.post("/change-password", summary="修改密码（校验原密码）")
-def change_password(req: ChangePasswordRequest, db: Session = Depends(get_db),
+def change_password(req: ChangePasswordRequest, request: Request, db: Session = Depends(get_db),
                     current_user: User = Depends(get_current_user)):
     """已登录用户用原密码修改自己的密码"""
     if not req.new_password or len(req.new_password) < 6:
@@ -1129,5 +1130,6 @@ def change_password(req: ChangePasswordRequest, db: Session = Depends(get_db),
 
     current_user.password_hash = hash_password(req.new_password)
     db.commit()
+    _log_login(db, request, current_user, True, "用户自主修改密码", "password_change", current_user.username)
     logger.info(f"[Auth] 密码修改成功: user={current_user.id}")
     return {"message": "密码修改成功，请使用新密码登录"}

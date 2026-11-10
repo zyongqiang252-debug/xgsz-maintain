@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from typing import Optional
 from loguru import logger
@@ -134,6 +134,7 @@ def create_user(data: UserCreate, db: Session = Depends(get_db), current_user: U
 def update_user(
     user_id: int,
     data: UserUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -158,6 +159,14 @@ def update_user(
         user.password_hash = hash_password(new_password)
     db.commit()
     db.refresh(user)
+    if new_password:
+        # 密码被管理员重置：写审计（与登录共用 login_logs，可在账号安全页查看）
+        try:
+            from app.api.auth import _log_login
+            _log_login(db, request, user, True, f"管理员 {current_user.real_name} 重置密码",
+                       "password_reset", user.username)
+        except Exception as e:
+            logger.warning(f"[Users] 写密码重置审计失败: {e}")
     cache_service.delete(f"user:{user_id}")
     return user
 
