@@ -69,6 +69,8 @@
         <el-table-column label="工单编号" width="166" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="wo-no">{{ row.work_order_no }}</span>
+            <el-tag v-if="row.customer_name" size="small" type="success" effect="plain"
+                    :title="`客户报修：${row.customer_name}`" style="margin-left:4px">客户</el-tag>
             <el-tag v-if="row.order_type && row.order_type !== 'REPAIR'" size="small" effect="plain" style="margin-left:4px">
               {{ orderTypeLabel(row.order_type) }}
             </el-tag>

@@ -64,6 +64,19 @@ const router = createRouter({
       component: () => import('../views/Login.vue'),
       meta: { title: '登录', noAuth: true },
     },
+    // 客户报修门户（独立于内部布局）
+    {
+      path: '/c/login',
+      name: 'CustomerLogin',
+      component: () => import('../views/customer/CustomerLogin.vue'),
+      meta: { title: '客户报修登录', noAuth: true },
+    },
+    {
+      path: '/c',
+      name: 'CustomerPortal',
+      component: () => import('../views/customer/CustomerPortal.vue'),
+      meta: { title: '客户报修中心', noAuth: true },
+    },
     // 移动端 H5 路由
     {
       path: '/m',

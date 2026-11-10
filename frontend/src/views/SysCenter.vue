@@ -4,6 +4,9 @@
       <el-tab-pane label="用户管理" name="users" lazy>
         <component :is="Users" />
       </el-tab-pane>
+      <el-tab-pane v-if="isAdmin" label="客户管理" name="customers" lazy>
+        <component :is="Customers" />
+      </el-tab-pane>
       <el-tab-pane v-if="isAdmin" label="系统设置" name="settings" lazy>
         <component :is="SystemSettings" />
       </el-tab-pane>
@@ -19,6 +22,7 @@ const route = useRoute()
 const router = useRouter()
 
 const Users = defineAsyncComponent(() => import('./Users.vue'))
+const Customers = defineAsyncComponent(() => import('./Customers.vue'))
 const SystemSettings = defineAsyncComponent(() => import('./SystemSettings.vue'))
 
 const currentUser = (() => {
@@ -26,7 +30,7 @@ const currentUser = (() => {
 })()
 const isAdmin = currentUser.role === 'ADMIN'
 
-const VALID = ['users', 'settings']
+const VALID = ['users', 'customers', 'settings']
 const tab = ref(VALID.includes(route.query.tab) ? String(route.query.tab) : 'users')
 
 const onTabChange = (name) => {

@@ -72,6 +72,8 @@ class WorkOrder(BaseModel):
     dispatch_score = Column(JSONB, nullable=True, comment="派工评分详情")
     completion_report = Column(JSONB, nullable=True, comment="维修完成报告（工时/备件/照片）")
     created_by = Column(Integer, ForeignKey("users.id"), comment="创建者 ID，仅创建者可编辑")
+    customer_id = Column(Integer, ForeignKey("customers.id"), index=True, comment="客户报修来源")
+    customer_name = Column(String(100), comment="客户联系人快照")
 
     # ===== SLA（响应/修复时限，建单时按优先级计算）=====
     response_due_at = Column(TIMESTAMP, comment="响应截止（接单）")

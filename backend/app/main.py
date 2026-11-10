@@ -22,7 +22,7 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.ws_manager import manager as notification_ws
-from app.api import work_orders, knowledge, devices, spare_parts, users, categories, search, dashboard, dispatch, duty_schedules, leave_requests, notifications
+from app.api import work_orders, knowledge, devices, spare_parts, users, categories, search, dashboard, dispatch, duty_schedules, leave_requests, notifications, customer, customers
 from app.api.work_order_imports import router as work_order_imports_router
 from app.api.manual_codes import router as manual_codes_router
 from app.api.dingtalk import router as dingtalk_router, ensure_oa_services_started
@@ -138,6 +138,8 @@ app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["数据�
 app.include_router(duty_schedules.router, prefix="/api/v1/duty-schedules", tags=["排班管理"])
 app.include_router(leave_requests.router, prefix="/api/v1/leave-requests", tags=["请假申请"])
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["站内通知"])
+app.include_router(customer.router, prefix="/api/v1", tags=["客户报修门户"])
+app.include_router(customers.router, prefix="/api/v1", tags=["客户管理"])
 app.include_router(dispatch.router, tags=["派工管理"])
 app.include_router(dingtalk_mock_router, tags=["钉钉扫码模拟"])
 app.include_router(work_order_imports_router, prefix="/api/v1/work-order-imports", tags=["历史工单导入"])
