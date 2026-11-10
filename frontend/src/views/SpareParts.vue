@@ -72,7 +72,7 @@
         </el-table-column>
         <el-table-column prop="unit_price" label="单价" width="96" align="right" />
         <el-table-column prop="location" label="存放位置" width="106" show-overflow-tooltip />
-        <el-table-column label="操作" width="118" align="right" header-align="left">
+        <el-table-column label="操作" width="118" header-align="left">
           <template #default="{ row }">
             <div class="action-group">
               <IconAction :icon="ShoppingCart" title="领用" @click="openConsume(row)" />
@@ -499,7 +499,7 @@ const handleExport = async () => {
 .stock-out::before { background: #F53F3F; }
 .stock-out { color: #F53F3F; }
 
-.action-group { display: flex; gap: 4px; align-items: center; justify-content: flex-end; white-space: nowrap; }
+.action-group { display: flex; gap: 4px; align-items: center; justify-content: flex-start; white-space: nowrap; }
 /* 库存列表头排序：单图标替代默认双三角，状态更直观 */
 .sp-table :deep(.el-table__header .caret-wrapper) { display: none; }
 .stock-sort { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; user-select: none; }

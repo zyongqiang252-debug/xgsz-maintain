@@ -42,7 +42,7 @@
         <el-table-column prop="created_at" label="创建时间" width="140">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="138" align="right" header-align="left">
+        <el-table-column label="操作" width="138" header-align="left">
           <template #default="{ row }">
             <div class="user-op">
               <IconAction :icon="Edit" title="编辑" @click="handleEdit(row)" />
@@ -366,7 +366,7 @@ onMounted(fetchData)
 .page-title { font-size: 20px; font-weight: 600; color: var(--color-text-primary); }
 .table-card { flex: 1; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
-.user-op { display: flex; align-items: center; justify-content: flex-end; gap: 4px; white-space: nowrap; }
+.user-op { display: flex; align-items: center; justify-content: flex-start; gap: 4px; white-space: nowrap; }
 
 .role-tag {
   display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; line-height: 20px;

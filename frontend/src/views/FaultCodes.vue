@@ -58,7 +58,7 @@
           {{ formatTime(row.created_at) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="104" align="right" header-align="left">
+      <el-table-column label="操作" width="104" header-align="left">
         <template #default="{ row }">
           <div class="fc-op">
             <IconAction :icon="Edit" title="修改" @click="openEditDialog(row)" />
@@ -349,7 +349,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.fc-op { display: flex; justify-content: flex-end; align-items: center; gap: 4px; }
+.fc-op { display: flex; justify-content: flex-start; align-items: center; gap: 4px; }
 .fault-table :deep(.el-table__row) { cursor: pointer; }
 .fault-codes-page { padding: 0 4px; }
 
