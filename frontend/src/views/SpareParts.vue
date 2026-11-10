@@ -44,12 +44,26 @@
 
     <!-- 数据表格 -->
     <el-card class="table-card" shadow="never">
-      <el-table :data="list" stripe class="sp-table">
+      <el-table ref="tableRef" :data="list" stripe class="sp-table" @sort-change="onSortChange">
         <el-table-column prop="part_code" label="备件编码" width="128" show-overflow-tooltip />
         <el-table-column prop="part_name" label="备件名称" min-width="150" show-overflow-tooltip />
         <el-table-column prop="specification" label="规格型号" width="118" show-overflow-tooltip />
         <el-table-column prop="unit" label="单位" width="52" align="center" />
-        <el-table-column prop="stock_quantity" label="库存" width="68" sortable align="right" />
+        <el-table-column
+          prop="stock_quantity" label="库存" width="88" align="right"
+          sortable="custom" :sort-orders="['ascending', 'descending', null]"
+        >
+          <template #header>
+            <span class="stock-sort" :class="stockSortOrder || 'none'" title="点击切换升序 / 降序">
+              库存
+              <el-icon class="sort-arrow">
+                <SortUp v-if="stockSortOrder === 'ascending'" />
+                <SortDown v-else-if="stockSortOrder === 'descending'" />
+                <Sort v-else />
+              </el-icon>
+            </span>
+          </template>
+        </el-table-column>
         <el-table-column prop="safety_stock" label="安全库存" width="76" align="right" />
         <el-table-column label="状态" width="72" align="center">
           <template #default="{ row }">
@@ -237,7 +251,7 @@
 <script setup>
 import { ref, onMounted, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ShoppingCart, Edit, View, Delete } from '@element-plus/icons-vue'
+import { ShoppingCart, Edit, View, Delete, Sort, SortUp, SortDown } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import request from '../api'
 import { downloadFile } from '../utils/download'
@@ -260,6 +274,8 @@ const keyword = ref('')
 const typeFilter = ref('')
 const deviceTypeOptions = ref([])
 const stockFilter = ref('')
+const stockSortOrder = ref('')
+const tableRef = ref(null)
 const page = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
@@ -342,6 +358,13 @@ const stockClass = (row) => {
   return 'stock-ok'
 }
 
+const onSortChange = ({ prop, order }) => {
+  if (prop !== 'stock_quantity') return
+  stockSortOrder.value = order || ''
+  page.value = 1
+  fetchData()
+}
+
 const fetchData = async () => {
   loading.value = true
   try {
@@ -349,6 +372,10 @@ const fetchData = async () => {
     if (keyword.value) params.keyword = keyword.value
     if (typeFilter.value) params.device_type = typeFilter.value
     if (stockFilter.value) params.stock_status = stockFilter.value
+    if (stockSortOrder.value) {
+      params.sort_by = 'stock_quantity'
+      params.sort_order = stockSortOrder.value === 'ascending' ? 'asc' : 'desc'
+    }
     const res = await request.get('/spare-parts/', { params })
     list.value = res.items
     total.value = res.total
@@ -364,7 +391,7 @@ const fetchAlerts = async () => {
 }
 
 const handleSearch = () => { page.value = 1; fetchData() }
-const handleReset = () => { keyword.value = ''; typeFilter.value = ''; stockFilter.value = ''; page.value = 1; fetchData() }
+const handleReset = () => { keyword.value = ''; typeFilter.value = ''; stockFilter.value = ''; stockSortOrder.value = ''; tableRef.value?.clearSort?.(); page.value = 1; fetchData() }
 const handleAlertFilter = () => { stockFilter.value = 'out_of_stock'; page.value = 1; fetchData() }
 
 const handleDelete = async (row) => {  try {
@@ -473,6 +500,14 @@ const handleExport = async () => {
 .stock-out { color: #F53F3F; }
 
 .action-group { display: flex; gap: 4px; align-items: center; justify-content: flex-end; white-space: nowrap; }
+/* 库存列表头排序：单图标替代默认双三角，状态更直观 */
+.sp-table :deep(.el-table__header .caret-wrapper) { display: none; }
+.stock-sort { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; user-select: none; }
+.stock-sort .sort-arrow { font-size: 14px; color: #86909C; transition: color .15s; }
+.stock-sort:hover { color: #0FC6C2; }
+.stock-sort:hover .sort-arrow,
+.stock-sort.ascending .sort-arrow,
+.stock-sort.descending .sort-arrow { color: #0FC6C2; }
 .sp-table :deep(.el-table__cell) { padding: 8px 0; }
 .sp-table :deep(.el-button.is-link) { padding: 0 2px; height: auto; }
 </style>

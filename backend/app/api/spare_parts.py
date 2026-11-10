@@ -54,6 +54,8 @@ def list_spare_parts(
     device_type: Optional[str] = None,
     keyword: Optional[str] = None,
     stock_status: Optional[str] = Query(None, description="sufficient / low_stock / out_of_stock"),
+    sort_by: Optional[str] = Query(None, description="stock_quantity / safety_stock / part_code / part_name"),
+    sort_order: Optional[str] = Query(None, description="asc / desc"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -77,7 +79,18 @@ def list_spare_parts(
         query = query.filter(SparePart.stock_quantity <= 0)
 
     total = query.count()
-    items = query.order_by(SparePart.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    sort_cols = {
+        "stock_quantity": SparePart.stock_quantity,
+        "safety_stock": SparePart.safety_stock,
+        "part_code": SparePart.part_code,
+        "part_name": SparePart.part_name,
+    }
+    if sort_by in sort_cols:
+        col = sort_cols[sort_by]
+        query = query.order_by(col.asc() if sort_order == "asc" else col.desc())
+    else:
+        query = query.order_by(SparePart.id.desc())
+    items = query.offset((page - 1) * page_size).limit(page_size).all()
     return {"total": total, "items": [_sp_to_dict(s) for s in items], "page": page, "page_size": page_size}
 
 
