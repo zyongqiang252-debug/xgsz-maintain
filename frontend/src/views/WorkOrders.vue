@@ -134,9 +134,9 @@
               </div>
               <div class="op-primary" v-if="hasPrimaryAction(row)">
                 <el-button
-                  v-if="isSupervisor && ['SUBMITTED', 'ASSIGNED'].includes(row.status)"
+                  v-if="isSupervisor && ['SUBMITTED', 'ASSIGNED', 'ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(row.status)"
                   size="small" type="primary" @click="openDispatch(row)"
-                >{{ row.status === 'ASSIGNED' ? '改派' : '派工' }}</el-button>
+                >{{ row.status === 'SUBMITTED' ? '派工' : '改派' }}</el-button>
                 <el-button
                   v-else-if="rowActionText(row) === '转派'"
                   size="small" type="primary" @click="onRowCommand('dispatch', row)"
@@ -216,9 +216,9 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item :label="dispatchNeedsReason ? '改派原因' : '备注'" :required="dispatchNeedsReason">
           <el-input v-model="dispatch.remark" type="textarea" :rows="2" maxlength="100"
-                    placeholder="选填，例如：优先处理、带好备件" />
+                    :placeholder="dispatchNeedsReason ? '必填，例如：维修员不熟悉该设备/临时请假' : '选填，例如：优先处理、带好备件'" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -275,7 +275,7 @@ const canOperateProgress = (row) =>
 
 // 操作列是否渲染「主操作」按钮（派工/改派、领取/转派、流程推进）
 const hasPrimaryAction = (row) =>
-  (isSupervisor && ['SUBMITTED', 'ASSIGNED'].includes(row.status)) ||
+  (isSupervisor && ['SUBMITTED', 'ASSIGNED', 'ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(row.status)) ||
   !!rowActionText(row) ||
   canOperateProgress(row)
 
@@ -289,11 +289,14 @@ const isSelfDispatch = computed(() => {
 })
 const dispatchTitle = computed(() => {
   if (isSelfDispatch.value) return '转派工单'
-  return dispatch.row?.status === 'ASSIGNED' ? '工单改派' : '工单派工'
+  return dispatch.row?.status === 'SUBMITTED' ? '工单派工' : '工单改派'
 })
+// 接单/到场/检查中阶段改派必须填写原因
+const dispatchNeedsReason = computed(() =>
+  ['ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(dispatch.row?.status))
 const dispatchConfirmText = computed(() => {
   if (isSelfDispatch.value) return '确认转派'
-  return dispatch.row?.status === 'ASSIGNED' ? '确认改派' : '确认派工'
+  return dispatch.row?.status === 'SUBMITTED' ? '确认派工' : '确认改派'
 })
 const editDenyReason = (row) => {
   if (row.status === 'COMPLETED') return '已完成工单不可编辑'
@@ -402,15 +405,22 @@ const openDispatch = async (row) => {
 }
 const submitDispatch = async () => {
   if (!dispatch.technicianId) return ElMessage.warning('请选择维修员')
+  if (dispatchNeedsReason.value && !String(dispatch.remark || '').trim()) {
+    return ElMessage.warning('接单后改派必须填写原因')
+  }
+  // 已派单/已接单/已到场/检查中为同状态改派；待派工/草稿走正常派工
+  const reassignStatuses = ['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'INSPECTING']
+  const toStatus = reassignStatuses.includes(dispatch.row?.status) ? dispatch.row.status : 'ASSIGNED'
   dispatch.submitting = true
   try {
     await request.post(`/work-orders/${dispatch.row.id}/transition`, {
-      to_status: 'ASSIGNED',
+      to_status: toStatus,
       technician_id: dispatch.technicianId,
       source: 'SUPERVISOR_DISPATCH',
       remark: dispatch.remark || null,
     })
-    ElMessage.success(isSelfDispatch.value ? '转派成功' : (dispatch.row?.status === 'ASSIGNED' ? '改派成功' : '派工成功'))
+    ElMessage.success(isSelfDispatch.value ? '转派成功'
+      : (dispatch.row?.status === 'SUBMITTED' ? '派工成功' : '改派成功'))
     dispatch.visible = false
     fetchData()
   } catch (e) {

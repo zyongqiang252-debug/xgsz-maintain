@@ -1094,50 +1094,82 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
     from_status_val = work_order.status.value if work_order.status else None
 
     if from_status_val == to_status_val:
-        # 已派单状态下改派：允许只更换维修员（状态不变）
-        if (to_status_val == WorkOrderStatus.ASSIGNED.value and data.technician_id
-                and data.technician_id != work_order.technician_id):
-            is_owner = work_order.technician_id == current_user.id
-            if current_user.role not in (UserRole.SUPERVISOR.value, UserRole.ADMIN.value) and not is_owner:
-                owner = db.query(User).filter(User.id == work_order.technician_id).first()
-                owner_name = owner.real_name if owner else "其他人"
+        # 状态不变，仅更换负责人：已派单 / 已接单 / 已到场 / 检查中
+        reassignable = {
+            WorkOrderStatus.ASSIGNED.value,
+            WorkOrderStatus.ACCEPTED.value,
+            WorkOrderStatus.ARRIVED.value,
+            WorkOrderStatus.INSPECTING.value,
+        }
+        if to_status_val not in reassignable:
+            raise HTTPException(status_code=400, detail="当前状态不支持转派/改派")
+        if not data.technician_id:
+            raise HTTPException(status_code=400, detail="转派必须指定新维修员")
+        if data.technician_id == work_order.technician_id:
+            raise HTTPException(status_code=400, detail="新负责人与当前负责人相同，无需转派")
+
+        is_supervisor_role = current_user.role in (UserRole.SUPERVISOR.value, UserRole.ADMIN.value)
+        is_owner = work_order.technician_id == current_user.id
+        if not is_supervisor_role:
+            # 维修员只能在「已派单」阶段转派自己名下的工单
+            if to_status_val != WorkOrderStatus.ASSIGNED.value or not is_owner:
                 raise HTTPException(
                     status_code=403,
-                    detail=f"该工单当前负责人是 {owner_name}，不能重复领取或改派")
-            tech = db.query(User).filter(
-                User.id == data.technician_id, User.is_active == True).first()
-            if not tech:
-                raise HTTPException(status_code=400, detail="指定的维修员不存在或已停用")
+                    detail="只有主管/管理员可改派；维修员仅能在已派单阶段转派自己名下的工单")
+        # 接单之后改派可能已产生现场工作，必须写原因
+        if to_status_val in (WorkOrderStatus.ACCEPTED.value,
+                             WorkOrderStatus.ARRIVED.value,
+                             WorkOrderStatus.INSPECTING.value) \
+                and not (data.remark or "").strip():
+            raise HTTPException(status_code=400, detail="接单后改派必须填写改派原因")
 
-            old_tech = db.query(User).filter(User.id == work_order.technician_id).first()
-            old_name = old_tech.real_name if old_tech else "-"
-            old_id = work_order.technician_id
+        tech = db.query(User).filter(
+            User.id == data.technician_id, User.is_active == True).first()
+        if not tech:
+            raise HTTPException(status_code=400, detail="指定的维修员不存在或已停用")
+        if tech.role != UserRole.TECHNICIAN.value:
+            raise HTTPException(status_code=400, detail="只能转派给维修员")
 
-            work_order.technician_id = tech.id
-            work_order.assignee_id = tech.id
-            work_order.dispatcher_id = current_user.id
-            work_order.dispatched_at = datetime.now()
-            _add_progress_log(
-                db=db, work_order_id=work_order.id,
-                from_status=work_order.status, to_status=work_order.status,
-                operator_id=current_user.id, operator_name=current_user.real_name,
-                source=data.source or "WEB",
-                remark=f"改派：{old_name} → {tech.real_name}" + (f"（{data.remark}）" if data.remark else ""),
+        old_tech = db.query(User).filter(User.id == work_order.technician_id).first()
+        old_name = old_tech.real_name if old_tech else "-"
+        old_id = work_order.technician_id
+
+        work_order.technician_id = tech.id
+        work_order.assignee_id = tech.id
+        work_order.dispatcher_id = current_user.id
+        work_order.dispatched_at = datetime.now()
+        _add_progress_log(
+            db=db, work_order_id=work_order.id,
+            from_status=work_order.status, to_status=work_order.status,
+            operator_id=current_user.id, operator_name=current_user.real_name,
+            source=data.source or "WEB",
+            remark=f"改派：{old_name} → {tech.real_name}" + (f"（{data.remark}）" if data.remark else ""),
+        )
+        # 工作量：原维修员减一，新维修员加一
+        if old_id:
+            _update_workload(db, old_id, -1)
+        _update_workload(db, tech.id, +1)
+        # 通知原负责人：工单已转出
+        try:
+            from app.api.notifications import create_notification
+            create_notification(
+                db, user_id=old_id, type="WORK_ORDER", title="工单已转出",
+                content=f"工单 {work_order.work_order_no} 已由你转给 {tech.real_name}"
+                        + (f"，原因：{data.remark}" if data.remark else ""),
+                work_order_id=work_order.id,
+                level=AL.from_priority(getattr(work_order, "priority", None)),
             )
-            # 工作量：原维修员减一，新维修员加一
-            if old_id:
-                _update_workload(db, old_id, -1)
-            _update_workload(db, tech.id, +1)
-            db.commit()
-            db.refresh(work_order)
-            logger.info(f"[WorkOrder] 改派 #{work_order.id}: {old_name} -> {tech.real_name}")
-            try:
-                _notify_wo(work_order, "assigned", current_user.real_name,
-                           extra=f"改派：{old_name} → {tech.real_name}")
-            except Exception as e:
-                logger.warning(f"[WorkOrder] 改派通知失败（忽略）: {e}")
-            return _build_work_order_response(work_order, db)
-
+        except Exception as e:
+            logger.warning(f"[WorkOrder] 转出通知写入失败（忽略）: {e}")
+        db.commit()
+        db.refresh(work_order)
+        logger.info(f"[WorkOrder] 改派 #{work_order.id}: {old_name} -> {tech.real_name} "
+                    f"（状态 {from_status_val}，操作人 {current_user.real_name}）")
+        try:
+            _notify_wo(work_order, "assigned", current_user.real_name,
+                       extra=f"改派：{old_name} → {tech.real_name}")
+        except Exception as e:
+            logger.warning(f"[WorkOrder] 改派通知失败（忽略）: {e}")
         return _build_work_order_response(work_order, db)
 
     if not _is_allowed_transition(from_status_val, to_status_val):

@@ -27,9 +27,9 @@
           <h3>{{ form.work_order_no }}</h3>
           <div class="head-right">
             <el-button
-              v-if="['SUBMITTED', 'ASSIGNED'].includes(form.status) && canDispatch"
+              v-if="['SUBMITTED', 'ASSIGNED', 'ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(form.status) && canDispatch"
               type="primary" plain size="small" @click="openDispatch"
-            >{{ form.status === 'ASSIGNED' ? '改派' : '派工' }}</el-button>
+            >{{ form.status === 'SUBMITTED' ? '派工' : '改派' }}</el-button>
             <el-button
               v-if="form.status === 'SUBMITTED' && canClaim"
               type="primary" size="small" :loading="claiming" @click="claimTask"
@@ -148,13 +148,14 @@
                        :value="t.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="dispatchDlg.remark" type="textarea" :rows="2" maxlength="100" placeholder="选填" />
+        <el-form-item :label="dispatchNeedsReason ? '改派原因' : '备注'" :required="dispatchNeedsReason">
+          <el-input v-model="dispatchDlg.remark" type="textarea" :rows="2" maxlength="100"
+                    :placeholder="dispatchNeedsReason ? '必填，例如：维修员不熟悉该设备/临时请假' : '选填'" />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dispatchDlg.visible = false">取消</el-button>
-        <el-button type="primary" :loading="dispatchDlg.saving" @click="submitDispatch">{{ dispatchTitle === '转派工单' ? '确认转派' : (form.status === 'ASSIGNED' ? '确认改派' : '确认派工') }}</el-button>
+        <el-button type="primary" :loading="dispatchDlg.saving" @click="submitDispatch">{{ dispatchTitle === '转派工单' ? '确认转派' : (form.status === 'SUBMITTED' ? '确认派工' : '确认改派') }}</el-button>
       </template>
     </el-dialog>
 
@@ -910,7 +911,8 @@ const claimTask = async () => {
   }
 }
 
-const dispatchTitle = computed(() => (!canDispatch.value && form.status === 'ASSIGNED') ? '转派工单' : (form.status === 'ASSIGNED' ? '工单改派' : '工单派工'))
+const dispatchTitle = computed(() => (!canDispatch.value && form.status === 'ASSIGNED') ? '转派工单' : (form.status === 'SUBMITTED' ? '工单派工' : '工单改派'))
+const dispatchNeedsReason = computed(() => ['ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(form.status))
 const dispatchDlg = reactive({ visible: false, technicianId: null, remark: '', technicians: [], saving: false })
 const openDispatch = async () => {
   Object.assign(dispatchDlg, { visible: true, technicianId: null, remark: '', saving: false })
@@ -922,15 +924,20 @@ const openDispatch = async () => {
 }
 const submitDispatch = async () => {
   if (!dispatchDlg.technicianId) return ElMessage.warning('请选择维修员')
+  if (dispatchNeedsReason.value && !String(dispatchDlg.remark || '').trim()) {
+    return ElMessage.warning('接单后改派必须填写原因')
+  }
+  const reassignStatuses = ['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'INSPECTING']
+  const toStatus = reassignStatuses.includes(form.status) ? form.status : 'ASSIGNED'
   dispatchDlg.saving = true
   try {
     await request.post(`/work-orders/${form.id}/transition`, {
-      to_status: 'ASSIGNED',
+      to_status: toStatus,
       technician_id: dispatchDlg.technicianId,
       source: 'SUPERVISOR_DISPATCH',
       remark: dispatchDlg.remark || null,
     })
-    ElMessage.success(!canDispatch.value ? '转派成功' : (form.status === 'ASSIGNED' ? '改派成功' : '派工成功'))
+    ElMessage.success(!canDispatch.value ? '转派成功' : (form.status === 'SUBMITTED' ? '派工成功' : '改派成功'))
     dispatchDlg.visible = false
     const res = await request.get(`/work-orders/${form.id}`)
     Object.assign(form, res)
