@@ -86,9 +86,10 @@
         </el-table-column>
         <el-table-column prop="unit_price" label="单价" width="96" align="right" />
         <el-table-column prop="location" label="存放位置" width="106" show-overflow-tooltip />
-        <el-table-column label="操作" width="118" header-align="left">
+        <el-table-column label="操作" width="150" header-align="left">
           <template #default="{ row }">
             <div class="action-group">
+              <IconAction :icon="Tickets" title="SN 明细" @click="openInstances(row)" />
               <IconAction :icon="ShoppingCart" title="领用" @click="openConsume(row)" />
               <IconAction
                 v-if="canManage"
@@ -265,13 +266,45 @@
         <el-button type="primary" :loading="consume.loading" @click="submitConsume">确认领用</el-button>
       </template>
     </el-dialog>
+
+    <!-- SN 明细 -->
+    <el-dialog v-model="instances.visible" :title="`SN 明细 · ${instances.row?.part_name || ''}`" width="820px">
+      <el-table :data="instances.rows" v-loading="instances.loading" size="small" stripe>
+        <el-table-column prop="sn" label="序列号 SN" min-width="150" show-overflow-tooltip />
+        <el-table-column label="状态" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="instStatusType(row.status)" effect="plain">{{ row.status_label }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="location_text" label="库位" width="130" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.location_text || '—' }}</template>
+        </el-table-column>
+        <el-table-column prop="device_code" label="装机设备" width="130" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.device_code || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="关联工单" width="100">
+          <template #default="{ row }">
+            <el-link v-if="row.work_order_id" type="primary" @click="router.push(`/work-orders/${row.work_order_id}`)">
+              #{{ row.work_order_id }}
+            </el-link>
+            <span v-else>—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="入库时间" width="150">
+          <template #default="{ row }">{{ (row.created_at || '').replace('T', ' ').slice(0, 16) }}</template>
+        </el-table-column>
+      </el-table>
+      <div v-if="!instances.loading && !instances.rows.length" class="inst-empty">
+        还没有按 SN 登记的实物。入库时填写「序列号 SN」会自动生成，每个 SN 一条记录。
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ShoppingCart, Edit, View, Delete, Sort, SortUp, SortDown } from '@element-plus/icons-vue'
+import { ShoppingCart, Edit, View, Delete, Sort, SortUp, SortDown, Tickets } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import request from '../api'
 import { downloadFile } from '../utils/download'
@@ -324,8 +357,29 @@ const openConsume = async (row) => {
   } catch { consume.workOrders = [] }
 }
 
-const submitConsume = async () => {
-  if (!consume.row) return
+// ===== SN 明细 =====
+const instances = reactive({ visible: false, row: null, rows: [], loading: false })
+const instStatusType = (s) => ({
+  IN_STOCK: 'success', INSTALLED: 'primary', RMA: 'warning', SCRAPPED: 'info',
+}[s] || 'info')
+const openInstances = async (row) => {
+  instances.row = row
+  instances.rows = []
+  instances.visible = true
+  instances.loading = true
+  try {
+    const res = await request.get('/part-instances/', {
+      params: { part_id: row.id, page_size: 200 },
+    })
+    instances.rows = res.items || []
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '加载 SN 明细失败')
+  } finally {
+    instances.loading = false
+  }
+}
+
+const submitConsume = async () => {  if (!consume.row) return
   consume.loading = true
   try {
     const res = await request.post(`/spare-parts/${consume.row.id}/consume`, {
@@ -505,6 +559,8 @@ const handleExport = async () => {
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .page-title { font-size: 20px; font-weight: 600; color: var(--color-text-primary); }
 .part-thumb { width: 36px; height: 36px; border-radius: 4px; vertical-align: middle; }
+.inst-empty { margin-top: 12px; padding: 14px; background: #F7F8FA; border-radius: 6px;
+  color: #86909C; font-size: 13px; text-align: center; }
 .header-actions { display: flex; gap: 12px; }
 
 .alert-banner { margin-bottom: 16px; }

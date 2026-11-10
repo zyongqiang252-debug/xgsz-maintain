@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from typing import Optional, List
+from datetime import datetime
 from loguru import logger
 
 from app.core.database import get_db
@@ -326,6 +327,28 @@ def consume_part(part_id: int, data: ConsumeIn, db: Session = Depends(get_db),
         remark=data.remark,
     )
     db.add(mv)
+    db.flush()
+
+    # 按 SN 把对应实物实例标记为已装机/已出库
+    if data.serial_no:
+        from app.models.part_instance import PartInstance, PartInstanceStatus
+        for s in data.serial_no.replace("，", ",").replace("、", ",").split(","):
+            sn = s.strip()
+            if not sn:
+                continue
+            inst = (db.query(PartInstance)
+                    .filter(PartInstance.part_id == part.id, PartInstance.sn == sn,
+                            PartInstance.status == PartInstanceStatus.IN_STOCK).first())
+            if not inst:
+                continue
+            inst.status = PartInstanceStatus.INSTALLED
+            inst.work_order_id = data.work_order_id
+            inst.outbound_movement_id = mv.id
+            inst.installed_at = datetime.now()
+            if wo is not None:
+                inst.device_id = wo.device_id
+                inst.device_code = wo.device_code
+            break
 
     # 关联工单：把这次领用追加到 used_parts，并重算成本
     if wo is not None:
@@ -375,6 +398,27 @@ def stock_in_part(part_id: int, data: StockInIn, db: Session = Depends(get_db),
         remark=data.remark,
     )
     db.add(mv)
+    db.flush()
+    # 按 SN 生成实物实例（一物一码），库存中心可逐件查看
+    serials = []
+    if data.serial_no:
+        for s in data.serial_no.replace("，", ",").replace("、", ",").split(","):
+            s = s.strip()
+            if s and s not in serials:
+                serials.append(s)
+    if serials:
+        from app.models.part_instance import PartInstance, PartInstanceStatus
+        existing = {r[0] for r in db.query(PartInstance.sn).filter(
+            PartInstance.part_id == part.id, PartInstance.sn.in_(serials)).all()}
+        for sn in serials:
+            if sn in existing:
+                continue
+            db.add(PartInstance(
+                part_id=part.id, part_code=part.part_code, part_name=part.part_name,
+                sn=sn, status=PartInstanceStatus.IN_STOCK,
+                warehouse_id=part.warehouse_id, location_text=part.location,
+                unit_price=price, supplier=part.supplier, inbound_movement_id=mv.id,
+            ))
     # 库存台账同步：最新 SN + 入库照片（最多留 6 张）
     if data.serial_no:
         part.serial_no = data.serial_no
