@@ -1317,11 +1317,12 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
             raise HTTPException(status_code=403, detail="仅被指派的维修员或管理员可接单")
 
     elif to_status_val == WorkOrderStatus.SUBMITTED.value:
-        # 拒收回池：仅当前负责人或管理员可操作，必须写原因
-        if not (is_assigned_tech or is_admin):
-            raise HTTPException(status_code=403, detail="仅当前负责人或管理员可拒收该工单")
-        if not (data.remark or "").strip():
-            raise HTTPException(status_code=400, detail="拒收必须填写原因")
+        # 仅「已派单 → 待派工」是拒收回池；草稿提交报修不受此限制
+        if from_status_val == WorkOrderStatus.ASSIGNED.value:
+            if not (is_assigned_tech or is_admin):
+                raise HTTPException(status_code=403, detail="仅当前负责人或管理员可拒收该工单")
+            if not (data.remark or "").strip():
+                raise HTTPException(status_code=400, detail="拒收必须填写原因")
 
     elif to_status_val in (WorkOrderStatus.ARRIVED.value, WorkOrderStatus.INSPECTING.value, WorkOrderStatus.IN_PROGRESS.value):
         if not (is_assigned_tech or is_admin):
@@ -1394,7 +1395,7 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
     from_status_enum = work_order.status
 
     # 拒收回池：清空负责人（old_technician_id 已用于工作量回退）
-    if to_status_val == WorkOrderStatus.SUBMITTED.value:
+    if to_status_val == WorkOrderStatus.SUBMITTED.value and from_status_val == WorkOrderStatus.ASSIGNED.value:
         work_order.technician_id = None
         work_order.assignee_id = None
         work_order.dispatched_at = None
