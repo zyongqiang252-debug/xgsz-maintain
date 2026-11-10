@@ -6,16 +6,17 @@
   POST   /{notification_id}/read   标记单条通知为已读
   POST   /read-all             标记全部已读
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import case as sa_case
 from typing import List, Optional
 from loguru import logger
 from datetime import datetime
 
-from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.database import get_db, SessionLocal
+from app.core.security import get_current_user, decode_access_token
 from app.core import alert_level as AL
+from app.core.ws_manager import manager as ws_manager
 from app.models.user import User
 from app.models.notification import Notification
 
@@ -128,4 +129,54 @@ def create_notification(db: Session, user_id: int, type: str, title: str, conten
     )
     db.add(notif)
     db.flush()
+    # 实时推送：在线用户立刻收到角标 + 弹窗（无连接时静默跳过）
+    try:
+        ws_manager.notify_user(user_id, {
+            "type": "notification",
+            "data": {
+                "id": notif.id,
+                "type": notif.type,
+                "level": notif.level,
+                "title": notif.title,
+                "content": notif.content,
+                "work_order_id": notif.work_order_id,
+                "is_read": False,
+                "created_at": notif.created_at.strftime("%Y-%m-%d %H:%M:%S") if notif.created_at else None,
+            },
+        })
+    except Exception as e:
+        logger.warning(f"[Notification] WebSocket 推送失败（忽略）: {e}")
     return notif
+
+
+@router.websocket("/ws")
+async def notifications_websocket(websocket: WebSocket, token: str = Query(default="")):
+    """站内通知 WebSocket：?token=<JWT>，收到新通知时实时下发"""
+    payload = decode_access_token(token or "")
+    if not payload or not payload.get("sub"):
+        await websocket.close(code=1008)
+        return
+    try:
+        user_id = int(payload["sub"])
+    except Exception:
+        await websocket.close(code=1008)
+        return
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+    finally:
+        db.close()
+    if not user:
+        await websocket.close(code=1008)
+        return
+
+    await ws_manager.connect(user_id, websocket)
+    try:
+        while True:
+            # 客户端心跳 / 保活，不处理业务
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(user_id, websocket)
+    except Exception:
+        ws_manager.disconnect(user_id, websocket)

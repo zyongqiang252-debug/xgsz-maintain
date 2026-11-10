@@ -61,7 +61,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Bell, Document, Warning, Box, ChatDotRound } from '@element-plus/icons-vue'
@@ -142,9 +142,19 @@ const handleReadAll = async () => {
   }
 }
 
+const onLiveNotification = () => {
+  fetchData()
+  fetchUnreadCount()
+}
+
 onMounted(() => {
   fetchData()
   fetchUnreadCount()
+  window.addEventListener('xgsz:notification', onLiveNotification)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('xgsz:notification', onLiveNotification)
 })
 </script>
 

@@ -17,9 +17,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+import asyncio
 from loguru import logger
 
 from app.core.config import settings
+from app.core.ws_manager import manager as notification_ws
 from app.api import work_orders, knowledge, devices, spare_parts, users, categories, search, dashboard, dispatch, duty_schedules, leave_requests, notifications
 from app.api.work_order_imports import router as work_order_imports_router
 from app.api.manual_codes import router as manual_codes_router
@@ -60,6 +62,7 @@ _mcp_app = mcp_http_app()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    notification_ws.set_loop(asyncio.get_running_loop())
     logger.info(f"🚀 {settings.APP_NAME} v{settings.APP_VERSION} 启动中...")
     logger.info(f"📊 数据库: {settings.DATABASE_URL.split('@')[1] if '@' in settings.DATABASE_URL else 'N/A'}")
     logger.info(f"🔴 Redis: {settings.REDIS_URL}")

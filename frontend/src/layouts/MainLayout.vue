@@ -340,7 +340,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import request from '../api'
 import { FEATURES } from '../config/features'
 import {
@@ -564,15 +564,66 @@ const handleLogout = async () => {
   } catch { /* 取消 */ }
 }
 
+// ===== 站内通知 WebSocket（实时角标 + 桌面弹窗）=====
+let noticeWs = null
+let noticeWsRetry = null
+let noticeWsPing = null
+let noticeWsClosed = false
+
+function connectNoticeWs() {
+  const token = localStorage.getItem('auth_token')
+  if (!token) return
+  try {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    noticeWs = new WebSocket(`${proto}://${location.host}/api/v1/notifications/ws?token=${encodeURIComponent(token)}`)
+    noticeWs.onopen = () => {
+      if (noticeWsPing) clearInterval(noticeWsPing)
+      noticeWsPing = setInterval(() => {
+        if (noticeWs && noticeWs.readyState === 1) noticeWs.send('ping')
+      }, 30000)
+    }
+    noticeWs.onmessage = (evt) => {
+      let msg
+      try { msg = JSON.parse(evt.data) } catch { return }
+      if (msg.type !== 'notification' || !msg.data) return
+      const n = msg.data
+      unreadCount.value += 1
+      if (noticeVisible.value) fetchNotifications()
+      window.dispatchEvent(new CustomEvent('xgsz:notification', { detail: n }))
+      ElNotification({
+        title: n.title || '新通知',
+        message: n.content || '',
+        type: n.level === 'P0' ? 'error' : (n.level === 'P1' ? 'warning' : 'info'),
+        duration: 8000,
+        onClick: () => {
+          if (n.work_order_id) router.push(`/work-orders/${n.work_order_id}`)
+          else router.push('/me?tab=notifications')
+        },
+      })
+    }
+    noticeWs.onclose = () => {
+      if (noticeWsPing) { clearInterval(noticeWsPing); noticeWsPing = null }
+      if (noticeWsClosed) return
+      noticeWsRetry = setTimeout(connectNoticeWs, 5000)
+    }
+    noticeWs.onerror = () => { try { noticeWs.close() } catch { /* ignore */ } }
+  } catch { /* ignore */ }
+}
+
 onMounted(() => {
   fetchCurrentUser()
   fetchUnreadCount()
-  // 每 30 秒轮询未读数
+  connectNoticeWs()
+  // 每 30 秒轮询未读数（WebSocket 断线时的兜底）
   noticePollTimer = setInterval(fetchUnreadCount, 30000)
 })
 
 onUnmounted(() => {
   if (noticePollTimer) { clearInterval(noticePollTimer); noticePollTimer = null }
+  noticeWsClosed = true
+  if (noticeWsRetry) { clearTimeout(noticeWsRetry); noticeWsRetry = null }
+  if (noticeWsPing) { clearInterval(noticeWsPing); noticeWsPing = null }
+  if (noticeWs) { try { noticeWs.close() } catch { /* ignore */ }; noticeWs = null }
 })
 
 // 打开通知面板时拉取列表

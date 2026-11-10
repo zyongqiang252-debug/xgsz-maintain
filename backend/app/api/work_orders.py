@@ -973,8 +973,58 @@ def _add_progress_log(
     return log
 
 
+def _notify_inapp(wo: WorkOrder, event: str, actor: str = "", extra: str = "") -> None:
+    """站内通知（独立会话；失败不影响业务）"""
+    try:
+        from app.core.database import SessionLocal
+        from app.api.notifications import create_notification
+        if event not in ("submitted", "assigned", "rejected", "archived"):
+            return
+        level = AL.from_priority(getattr(wo, "priority", None))
+        wo_no = wo.work_order_no
+        fault = (wo.fault_description or "")[:60]
+        device = wo.device_code or (f"设备#{wo.device_id}" if wo.device_id else "未指定设备")
+        title_map = {
+            "submitted": "新报修工单待派工",
+            "assigned": "工单派工通知",
+            "rejected": "工单被退回",
+            "archived": "工单已归档",
+        }
+        content_map = {
+            "submitted": f"工单 {wo_no}（{device}）已提交报修，等待派工。故障：{fault}",
+            "assigned": f"工单 {wo_no}（{device}）已派发给你。故障：{fault}",
+            "rejected": f"工单 {wo_no}（{device}）被退回。{('原因：' + extra) if extra else ''}",
+            "archived": f"工单 {wo_no}（{device}）已归档完成。{extra}",
+        }
+        db = SessionLocal()
+        try:
+            if event == "submitted":
+                users = db.query(User).filter(
+                    User.is_active == True,
+                    User.role.in_([UserRole.ADMIN.value, UserRole.SUPERVISOR.value]),
+                ).all()
+            elif event == "assigned":
+                tech = db.query(User).filter(User.id == wo.technician_id).first() if wo.technician_id else None
+                users = [tech] if tech else []
+            else:
+                creator = db.query(User).filter(User.id == wo.created_by).first() if wo.created_by else None
+                users = [creator] if creator else []
+            for u in users:
+                create_notification(
+                    db, user_id=u.id, type="WORK_ORDER", title=title_map[event],
+                    content=content_map[event], work_order_id=wo.id, level=level,
+                )
+            if users:
+                db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"[WorkOrder] 站内通知写入失败（忽略）: {e}")
+
+
 def _notify_wo(wo: WorkOrder, event: str, actor: str = "", extra: str = "") -> None:
     """钉钉自定义群机器人推送（未配置 webhook 直接跳过；内部异步发送，不阻塞接口）"""
+    _notify_inapp(wo, event, actor=actor, extra=extra)
     try:
         from app.core.dingtalk_group import group_robot
         if not group_robot.enabled:

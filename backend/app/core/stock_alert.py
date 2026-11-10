@@ -4,12 +4,15 @@
 可通过 /api/v1/spare-parts/check-alerts 手动触发。
 """
 from typing import List, Dict
+from datetime import datetime, timedelta
 from loguru import logger
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.core.notification import notification_service
 from app.models.spare_part import SparePart
+from app.models.user import User, UserRole
+from app.models.notification import Notification
 
 
 def check_and_notify_stock_alerts(db: Session = None) -> Dict:
@@ -64,6 +67,7 @@ def check_and_notify_stock_alerts(db: Session = None) -> Dict:
                 )
             except Exception as e:
                 logger.warning(f"[StockAlert] 预警通知发送失败: {e}")
+            _notify_inapp_stock_alerts(db, low_stock, out_of_stock)
         else:
             logger.info("[StockAlert] 库存检查完成，无预警")
 
@@ -77,6 +81,36 @@ def check_and_notify_stock_alerts(db: Session = None) -> Dict:
     finally:
         if close_db:
             db.close()
+
+
+def _notify_inapp_stock_alerts(db: Session, low_stock, out_of_stock) -> None:
+    """给管理员/主管写站内通知；同一范围内 6 小时内不重复提醒"""
+    try:
+        cutoff = datetime.now() - timedelta(hours=6)
+        recent = db.query(Notification).filter(
+            Notification.type == "STOCK_ALERT",
+            Notification.created_at >= cutoff,
+        ).first()
+        if recent:
+            return
+        from app.api.notifications import create_notification
+        recipients = db.query(User).filter(
+            User.is_active == True,
+            User.role.in_([UserRole.ADMIN.value, UserRole.SUPERVISOR.value]),
+        ).all()
+        if not recipients:
+            return
+        codes = [p.part_code for p in (out_of_stock + low_stock)][:8]
+        content = (f"缺货 {len(out_of_stock)} 项、低库存 {len(low_stock)} 项。"
+                   f"需关注：{'、'.join(codes)}{' 等' if len(codes) >= 8 else ''}")
+        for u in recipients:
+            create_notification(
+                db, user_id=u.id, type="STOCK_ALERT", title="库存预警",
+                content=content, level="P1",
+            )
+        db.commit()
+    except Exception as e:
+        logger.warning(f"[StockAlert] 站内通知写入失败（忽略）: {e}")
 
 
 def run_periodic_check(interval_seconds: int = 3600):

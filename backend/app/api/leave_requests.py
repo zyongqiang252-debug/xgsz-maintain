@@ -37,6 +37,35 @@ from app.schemas import (
 router = APIRouter()
 
 
+def _notify_leave(db: Session, lr, event: str) -> None:
+    """请假站内通知：提交→主管/管理员；批准/驳回→申请人"""
+    try:
+        from app.api.notifications import create_notification
+        if event == "submitted":
+            users = db.query(User).filter(
+                User.is_active == True,
+                User.role.in_([UserRole.ADMIN.value, UserRole.SUPERVISOR.value]),
+            ).all()
+            title = "新的请假申请待审批"
+            content = f"{lr.requester_name} 提交了请假申请（{lr.leave_type}），请及时审批。"
+            level = "P2"
+        else:
+            u = db.query(User).filter(User.id == lr.requester_id).first()
+            users = [u] if u else []
+            approved = event == "approved"
+            title = "请假申请已批准" if approved else "请假申请被驳回"
+            content = (f"你的请假申请（{lr.leave_type}）已{'批准' if approved else '驳回'}。"
+                       f"{('审批意见：' + lr.approver_comment) if lr.approver_comment else ''}")
+            level = "P2"
+        for u in users:
+            create_notification(db, user_id=u.id, type="LEAVE", title=title,
+                                content=content, level=level)
+        if users:
+            db.commit()
+    except Exception as e:
+        logger.warning(f"[Leave] 站内通知写入失败（忽略）: {e}")
+
+
 # ============================================================
 # 内部工具函数
 # ============================================================
@@ -317,6 +346,7 @@ def submit_leave_request(
         ))
     db.commit()
     db.refresh(lr)
+    _notify_leave(db, lr, "submitted")
     logger.info(f"[Leave] 提交成功 lr_id={lr.id} requester={requester_id} 明细数={len(pairs)}")
     return _build_response(lr, db)
 
@@ -557,6 +587,7 @@ def approve_leave_request(
 
         db.commit()
         db.refresh(lr)
+        _notify_leave(db, lr, "approved")
         logger.info(
             f"[Leave] 批准成功 lr_id={lr.id} 审批人={current_user.id} "
             f"顶岗={payload.substitute_user_id} 明细={len(details)}"
@@ -594,6 +625,7 @@ def reject_leave_request(
     lr.handled_at = datetime.now()
     db.commit()
     db.refresh(lr)
+    _notify_leave(db, lr, "rejected")
     logger.info(f"[Leave] 拒绝成功 lr_id={lr.id} 审批人={current_user.id}")
     return _build_response(lr, db)
 
