@@ -160,10 +160,9 @@
           >
             <!-- 主管：精简菜单，只留职责相关 -->
             <template v-if="isPureSupervisor">
-              <div class="menu-group-label">工单维修</div>
               <el-menu-item index="/dashboard">
                 <el-icon><DataAnalysis /></el-icon>
-                <template #title>数据驾驶舱</template>
+                <template #title>首页</template>
               </el-menu-item>
               <div class="menu-group-label">工单管理</div>
               <el-menu-item index="/orders?tab=list">
@@ -200,10 +199,9 @@
 
             <!-- 管理员 / 维修员：全菜单 -->
             <template v-else>
-              <div class="menu-group-label">工单维修</div>
               <el-menu-item index="/dashboard">
                 <el-icon><DataAnalysis /></el-icon>
-                <template #title>数据驾驶舱</template>
+                <template #title>首页</template>
               </el-menu-item>
               <div class="menu-group-label">工单管理</div>
               <template v-if="isSupervisor">
@@ -427,7 +425,7 @@ onMounted(applyTheme)
 
 // 顶部面包屑：模块分组 + 当前页
 const CRUMB_GROUPS = [
-  [['/dashboard', '/orders', '/work-orders', '/supervisor', '/work-order-imports', '/devices', '/maintenance'], '工单维修'],
+  [['/orders', '/work-orders', '/supervisor', '/work-order-imports', '/devices', '/maintenance'], '工单维修'],
   [['/knowledge', '/knowledge-center', '/ai-assistant'], '知识与智能'],
   [['/stock', '/spare-parts', '/warehouse', '/dict', '/categories', '/fault-codes'], '资源与字典'],
   [['/supervisor/schedule', '/sys', '/users', '/system-settings', '/me', '/leave', '/notifications', '/help', '/profile', '/security'], '管理与个人'],
