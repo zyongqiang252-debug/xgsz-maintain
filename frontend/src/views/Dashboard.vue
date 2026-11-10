@@ -45,58 +45,6 @@
       </div>
     </div>
 
-    <!-- 设备监控行 -->
-    <div class="section-block">
-      <div class="section-head">
-        <span class="section-head__title">设备监控概览</span>
-        <el-button size="small" text type="primary" @click="$router.push('/devices')">查看全部 →</el-button>
-      </div>
-      <div class="metric-grid">
-        <div class="metric-item" @click="$router.push('/devices')">
-          <span class="metric-dot" style="background:#2563EB"></span>
-          <div>
-            <div class="metric-value">{{ stats.total_devices }}</div>
-            <div class="metric-label">设备总数</div>
-          </div>
-        </div>
-        <div class="metric-item" @click="$router.push('/devices?status=ONLINE')">
-          <span class="metric-dot" style="background:#10B981"></span>
-          <div>
-            <div class="metric-value">{{ dm.online }}</div>
-            <div class="metric-label">正常运行</div>
-          </div>
-        </div>
-        <div class="metric-item" @click="$router.push('/devices?status=ALARM')">
-          <span class="metric-dot" style="background:#F59E0B"></span>
-          <div>
-            <div class="metric-value">{{ dm.alarm }}</div>
-            <div class="metric-label">告警中</div>
-          </div>
-        </div>
-        <div class="metric-item" @click="$router.push('/devices?status=FAULT')">
-          <span class="metric-dot" style="background:#EF4444"></span>
-          <div>
-            <div class="metric-value">{{ dm.fault }}</div>
-            <div class="metric-label">故障停机</div>
-          </div>
-        </div>
-        <div class="metric-item" @click="$router.push('/devices?status=OFFLINE')">
-          <span class="metric-dot" style="background:#94A3B8"></span>
-          <div>
-            <div class="metric-value">{{ dm.offline }}</div>
-            <div class="metric-label">离线</div>
-          </div>
-        </div>
-        <div class="metric-item" @click="$router.push('/devices?has_fault=true')">
-          <span class="metric-dot" style="background:#7C3AED"></span>
-          <div>
-            <div class="metric-value">{{ dm.with_fault_tags }}</div>
-            <div class="metric-label">故障标签</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- 双栏布局 -->
     <div class="dashboard-grid">
       <!-- 最近工单 -->
@@ -213,7 +161,6 @@ const stats = ref({
   total_spare_parts: 0,
   device_monitor: { online: 0, offline: 0, alarm: 0, fault: 0, unknown: 0, with_fault_tags: 0 },
 })
-const dm = computed(() => stats.value.device_monitor)
 const recentOrders = ref([])
 const alertItems = ref([])
 
