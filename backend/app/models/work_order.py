@@ -74,6 +74,10 @@ class WorkOrder(BaseModel):
     created_by = Column(Integer, ForeignKey("users.id"), comment="创建者 ID，仅创建者可编辑")
     customer_id = Column(Integer, ForeignKey("customers.id"), index=True, comment="客户报修来源")
     customer_name = Column(String(100), comment="客户联系人快照")
+    customer_company = Column(String(200), comment="客户公司快照")
+    customer_phone = Column(String(20), comment="客户手机号快照")
+    customer_contact_name = Column(String(100), comment="本次报修联系人")
+    customer_contact_phone = Column(String(20), comment="本次报修联系电话")
 
     # ===== SLA（响应/修复时限，建单时按优先级计算）=====
     response_due_at = Column(TIMESTAMP, comment="响应截止（接单）")

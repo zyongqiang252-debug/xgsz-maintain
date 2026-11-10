@@ -58,7 +58,14 @@
         <el-descriptions :column="2" border>
           <el-descriptions-item label="故障描述" :span="2">{{ form.fault_description || '-' }}</el-descriptions-item>
           <el-descriptions-item label="故障码">{{ displayFaultCodes || '-' }}</el-descriptions-item>
-          <el-descriptions-item v-if="form.customer_name" label="客户">{{ form.customer_name }}</el-descriptions-item>
+          <el-descriptions-item v-if="form.customer_name" label="客户">
+            {{ form.customer_name }}<span v-if="form.customer_company">（{{ form.customer_company }}）</span>
+          </el-descriptions-item>
+          <el-descriptions-item v-if="form.customer_phone" label="客户电话">{{ form.customer_phone }}</el-descriptions-item>
+          <el-descriptions-item v-if="form.customer_contact_name" label="报修联系人">
+            {{ form.customer_contact_name }}
+            <span v-if="form.customer_contact_phone"> · {{ form.customer_contact_phone }}</span>
+          </el-descriptions-item>
           <el-descriptions-item v-if="form.device_error_code" label="Xid/错误码">{{ form.device_error_code }}</el-descriptions-item>
           <template v-if="form.device_id">
             <el-descriptions-item label="服务器">

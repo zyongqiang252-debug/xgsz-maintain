@@ -66,11 +66,12 @@
 
     <el-card class="table-card" shadow="never">
       <el-table :data="list" stripe class="wo-table" :row-class-name="rowClassName" @row-click="onRowClick">
-        <el-table-column label="工单编号" width="166" show-overflow-tooltip>
+        <el-table-column label="工单编号" width="190" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="wo-no">{{ row.work_order_no }}</span>
             <el-tag v-if="row.customer_name" size="small" type="success" effect="plain"
-                    :title="`客户报修：${row.customer_name}`" style="margin-left:4px">客户</el-tag>
+                    :title="`客户报修：${row.customer_name}${row.customer_company ? ' · ' + row.customer_company : ''}${row.customer_phone ? ' · ' + row.customer_phone : ''}`"
+                    style="margin-left:4px">客户·{{ row.customer_name }}</el-tag>
             <el-tag v-if="row.order_type && row.order_type !== 'REPAIR'" size="small" effect="plain" style="margin-left:4px">
               {{ orderTypeLabel(row.order_type) }}
             </el-tag>

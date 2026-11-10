@@ -242,6 +242,10 @@ class WorkOrderResponse(BaseModel):
     created_by_employee_id: Optional[str] = None
     customer_id: Optional[int] = None
     customer_name: Optional[str] = None
+    customer_company: Optional[str] = None
+    customer_phone: Optional[str] = None
+    customer_contact_name: Optional[str] = None
+    customer_contact_phone: Optional[str] = None
     technician_name: Optional[str] = None
     transfer_from_name: Optional[str] = None
     collaborators: Optional[Any] = None

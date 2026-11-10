@@ -143,6 +143,10 @@ def submit_report(data: CustomerReportIn,
         tags=["客户报修"],
         customer_id=customer.id,
         customer_name=customer.name,
+        customer_company=customer.company,
+        customer_phone=customer.phone,
+        customer_contact_name=data.contact_name or customer.name,
+        customer_contact_phone=data.contact_phone or customer.phone,
     )
     db.add(wo)
     db.flush()
