@@ -115,13 +115,6 @@
               <span class="status-tag" :class="'status-' + (row.status_group || row.status)">{{ row.status_group_label || statusLabel(row.status) }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="级别" width="72" align="center">
-            <template #default="{ row }">
-              <span v-if="row.alert_level" class="soft-tag"
-                    :class="'soft-tag--' + row.alert_level.toLowerCase()">{{ row.alert_level }}</span>
-              <span v-else style="color:#C9CDD4">—</span>
-            </template>
-          </el-table-column>
           <el-table-column prop="created_at" label="创建时间" width="100">
             <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
           </el-table-column>

@@ -35,9 +35,6 @@
         <el-select v-model="statusFilter" placeholder="运行状态" clearable class="filter-select" @change="handleSearch">
           <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
-        <el-select v-model="levelFilter" placeholder="告警级别" clearable class="filter-select" @change="handleSearch">
-          <el-option v-for="lv in levelOptions" :key="lv.value" :label="lv.label" :value="lv.value" />
-        </el-select>
         <el-select v-model="hasFaultFilter" placeholder="故障标签" clearable class="filter-select" @change="handleSearch">
           <el-option label="有故障" :value="true" />
           <el-option label="无故障" :value="false" />
@@ -65,14 +62,6 @@
                 <span>{{ row.device_type || '-' }}</span>
               </div>
             </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="级别" width="92" align="center">
-          <template #default="{ row }">
-            <span v-if="row.alert_level" class="soft-tag" :class="'soft-tag--' + row.alert_level.toLowerCase()">
-              {{ row.alert_level }} {{ levelMeta(row.alert_level).label }}
-            </span>
-            <span v-else class="muted">—</span>
           </template>
         </el-table-column>
         <el-table-column label="序列号 SN" width="140" show-overflow-tooltip>
@@ -176,15 +165,6 @@ import EmptyState from '../components/EmptyState.vue'
 const list = ref([])
 const loading = ref(false)
 const keyword = ref('')
-const LEVELS = {
-  P0: { label: '严重', type: 'danger' },
-  P1: { label: '重要', type: 'warning' },
-  P2: { label: '一般', type: 'warning' },
-  P3: { label: '提示', type: 'info' },
-}
-const levelOptions = Object.entries(LEVELS).map(([value, v]) => ({ value, label: `${value} ${v.label}` }))
-const levelFilter = ref('')
-const levelMeta = (lv) => LEVELS[(lv || 'P2').toUpperCase()] || LEVELS.P2
 
 const typeFilter = ref('')
 const statusFilter = ref('')
@@ -247,11 +227,7 @@ const statCards = [
   { key: 'unknown', label: '状态未知', icon: '?', bg: '#F9FAFB', color: '#9CA3AF' },
 ]
 
-const faultTagType = (lvl) => {
-  const m = { P0: 'danger', P1: 'warning', P2: 'warning', P3: 'info',
-              CRITICAL: 'danger', ERROR: 'danger', WARNING: 'warning', INFO: 'info' }
-  return m[(lvl || 'P2').toUpperCase()] || 'warning'
-}
+const faultTagType = () => 'warning'
 
 const formatDate = (d) => d ? dayjs(d).format('YYYY-MM-DD') : '-'
 const formatTime = (t) => t ? dayjs(t).format('MM-DD HH:mm') : '-'
@@ -285,7 +261,6 @@ const fetchData = async () => {
     if (keyword.value) params.keyword = keyword.value
     if (typeFilter.value) params.device_type = typeFilter.value
     if (statusFilter.value) params.run_status = statusFilter.value
-    if (levelFilter.value) params.alert_level = levelFilter.value
     if (hasFaultFilter.value != null) params.has_fault = hasFaultFilter.value
     const res = await request.get('/devices/', { params })
     list.value = res.items
@@ -298,7 +273,7 @@ const fetchAll = () => { fetchStats(); fetchData() }
 
 const handleSearch = () => { page.value = 1; fetchAll() }
 const handleReset = () => {
-  keyword.value = ''; typeFilter.value = ''; statusFilter.value = ''; hasFaultFilter.value = null; levelFilter.value = ''
+  keyword.value = ''; typeFilter.value = ''; statusFilter.value = ''; hasFaultFilter.value = null
   page.value = 1
   fetchAll()
 }

@@ -139,12 +139,6 @@
                     :key="i"
                     class="fault-item"
                   >
-                    <el-select v-model="t.level" size="small" style="width: 120px">
-                      <el-option label="P0 严重" value="P0" />
-                      <el-option label="P1 重要" value="P1" />
-                      <el-option label="P2 一般" value="P2" />
-                      <el-option label="P3 提示" value="P3" />
-                    </el-select>
                     <el-input v-model="t.code" size="small" placeholder="编码" style="width: 120px" />
                     <el-input v-model="t.name" size="small" placeholder="名称" style="width: 160px" />
                     <el-input v-model="t.message" size="small" placeholder="描述" style="flex:1" />

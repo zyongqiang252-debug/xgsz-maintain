@@ -17,12 +17,6 @@
           <el-option label="点检工单" value="INSPECTION" />
           <el-option label="导入工单" value="IMPORT" />
         </el-select>
-        <el-select v-model="alertLevelFilter" placeholder="告警级别" clearable class="filter-select" @change="handleSearch">
-          <el-option label="P0 严重" value="P0" />
-          <el-option label="P1 重要" value="P1" />
-          <el-option label="P2 一般" value="P2" />
-          <el-option label="P3 提示" value="P3" />
-        </el-select>
         <el-date-picker
           v-model="dateRange"
           type="daterange"
@@ -533,7 +527,6 @@ const isPoolView = !!props.poolMode
 const pageTitle = computed(() => isPoolView ? '工单池' : (isMineView ? '我的工单' : '全部工单'))
 const statusFilter = ref('')
 const orderTypeFilter = ref('')
-const alertLevelFilter = ref('')
 const ORDER_TYPE_LABEL = { REPAIR: '报修', MAINTENANCE: '保养', INSPECTION: '点检', IMPORT: '导入' }
 const orderTypeLabel = (t) => ORDER_TYPE_LABEL[(t || 'REPAIR').toUpperCase()] || t
 const dateRange = ref(null)
@@ -564,14 +557,6 @@ const statusMap = {
   COMPLETED: '已完成',
   REJECTED: '已退回',
 }
-
-const LEVELS = {
-  P0: { label: '严重', type: 'danger' },
-  P1: { label: '重要', type: 'warning' },
-  P2: { label: '一般', type: 'warning' },
-  P3: { label: '提示', type: 'info' },
-}
-const alertLevelMeta = (lv) => LEVELS[(lv || 'P2').toUpperCase()] || LEVELS.P2
 
 const GROUP_LABEL = {
   DRAFT: '草稿',
@@ -626,7 +611,6 @@ const fetchData = async () => {
     else if (isMineView) params.mine = 'all'        // 我的工单：只看自己
     if (statusFilter.value) params.status_group = statusFilter.value
     if (orderTypeFilter.value) params.order_type = orderTypeFilter.value
-    if (alertLevelFilter.value) params.alert_level = alertLevelFilter.value
     if (dateRange.value) {
       params.date_from = dayjs(dateRange.value[0]).format('YYYY-MM-DD')
       params.date_to = dayjs(dateRange.value[1]).format('YYYY-MM-DD')
@@ -646,7 +630,6 @@ const saveFilter = () => {
   if (keyword.value) data.keyword = keyword.value
   if (statusFilter.value) data.status = statusFilter.value
   if (orderTypeFilter.value) data.order_type = orderTypeFilter.value
-  if (alertLevelFilter.value) data.alert_level = alertLevelFilter.value
   if (dateRange.value) {
     data.date_from = dayjs(dateRange.value[0]).format('YYYY-MM-DD')
     data.date_to = dayjs(dateRange.value[1]).format('YYYY-MM-DD')
@@ -673,9 +656,9 @@ const pickStatus = (val) => {
 
 const handleSearch = () => { page.value = 1; fetchData() }
 
-// P0 / 已超时的行加底色，列表里不用点开就能发现
+// 已超时的行加底色，列表里不用点开就能发现
 const rowClassName = ({ row }) =>
-  (row.alert_level === 'P0' || row.sla_status === 'OVERDUE') ? 'row-urgent' : ''
+  row.sla_status === 'OVERDUE' ? 'row-urgent' : ''
 
 // 整行点击查看详情；点在操作按钮上时不跳转
 const onRowClick = (row, column, event) => {
@@ -688,7 +671,6 @@ const handleReset = () => {
   keyword.value = ''
   statusFilter.value = ''
   orderTypeFilter.value = ''
-  alertLevelFilter.value = ''
   dateRange.value = null
   page.value = 1
   sessionStorage.removeItem(STORAGE_KEY)
@@ -713,7 +695,6 @@ onMounted(() => {
       if (data.keyword) keyword.value = data.keyword
       if (data.status) statusFilter.value = data.status
       if (data.order_type) orderTypeFilter.value = data.order_type
-      if (data.alert_level) alertLevelFilter.value = data.alert_level
       if (data.date_from && data.date_to) {
         dateRange.value = [new Date(data.date_from), new Date(data.date_to)]
       }

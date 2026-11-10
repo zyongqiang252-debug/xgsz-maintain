@@ -686,7 +686,7 @@ function connectNoticeWs() {
       ElNotification({
         title: n.title || '新通知',
         message: n.content || '',
-        type: n.level === 'P0' ? 'error' : (n.level === 'P1' ? 'warning' : 'info'),
+        type: 'info',
         duration: 8000,
         onClick: () => {
           if (n.work_order_id) router.push(`/work-orders/${n.work_order_id}`)

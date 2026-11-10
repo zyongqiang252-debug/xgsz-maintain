@@ -289,18 +289,10 @@
           <el-input v-model="form.fault_description" type="textarea" :rows="2" />
         </el-form-item>
         <el-row :gutter="12">
-          <el-col :span="8">
+          <el-col :span="12">
             <el-form-item label="故障码"><el-input v-model="form.fault_code" placeholder="6位数字，多个逗号分隔" /></el-form-item>
           </el-col>
-          <el-col :span="8">
-            <el-form-item label="优先级">
-              <el-select v-model="form.priority" style="width: 100%">
-                <el-option label="低" value="LOW" /><el-option label="中" value="MEDIUM" />
-                <el-option label="高" value="HIGH" /><el-option label="紧急" value="CRITICAL" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
+          <el-col :span="12">
             <el-form-item label="工时"><el-input-number v-model="form.work_hours" :min="0" :step="0.5" style="width: 100%" /></el-form-item>
           </el-col>
         </el-row>

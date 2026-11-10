@@ -83,10 +83,6 @@
           <el-descriptions-item label="服务器类型">{{ form.device_type || '-' }}</el-descriptions-item>
           <el-descriptions-item label="机房位置">{{ form.location || '-' }}</el-descriptions-item>
           <el-descriptions-item label="故障分类">{{ form.fault_phenomenon_type || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="告警级别">
-            <el-tag v-if="form.alert_level" size="small" :type="alertLevelType">{{ form.alert_level }} · {{ alertLevelText }}</el-tag>
-            <span v-else>-</span>
-          </el-descriptions-item>
           <el-descriptions-item label="故障 GPU">{{ form.gpu_index || '-' }}</el-descriptions-item>
           <el-descriptions-item label="故障件 SN">{{ form.fault_device_sn || '-' }}</el-descriptions-item>
           <el-descriptions-item label="服务方式">
@@ -871,12 +867,6 @@ const feedbackSaving = ref(false)
 const fmt = (t) => (t ? dayjs(t).format('MM-DD HH:mm') : '-')
 const money = (v) => (v || v === 0 ? `${Number(v).toFixed(0)} 元` : '—')
 
-const ALERT_LEVELS = { P0: '严重', P1: '重要', P2: '一般', P3: '提示' }
-const alertLevelText = computed(() => ALERT_LEVELS[(form.alert_level || 'P2').toUpperCase()] || '一般')
-const alertLevelType = computed(() => {
-  const m = { P0: 'danger', P1: 'warning', P2: 'warning', P3: 'info' }
-  return m[(form.alert_level || 'P2').toUpperCase()] || 'warning'
-})
 
 const slaText = computed(() => {
   if (isNew.value) return '未建单'

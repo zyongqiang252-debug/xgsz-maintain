@@ -3,13 +3,6 @@
     <div class="page-header">
       <h2 class="page-title">通知中心</h2>
       <div class="header-actions">
-        <el-select v-model="levelFilter" placeholder="全部级别" clearable size="small"
-                   style="width: 120px; margin-right: 12px" @change="handleSearch">
-          <el-option label="P0 严重" value="P0" />
-          <el-option label="P1 重要" value="P1" />
-          <el-option label="P2 一般" value="P2" />
-          <el-option label="P3 提示" value="P3" />
-        </el-select>
         <el-switch v-model="unreadOnly" active-text="只看未读" @change="handleSearch" style="margin-right: 12px" />
         <el-button :disabled="unreadCount === 0" @click="handleReadAll">全部标为已读</el-button>
       </div>
@@ -33,8 +26,6 @@
           </div>
           <div class="msg-body">
             <div class="msg-top">
-              <el-tag v-if="item.level" size="small" :type="levelMeta(item.level).type" effect="plain"
-                      style="margin-right: 6px">{{ item.level }}</el-tag>
               <span class="msg-title">{{ item.title }}</span>
               <span v-if="!item.is_read" class="dot"></span>
               <span class="msg-time">{{ item.created_at }}</span>
@@ -71,9 +62,6 @@ const router = useRouter()
 const list = ref([])
 const loading = ref(false)
 const unreadOnly = ref(false)
-const LEVELS = { P0: { type: 'danger' }, P1: { type: 'warning' }, P2: { type: 'warning' }, P3: { type: 'info' } }
-const levelMeta = (lv) => LEVELS[(lv || 'P2').toUpperCase()] || LEVELS.P2
-const levelFilter = ref('')
 const unreadCount = ref(0)
 const page = ref(1)
 const pageSize = 20
@@ -101,7 +89,6 @@ const fetchData = async () => {
     const res = await request.get('/notifications/', {
       params: {
           page: page.value, page_size: pageSize, unread_only: unreadOnly.value,
-          level: levelFilter.value || undefined,
         },
     })
     list.value = res.items || []
