@@ -42,21 +42,11 @@
         <el-table-column prop="created_at" label="创建时间" width="140">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="138" header-align="left">
+        <el-table-column label="操作" width="110" header-align="left">
           <template #default="{ row }">
             <div class="user-op">
               <IconAction :icon="Edit" title="编辑" @click="handleEdit(row)" />
               <IconAction :icon="Key" title="重置密码" type="warning" @click="handleResetPwd(row)" />
-              <IconAction
-                v-if="!row.dingtalk_userid"
-                :icon="Link" title="绑定钉钉" type="success"
-                @click="openBindDingTalk(row)"
-              />
-              <IconAction
-                v-else
-                :icon="Link" title="解绑钉钉"
-                @click="handleUnbindDingTalk(row)"
-              />
               <IconAction :icon="Delete" title="删除" type="danger" @click="handleDelete(row)" />
             </div>
           </template>
@@ -112,54 +102,13 @@
       </template>
     </el-dialog>
 
-    <!-- 钉钉扫码绑定弹窗（管理员代绑） -->
-    <el-dialog
-      v-model="bindDialogVisible"
-      :title="`绑定钉钉 - ${bindTarget ? bindTarget.real_name : ''}`"
-      width="360px"
-      :close-on-click-modal="false"
-      @closed="cleanupBindScan({ full: true })"
-    >
-      <div class="dt-scan-area">
-        <div class="dt-qr-box" :class="{ expired: dtBindStatus === 'expired' }">
-          <qrcode-vue
-            v-if="dtBindUrl && dtBindStatus !== 'expired'"
-            :value="dtBindUrl"
-            :size="220"
-            level="M"
-          />
-          <div v-else-if="dtBindLoading" class="dt-qr-loading">加载二维码中...</div>
-          <div v-else-if="dtBindStatus === 'expired'" class="dt-qr-expired" @click="initBindScan">
-            <span>二维码已过期</span>
-            <span style="color:#165DFF">点击刷新</span>
-          </div>
-          <!-- 扫码成功蒙层 -->
-          <div v-if="dtBindStatus === 'scanned'" class="dt-qr-scanned">
-            <div class="dt-qr-scanned-text">
-              <div>扫码成功</div>
-              <div>{{ dtBindUser?.name || '' }}</div>
-            </div>
-          </div>
-        </div>
-        <div v-if="dtBindStatus === 'pending'" class="dt-qr-countdown">
-          二维码 {{ dtBindCountdown }} 秒后过期
-        </div>
-        <div class="dt-scan-tip">请使用手机钉钉扫描二维码，授权后绑定到该用户</div>
-        <div class="dt-scan-actions">
-          <el-button type="primary" size="large" :disabled="dtBindStatus !== 'scanned'" :loading="dtBindConfirming" @click="confirmBindDingTalk">
-            {{ dtBindStatus === 'scanned' ? '确认绑定' : '等待扫码...' }}
-          </el-button>
-        </div>
-      </div>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Edit, Key, Link, Delete } from '@element-plus/icons-vue'
-import QrcodeVue from 'qrcode.vue'
+import { Edit, Key, Delete } from '@element-plus/icons-vue'
 import IconAction from '../components/IconAction.vue'
 import request from '../api'
 import dayjs from 'dayjs'
@@ -237,125 +186,6 @@ const handleDelete = async (row) => {
     ElMessage.success('删除成功')
     fetchData()
   } catch { /* cancelled */ }
-}
-
-const handleUnbindDingTalk = async (row) => {
-  try {
-    await ElMessageBox.confirm(
-      `确定解绑用户「${row.real_name}」的钉钉账号？解绑后该用户将无法通过钉钉扫码登录。`,
-      '解绑确认',
-      { type: 'warning' }
-    )
-    await request.post(`/users/${row.id}/dingtalk/unbind`)
-    ElMessage.success('钉钉账号已解绑')
-    fetchData()
-  } catch { /* cancelled */ }
-}
-
-// ===== 管理员扫码代绑钉钉（真实扫码流程） =====
-const bindDialogVisible = ref(false)
-const bindTarget = ref(null)
-const dtBindUrl = ref('')
-const dtBindState = ref('')
-const dtBindStatus = ref('pending')  // pending | scanned | expired
-const dtBindUser = ref(null)
-const dtBindLoading = ref(false)
-const dtBindConfirming = ref(false)
-const dtBindCountdown = ref(120)
-let dtBindPollTimer = null
-let dtBindRefreshTimer = null
-
-const cleanupBindScan = (opts = {}) => {
-  // 默认只清轮询定时器；传 full=true 才连倒计时一起清
-  const { full = false } = opts
-  if (dtBindPollTimer) { clearInterval(dtBindPollTimer); dtBindPollTimer = null }
-  if (full && dtBindRefreshTimer) { clearInterval(dtBindRefreshTimer); dtBindRefreshTimer = null }
-  if (full) {
-    dtBindStatus.value = 'pending'
-    dtBindUser.value = null
-  }
-}
-
-const openBindDingTalk = (row) => {
-  bindTarget.value = row
-  bindDialogVisible.value = true
-  initBindScan()
-}
-
-const initBindScan = () => {
-  // 先完整清理
-  cleanupBindScan({ full: true })
-  dtBindLoading.value = true
-  dtBindStatus.value = 'pending'
-  dtBindUser.value = null
-  dtBindUrl.value = ''
-  dtBindCountdown.value = 120
-
-  // ===== 修复 1：倒计时 Timer 移到外层 =====
-  dtBindRefreshTimer = setInterval(() => {
-    if (dtBindStatus.value !== 'pending') return
-    dtBindCountdown.value--
-    if (dtBindCountdown.value <= 0) {
-      // ===== 修复 2：倒计时到 0 不自动刷新 =====
-      if (dtBindRefreshTimer) { clearInterval(dtBindRefreshTimer); dtBindRefreshTimer = null }
-      if (dtBindPollTimer) { clearInterval(dtBindPollTimer); dtBindPollTimer = null }
-      dtBindStatus.value = 'expired'
-    }
-  }, 1000)
-
-  // bind_user_id=目标用户ID：扫码成功后绑定到该用户（需主管/管理员权限）
-  request.post('/auth/dingtalk/scan/generate', {}, { params: { bind_user_id: bindTarget.value.id } })
-    .then(res => {
-      dtBindUrl.value = res.url
-      dtBindState.value = res.state
-      dtBindPollTimer = setInterval(() => pollBindStatus(), 2000)
-      if (res.expire_seconds && Math.abs(res.expire_seconds - 120) > 10) {
-        dtBindCountdown.value = res.expire_seconds
-      }
-    })
-    .catch(e => {
-      ElMessage.error(e?.response?.data?.detail || '生成钉钉二维码失败')
-      if (dtBindRefreshTimer) { clearInterval(dtBindRefreshTimer); dtBindRefreshTimer = null }
-    })
-    .finally(() => { dtBindLoading.value = false })
-}
-
-const pollBindStatus = async () => {
-  if (!dtBindState.value) return
-  try {
-    const res = await request.get(`/auth/dingtalk/scan/status/${dtBindState.value}`)
-    if (res.status === 'scanned') {
-      dtBindStatus.value = 'scanned'
-      dtBindUser.value = res.user_info
-      // ===== 修复 3：只清轮询定时器 =====
-      cleanupBindScan({ full: false })
-    } else if (res.status === 'expired') {
-      dtBindStatus.value = 'expired'
-      cleanupBindScan({ full: true })
-    } else if (res.expires_in != null && dtBindStatus.value === 'pending') {
-      if (Math.abs(res.expires_in - dtBindCountdown.value) > 5) {
-        dtBindCountdown.value = res.expires_in
-      }
-    }
-  } catch { /* 静默忽略轮询错误 */ }
-}
-
-const confirmBindDingTalk = async () => {
-  if (dtBindStatus.value !== 'scanned') return
-  dtBindConfirming.value = true
-  try {
-    const res = await request.post(`/auth/dingtalk/scan/confirm/${dtBindState.value}`)
-    if (res.status === 'bound') {
-      ElMessage.success(`已为「${res.real_name || bindTarget.value?.real_name}」绑定钉钉账号`)
-      bindDialogVisible.value = false
-      fetchData()
-    }
-  } catch (e) {
-    ElMessage.error(e?.response?.data?.detail || '绑定失败')
-    cleanupBindScan({ full: true })
-  } finally {
-    dtBindConfirming.value = false
-  }
 }
 
 onMounted(fetchData)
