@@ -1,5 +1,6 @@
 from sqlalchemy import Column, String, Integer, Boolean, Text, Date, JSON, ForeignKey
 from app.models.base import BaseModel
+from sqlalchemy.orm import relationship
 
 
 class Customer(BaseModel):
@@ -23,6 +24,8 @@ class Customer(BaseModel):
     password_hash = Column(String(255), comment="客户门户登录密码（bcrypt）")
     remark = Column(Text)
     is_active = Column(Boolean, default=True, nullable=False, index=True)
+
+    sites = relationship("CustomerSite", back_populates="customer", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Customer({self.name} {self.phone})>"

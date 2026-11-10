@@ -83,6 +83,12 @@
         <el-form-item label="设备">
           <span>{{ dlg.device?.device_name }}（{{ dlg.device?.device_code }}）</span>
         </el-form-item>
+        <el-form-item label="机房 / 站点">
+          <el-select v-model="dlg.siteId" clearable placeholder="选择报修机房" style="width:100%">
+            <el-option v-for="s in sites" :key="s.id"
+                       :label="s.name + (s.address ? ' · ' + s.address : '')" :value="s.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="故障描述" required>
           <el-input v-model="dlg.faultDescription" type="textarea" :rows="4" maxlength="500"
                     show-word-limit placeholder="请描述现象，例如：开机后 GPU 风扇全速、BMC 报 ECC 错误" />
@@ -131,11 +137,12 @@ const customer = (() => {
   try { return JSON.parse(localStorage.getItem('customer_user') || '{}') } catch { return {} }
 })()
 const devices = ref([])
+const sites = ref([])
 const reports = ref([])
 const loadingReports = ref(false)
 
 const dlg = reactive({
-  visible: false, device: null, faultDescription: '', faultPhenomenon: '',
+  visible: false, device: null, siteId: null, faultDescription: '', faultPhenomenon: '',
   contactName: customer.name || '', contactPhone: customer.phone || '',
   submitting: false,
 })
@@ -154,14 +161,20 @@ const statusType = (s) => ({
   ARCHIVING: 'warning', ARCHIVED: 'success', REJECTED: 'danger',
 }[s] || 'info')
 
-const loadDevices = async () => {
-  try {
+const loadDevices = async () => {  try {
     const res = await customerRequest.get('/customer/devices')
     devices.value = res.items || []
   } catch (e) {
     if (e?.response?.status === 401 || e?.response?.status === 403) logout()
     ElMessage.error('加载设备失败')
   }
+}
+
+const loadSites = async () => {
+  try {
+    const res = await customerRequest.get('/customer/sites')
+    sites.value = res.items || []
+  } catch { sites.value = [] }
 }
 
 const loadReports = async () => {
@@ -175,6 +188,12 @@ const loadReports = async () => {
 
 const openReport = (device) => {
   dlg.device = device
+  dlg.siteId = null
+  // 默认选与设备位置匹配的机房，否则选默认机房
+  const hit = sites.value.find((s) => s.address && device.location && s.address.includes(device.location))
+    || sites.value.find((s) => s.is_default)
+    || sites.value[0]
+  dlg.siteId = hit ? hit.id : null
   dlg.faultDescription = ''
   dlg.faultPhenomenon = ''
   dlg.contactName = customer.name || ''
@@ -191,6 +210,7 @@ const submitReport = async () => {
   try {
     const res = await customerRequest.post('/customer/reports', {
       device_id: dlg.device.id,
+      site_id: dlg.siteId || null,
       fault_description: dlg.faultDescription.trim(),
       fault_phenomenon: dlg.faultPhenomenon.trim() || null,
       contact_name: dlg.contactName.trim() || null,
@@ -265,6 +285,7 @@ onMounted(() => {
     return
   }
   loadDevices()
+  loadSites()
   loadReports()
 })
 </script>

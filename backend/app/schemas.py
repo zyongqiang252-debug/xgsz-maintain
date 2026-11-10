@@ -315,6 +315,9 @@ class WorkOrderResponse(BaseModel):
     customer_phone: Optional[str] = None
     customer_contact_name: Optional[str] = None
     customer_contact_phone: Optional[str] = None
+    customer_site_id: Optional[int] = None
+    customer_site_name: Optional[str] = None
+    customer_address: Optional[str] = None
     technician_name: Optional[str] = None
     transfer_from_name: Optional[str] = None
     collaborators: Optional[Any] = None

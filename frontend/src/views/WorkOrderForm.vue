@@ -68,6 +68,10 @@
           <el-descriptions-item v-if="form.customer_name" label="客户">
             {{ form.customer_name }}<span v-if="form.customer_company">（{{ form.customer_company }}）</span>
           </el-descriptions-item>
+          <el-descriptions-item v-if="form.customer_site_name || form.customer_address" label="机房 / 地址">
+            {{ form.customer_site_name || '—' }}
+            <span v-if="form.customer_address" class="hint"> · {{ form.customer_address }}</span>
+          </el-descriptions-item>
           <el-descriptions-item v-if="form.customer_phone" label="客户电话">{{ form.customer_phone }}</el-descriptions-item>
           <el-descriptions-item v-if="form.customer_contact_name" label="报修联系人">
             {{ form.customer_contact_name }}

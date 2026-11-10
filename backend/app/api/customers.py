@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.core.security import require_supervisor
 from app.models.customer import Customer
 from app.models.customer_contact import CustomerContact
+from app.models.customer_site import CustomerSite
 from app.models.customer_device import CustomerDevice
 from app.models.device import Device
 from app.models.user import User
@@ -122,7 +123,70 @@ def _cust_dict(db: Session, c: Customer, detail: bool = False) -> dict:
         recent = (db.query(WorkOrder).filter(WorkOrder.customer_id == c.id)
                   .order_by(WorkOrder.id.desc()).limit(10).all())
         d["recent_orders"] = [_order_brief(w) for w in recent]
+        site_rows = (db.query(CustomerSite)
+                     .filter(CustomerSite.customer_id == c.id)
+                     .order_by(CustomerSite.is_default.desc(), CustomerSite.id.asc()).all())
+        d["sites"] = [{"id": x.id, "name": x.name, "address": x.address or "",
+                       "contact_name": x.contact_name or "", "contact_phone": x.contact_phone or "",
+                       "is_default": bool(x.is_default), "remark": x.remark or ""}
+                      for x in site_rows]
     return d
+
+class SiteIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    address: Optional[str] = Field(None, max_length=300)
+    contact_name: Optional[str] = Field(None, max_length=100)
+    contact_phone: Optional[str] = Field(None, max_length=20)
+    is_default: bool = False
+    remark: Optional[str] = Field(None, max_length=500)
+
+@router.get("/{customer_id}/sites", summary="客户机房/站点")
+def list_sites(customer_id: int, db: Session = Depends(get_db)):
+    rows = (db.query(CustomerSite).filter(CustomerSite.customer_id == customer_id)
+            .order_by(CustomerSite.is_default.desc(), CustomerSite.id.asc()).all())
+    return {"items": [{"id": x.id, "name": x.name, "address": x.address or "",
+                       "contact_name": x.contact_name or "", "contact_phone": x.contact_phone or "",
+                       "is_default": bool(x.is_default), "remark": x.remark or ""} for x in rows]}
+
+@router.post("/{customer_id}/sites", summary="新增客户机房")
+def add_site(customer_id: int, data: SiteIn, db: Session = Depends(get_db)):
+    if not db.query(Customer).filter(Customer.id == customer_id).first():
+        raise HTTPException(status_code=404, detail="客户不存在")
+    if data.is_default:
+        db.query(CustomerSite).filter(CustomerSite.customer_id == customer_id).update(
+            {CustomerSite.is_default: False})
+    s = CustomerSite(customer_id=customer_id, name=data.name, address=data.address,
+                     contact_name=data.contact_name, contact_phone=data.contact_phone,
+                     is_default=data.is_default, remark=data.remark)
+    db.add(s); db.commit(); db.refresh(s)
+    return {"id": s.id, "name": s.name}
+
+@router.put("/{customer_id}/sites/{site_id}", summary="修改客户机房")
+def update_site(customer_id: int, site_id: int, data: SiteIn, db: Session = Depends(get_db)):
+    s = (db.query(CustomerSite).filter(CustomerSite.id == site_id,
+                                       CustomerSite.customer_id == customer_id).first())
+    if not s:
+        raise HTTPException(status_code=404, detail="机房不存在")
+    if data.is_default:
+        db.query(CustomerSite).filter(CustomerSite.customer_id == customer_id).update(
+            {CustomerSite.is_default: False})
+    s.name = data.name
+    s.address = data.address
+    s.contact_name = data.contact_name
+    s.contact_phone = data.contact_phone
+    s.is_default = data.is_default
+    s.remark = data.remark
+    db.commit()
+    return {"message": "已保存"}
+
+@router.delete("/{customer_id}/sites/{site_id}", summary="删除客户机房")
+def delete_site(customer_id: int, site_id: int, db: Session = Depends(get_db)):
+    s = (db.query(CustomerSite).filter(CustomerSite.id == site_id,
+                                       CustomerSite.customer_id == customer_id).first())
+    if not s:
+        raise HTTPException(status_code=404, detail="机房不存在")
+    db.delete(s); db.commit()
+    return {"message": "已删除"}
 
 
 def _order_brief(w: WorkOrder) -> dict:

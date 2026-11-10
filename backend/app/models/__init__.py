@@ -22,6 +22,7 @@ from app.models.work_order_collaborator import WorkOrderCollaborator
 from app.models.customer import Customer
 from app.models.customer_device import CustomerDevice
 from app.models.customer_contact import CustomerContact
+from app.models.customer_site import CustomerSite
 from app.models.stock_movement import StockMovement
 from app.models.spare_part_requisition import (
     SparePartRequisition, SparePartRequisitionStatus,
@@ -53,7 +54,7 @@ __all__ = [
     "WorkOrderImportBatch", "WorkOrderImportItem",
     "WorkOrderEditLog",
     "WorkOrderCollaborator",
-    "Customer", "CustomerDevice", "CustomerContact",
+    "Customer", "CustomerDevice", "CustomerContact", "CustomerSite",
     "StockMovement",
     "SparePartRequisition", "SparePartRequisitionStatus",
     "Warehouse", "WarehouseLocation",

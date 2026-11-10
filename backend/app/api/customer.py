@@ -34,6 +34,7 @@ class CustomerLoginIn(BaseModel):
 
 class CustomerReportIn(BaseModel):
     device_id: int
+    site_id: Optional[int] = None
     fault_description: str = Field(..., min_length=2, max_length=500)
     fault_phenomenon: Optional[str] = Field(None, max_length=500)
     contact_name: Optional[str] = Field(None, max_length=100)
@@ -103,6 +104,16 @@ def customer_login(data: CustomerLoginIn, db: Session = Depends(get_db)):
     return {"token": create_customer_token(customer), "customer": _customer_dict(customer)}
 
 
+@router.get("/sites", summary="我的机房/站点")
+def my_sites(customer: Customer = Depends(get_current_customer),
+             db: Session = Depends(get_db)):
+    from app.models.customer_site import CustomerSite
+    rows = (db.query(CustomerSite).filter(CustomerSite.customer_id == customer.id)
+            .order_by(CustomerSite.is_default.desc(), CustomerSite.id.asc()).all())
+    return {"items": [{"id": s.id, "name": s.name, "address": s.address or "",
+                       "is_default": bool(s.is_default)} for s in rows]}
+
+
 @router.get("/devices", summary="我的服务器列表")
 def my_devices(customer: Customer = Depends(get_current_customer),
                db: Session = Depends(get_db)):
@@ -140,6 +151,15 @@ def submit_report(data: CustomerReportIn,
             seq = 1
     work_order_no = f"{prefix}{seq:03d}"
 
+    site = None
+    if data.site_id:
+        from app.models.customer_site import CustomerSite
+        site = (db.query(CustomerSite)
+                .filter(CustomerSite.id == data.site_id,
+                        CustomerSite.customer_id == customer.id).first())
+        if not site:
+            raise HTTPException(status_code=400, detail="所选机房不属于你的账号")
+
     wo = WorkOrder(
         work_order_no=work_order_no,
         device_id=device.id,
@@ -159,6 +179,9 @@ def submit_report(data: CustomerReportIn,
         customer_contact_name=data.contact_name or customer.name,
         customer_contact_phone=data.contact_phone or customer.phone,
         customer_accept_status="PENDING",
+        customer_site_id=site.id if site else None,
+        customer_site_name=site.name if site else None,
+        customer_address=(site.address if site else None) or customer.address,
     )
     # SLA：客户合同时限优先，未配置则按中优先级默认
     from app.services import sla as sla_service
@@ -230,6 +253,8 @@ def my_reports(customer: Customer = Depends(get_current_customer),
             "satisfaction_comment": w.satisfaction_comment,
             "can_rate": (w.status == WorkOrderStatus.ARCHIVED and w.satisfaction_score is None),
             "customer_accept_status": w.customer_accept_status,
+            "customer_site_name": w.customer_site_name,
+            "customer_address": w.customer_address,
             "can_accept": (w.status == WorkOrderStatus.ARCHIVING
                            and w.customer_accept_status != "ACCEPTED"),
         })

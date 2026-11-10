@@ -88,6 +88,31 @@
               </el-table>
             </el-tab-pane>
 
+            <el-tab-pane label="机房 / 站点" name="sites">
+              <div class="contacts-head">
+                <span class="card-title">机房 / 站点</span>
+                <el-button type="primary" size="small" @click="openSite()">新增机房</el-button>
+              </div>
+              <el-table :data="sites" size="small" stripe>
+                <el-table-column prop="name" label="名称" width="140">
+                  <template #default="{ row }">
+                    {{ row.name }}
+                    <el-tag v-if="row.is_default" size="small" type="success" effect="plain">默认</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="address" label="地址" min-width="220" show-overflow-tooltip />
+                <el-table-column label="现场联系人" width="160">
+                  <template #default="{ row }">{{ row.contact_name || '—' }} {{ row.contact_phone || '' }}</template>
+                </el-table-column>
+                <el-table-column label="操作" width="120">
+                  <template #default="{ row }">
+                    <el-button link type="primary" @click="openSite(row)">编辑</el-button>
+                    <el-button link type="danger" @click="removeSite(row)">删除</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-tab-pane>
+
             <el-tab-pane label="联系人" name="contacts">
               <div class="contacts-head">
                 <span class="card-title">联系人列表</span>
@@ -115,6 +140,21 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <el-dialog v-model="siteDlg.visible" :title="siteDlg.id ? '编辑机房' : '新增机房'" width="480px">
+      <el-form label-width="90px">
+        <el-form-item label="名称" required><el-input v-model="siteDlg.name" maxlength="50" placeholder="例如：A 机房 / 北京亦庄" /></el-form-item>
+        <el-form-item label="地址"><el-input v-model="siteDlg.address" maxlength="200" /></el-form-item>
+        <el-form-item label="现场联系人"><el-input v-model="siteDlg.contact_name" maxlength="50" /></el-form-item>
+        <el-form-item label="联系电话"><el-input v-model="siteDlg.contact_phone" maxlength="20" /></el-form-item>
+        <el-form-item label="默认机房"><el-switch v-model="siteDlg.is_default" /></el-form-item>
+        <el-form-item label="备注"><el-input v-model="siteDlg.remark" type="textarea" :rows="2" maxlength="200" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="siteDlg.visible = false">取消</el-button>
+        <el-button type="primary" :loading="siteDlg.saving" @click="saveSite">保存</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="contactDlg.visible" :title="contactDlg.id ? '编辑联系人' : '新增联系人'" width="480px">
       <el-form label-width="80px">
@@ -150,11 +190,16 @@ const orderTotal = ref(0)
 const orderPage = ref(1)
 const ordersLoading = ref(false)
 const contacts = ref([])
+const sites = ref([])
 const tab = ref('orders')
 
 const contactDlg = reactive({
   visible: false, id: null, name: '', phone: '', email: '', title: '',
   is_primary: false, remark: '', saving: false,
+})
+const siteDlg = reactive({
+  visible: false, id: null, name: '', address: '', contact_name: '',
+  contact_phone: '', is_default: false, remark: '', saving: false,
 })
 
 const STATUS = {
@@ -176,6 +221,7 @@ const load = async () => {
   try {
     c.value = await request.get(`/customers/${id}`)
     contacts.value = c.value.contacts || []
+    sites.value = c.value.sites || []
     await loadOrders()
   } catch (e) {
     ElMessage.error(e?.response?.data?.detail || '加载客户失败')
@@ -202,6 +248,44 @@ const exportReport = async () => {
   } catch {
     ElMessage.error('导出失败')
   } finally { exporting.value = false }
+}
+
+const openSite = (row = null) => {
+  Object.assign(siteDlg, {
+    visible: true, id: row?.id || null, name: row?.name || '', address: row?.address || '',
+    contact_name: row?.contact_name || '', contact_phone: row?.contact_phone || '',
+    is_default: !!row?.is_default, remark: row?.remark || '', saving: false,
+  })
+}
+const saveSite = async () => {
+  if (!siteDlg.name.trim()) return ElMessage.warning('请填写机房名称')
+  siteDlg.saving = true
+  try {
+    const payload = {
+      name: siteDlg.name.trim(), address: siteDlg.address || null,
+      contact_name: siteDlg.contact_name || null, contact_phone: siteDlg.contact_phone || null,
+      is_default: siteDlg.is_default, remark: siteDlg.remark || null,
+    }
+    if (siteDlg.id) await request.put(`/customers/${id}/sites/${siteDlg.id}`, payload)
+    else await request.post(`/customers/${id}/sites`, payload)
+    ElMessage.success('已保存')
+    siteDlg.visible = false
+    const res = await request.get(`/customers/${id}/sites`)
+    sites.value = res.items || []
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '保存失败')
+  } finally { siteDlg.saving = false }
+}
+const removeSite = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确定删除机房「${row.name}」？`, '删除确认', { type: 'warning' })
+  } catch { return }
+  try {
+    await request.delete(`/customers/${id}/sites/${row.id}`)
+    ElMessage.success('已删除')
+    const res = await request.get(`/customers/${id}/sites`)
+    sites.value = res.items || []
+  } catch (e) { ElMessage.error(e?.response?.data?.detail || '删除失败') }
 }
 
 const openContact = (row = null) => {

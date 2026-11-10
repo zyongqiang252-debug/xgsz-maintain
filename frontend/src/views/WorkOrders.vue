@@ -78,7 +78,7 @@
 
     <el-card class="table-card" shadow="never">
       <el-table :data="list" stripe class="wo-table" :row-class-name="rowClassName" @row-click="onRowClick">
-        <el-table-column label="工单编号" width="190" show-overflow-tooltip>
+        <el-table-column label="工单编号" width="168" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="wo-no">{{ row.work_order_no }}</span>
             <el-tag v-if="row.customer_name" size="small" type="success" effect="plain"
@@ -89,11 +89,16 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="设备 / 故障" min-width="240">
+        <el-table-column label="设备 / 故障" min-width="260">
           <template #default="{ row }">
             <div class="fault-cell" :title="row.fault_description || ''">
               <div class="fault-device">{{ row.device_code || row.device_name || '未指定设备' }}</div>
               <div class="fault-desc">{{ row.fault_description || '-' }}</div>
+              <div v-if="row.customer_id" class="fault-cust">
+                {{ row.customer_company || row.customer_name }}
+                <span v-if="row.customer_site_name"> · {{ row.customer_site_name }}</span>
+                <span v-else-if="row.customer_address"> · {{ row.customer_address }}</span>
+              </div>
             </div>
           </template>
         </el-table-column>
@@ -105,7 +110,7 @@
                     size="small" type="info" effect="plain" class="hold-chip">待客户确认</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="负责人" width="150" show-overflow-tooltip>
+        <el-table-column label="负责人" width="124" show-overflow-tooltip>
           <template #default="{ row }">
             <span v-if="row.technician_name">{{ row.technician_name }}</span>
             <span v-else class="muted">未指派</span>
@@ -120,10 +125,10 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="140">
+        <el-table-column prop="created_at" label="创建时间" width="120">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="212" header-align="left">
+        <el-table-column label="操作" width="220" header-align="left">
           <template #default="{ row }">
             <div class="op-cell">
               <div class="op-actions">
@@ -783,6 +788,7 @@ const handleExport = async () => {
 .muted { color: #C9CDD4; }
 .collab-line { font-size: 11px; color: #86909C; line-height: 1.4; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hold-chip { margin-top: 3px; }
+.fault-cust { font-size: 11px; color: #0FC6C2; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fault-cell { display: flex; flex-direction: column; gap: 2px; line-height: 1.4; }
 .fault-device { font-size: 12px; color: #86909C; }
 .fault-desc { font-size: 13px; color: #1D2129; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

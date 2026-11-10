@@ -105,6 +105,9 @@ class WorkOrder(BaseModel):
     customer_phone = Column(String(20), comment="客户手机号快照")
     customer_contact_name = Column(String(100), comment="本次报修联系人")
     customer_contact_phone = Column(String(20), comment="本次报修联系电话")
+    customer_site_id = Column(Integer, ForeignKey("customer_sites.id"), comment="客户机房/站点")
+    customer_site_name = Column(String(100), comment="机房/站点名称快照")
+    customer_address = Column(String(300), comment="客户地址快照")
 
     # ===== SLA（响应/修复时限，建单时按优先级计算）=====
     response_due_at = Column(TIMESTAMP, comment="响应截止（接单）")
