@@ -11,7 +11,7 @@ export const FEATURES = {
   maintenance: false,      // 保养与点检（无实际使用）
   schedule: false,         // 排班管理（0 条排班）
   warehouse: false,        // 仓库库存（与备件台账重复）
-  stockMovements: false,   // 出入库流水（备件台账已含库存）
+  stockMovements: true,    // 出入库流水（独立页面 /stock/movements）
   manuals: false,          // 设备手册（与知识库重复）
   leave: false,            // 请假（HR 功能，PC + 移动端）
   help: false,             // 帮助中心（静态文案）

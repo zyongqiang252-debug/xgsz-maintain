@@ -7,9 +7,6 @@
       <el-tab-pane v-if="FEATURES.warehouse" label="仓库库存" name="warehouse" lazy>
         <component :is="Warehouse" />
       </el-tab-pane>
-      <el-tab-pane v-if="FEATURES.stockMovements" label="出入库流水" name="movements" lazy>
-        <component :is="StockMovements" />
-      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -24,16 +21,14 @@ const router = useRouter()
 
 const SpareParts = defineAsyncComponent(() => import('./SpareParts.vue'))
 const Warehouse = defineAsyncComponent(() => import('./Warehouse.vue'))
-const StockMovements = defineAsyncComponent(() => import('./StockMovements.vue'))
 
-const VALID_ALL = ['parts', 'warehouse', 'movements']
+const VALID_ALL = ['parts', 'warehouse']
 const VISIBLE_TABS = VALID_ALL.filter((t) => {
   if (t === 'warehouse') return FEATURES.warehouse
-  if (t === 'movements') return FEATURES.stockMovements
   return true
 })
 const VALID = VISIBLE_TABS
-const singleTab = computed(() => !FEATURES.warehouse && !FEATURES.stockMovements)
+const singleTab = computed(() => !FEATURES.warehouse)
 
 const DEFAULT_TAB = 'parts'
 const tab = ref(VALID.includes(String(route.query.tab)) ? String(route.query.tab) : VALID[0])

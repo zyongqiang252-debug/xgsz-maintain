@@ -220,6 +220,10 @@
                 <el-icon><Box /></el-icon>
                 <template #title>库存中心</template>
               </el-menu-item>
+              <el-menu-item v-if="FEATURES.stockMovements" index="/stock/movements">
+                <el-icon><Tickets /></el-icon>
+                <template #title>出入库流水</template>
+              </el-menu-item>
               <el-menu-item index="/dict">
                 <el-icon><Grid /></el-icon>
                 <template #title>字典管理</template>
@@ -294,6 +298,9 @@
                 <el-menu-item index="/stock">
                   <el-icon><Box /></el-icon>
                 </el-menu-item>
+                <el-menu-item v-if="FEATURES.stockMovements" index="/stock/movements">
+                  <el-icon><Tickets /></el-icon>
+                </el-menu-item>
                 <el-menu-item index="/dict">
                   <el-icon><Grid /></el-icon>
                 </el-menu-item>
@@ -340,7 +347,7 @@ import {
   User, Lock, QuestionFilled, SwitchButton,
   SetUp, Histogram, Calendar, Upload,
   DataAnalysis, Document, ChatLineSquare, Reading, Monitor, Grid, Box, Connection,
-  Setting, Tools, Moon, Sunny, Bell
+  Setting, Tools, Moon, Sunny, Bell, Tickets
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
