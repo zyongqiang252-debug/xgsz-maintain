@@ -32,6 +32,17 @@
         </el-table-column>
         <el-table-column prop="part_code" label="备件编码" width="130" show-overflow-tooltip />
         <el-table-column prop="part_name" label="备件名称" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="serial_no" label="序列号 SN" width="160" show-overflow-tooltip />
+        <el-table-column label="照片" width="76" align="center">
+          <template #default="{ row }">
+            <el-image
+              v-if="row.attachments && row.attachments.length"
+              :src="row.attachments[0]" :preview-src-list="row.attachments"
+              fit="cover" preview-teleported style="width:34px;height:34px;border-radius:4px"
+            />
+            <span v-else>—</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="quantity" label="数量" width="80" align="right" />
         <el-table-column label="库存变化" width="120" align="center">
           <template #default="{ row }">{{ row.before_qty }} → {{ row.after_qty }}</template>

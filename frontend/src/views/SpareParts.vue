@@ -48,6 +48,20 @@
         <el-table-column prop="part_code" label="备件编码" width="128" show-overflow-tooltip />
         <el-table-column prop="part_name" label="备件名称" min-width="150" show-overflow-tooltip />
         <el-table-column prop="specification" label="规格型号" width="118" show-overflow-tooltip />
+        <el-table-column prop="serial_no" label="序列号 SN" width="150" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span :class="{ muted: !row.serial_no }">{{ row.serial_no || '—' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="照片" width="84" align="center">          <template #default="{ row }">
+            <el-image
+              v-if="row.attachments && row.attachments.length"
+              :src="row.attachments[0]" :preview-src-list="row.attachments"
+              fit="cover" preview-teleported class="part-thumb"
+            />
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="unit" label="单位" width="52" align="center" />
         <el-table-column
           prop="stock_quantity" label="库存" width="88" align="right"
@@ -230,6 +244,12 @@
         <el-form-item label="领用数量" required>
           <el-input-number v-model="consume.quantity" :min="1" :max="consume.row?.stock_quantity || 1" />
         </el-form-item>
+        <el-form-item label="序列号 SN">
+          <el-input v-model="consume.serialNo" maxlength="500" placeholder="选填，出库件的 SN；多个用逗号分隔" />
+        </el-form-item>
+        <el-form-item label="照片附件">
+          <PhotoUpload v-model="consume.attachments" />
+        </el-form-item>
         <el-form-item label="关联工单">
           <el-select v-model="consume.workOrderId" filterable clearable placeholder="选填：挂到某张工单上（会自动计入该工单成本）" style="width:100%">
             <el-option v-for="wo in consume.workOrders" :key="wo.id"
@@ -258,6 +278,7 @@ import { downloadFile } from '../utils/download'
 
 import EmptyState from '../components/EmptyState.vue'
 import IconAction from '../components/IconAction.vue'
+import PhotoUpload from '../components/PhotoUpload.vue'
 const router = useRouter()
 
 // 备件台账维护权限：仅管理员/主管可增删改，维修员只读
@@ -283,7 +304,7 @@ const showAlerts = ref(false)
 
 // ===== 领用 / 流水 =====
 const consume = reactive({
-  visible: false, row: null, quantity: 1, workOrderId: null, remark: '', loading: false, workOrders: [],
+  visible: false, row: null, quantity: 1, workOrderId: null, serialNo: '', attachments: [], remark: '', loading: false, workOrders: [],
 })
 const openConsume = async (row) => {
   if (!row.stock_quantity) {
@@ -293,6 +314,8 @@ const openConsume = async (row) => {
   consume.row = row
   consume.quantity = 1
   consume.workOrderId = null
+  consume.serialNo = row.serial_no || ''
+  consume.attachments = []
   consume.remark = ''
   consume.visible = true
   try {
@@ -308,6 +331,8 @@ const submitConsume = async () => {
     const res = await request.post(`/spare-parts/${consume.row.id}/consume`, {
       quantity: consume.quantity,
       work_order_id: consume.workOrderId || null,
+      serial_no: consume.serialNo.trim() || null,
+      attachments: consume.attachments,
       remark: consume.remark || null,
     })
     ElMessage.success(`领用成功，剩余库存 ${res.stock_quantity}`)
@@ -479,6 +504,7 @@ const handleExport = async () => {
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .page-title { font-size: 20px; font-weight: 600; color: var(--color-text-primary); }
+.part-thumb { width: 36px; height: 36px; border-radius: 4px; vertical-align: middle; }
 .header-actions { display: flex; gap: 12px; }
 
 .alert-banner { margin-bottom: 16px; }

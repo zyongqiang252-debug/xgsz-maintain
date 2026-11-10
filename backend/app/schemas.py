@@ -447,6 +447,9 @@ class SparePartCreate(BaseModel):
     device_type: Optional[str] = None
     location: Optional[str] = None
     supplier: Optional[str] = None
+    serial_no: Optional[str] = None
+    attachments: Optional[List[str]] = None
+    warehouse_id: Optional[int] = None
 
 
 class SparePartUpdate(BaseModel):
@@ -459,6 +462,9 @@ class SparePartUpdate(BaseModel):
     device_type: Optional[str] = None
     location: Optional[str] = None
     supplier: Optional[str] = None
+    serial_no: Optional[str] = None
+    attachments: Optional[List[str]] = None
+    warehouse_id: Optional[int] = None
 
 
 class SparePartResponse(BaseModel):
@@ -473,6 +479,11 @@ class SparePartResponse(BaseModel):
     device_type: Optional[str]
     location: Optional[str]
     supplier: Optional[str]
+    warehouse_id: Optional[int] = None
+    serial_no: Optional[str] = None
+    attachments: Optional[Any] = None
+    reserved_quantity: Optional[int] = 0
+    available_quantity: Optional[float] = None
     created_at: datetime
     updated_at: datetime
 

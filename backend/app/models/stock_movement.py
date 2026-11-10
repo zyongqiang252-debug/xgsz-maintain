@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Float, ForeignKey, TIMESTAMP, Text, text
+from sqlalchemy import Column, String, Integer, Float, ForeignKey, TIMESTAMP, Text, JSON, text
 from app.models.base import BaseModel
 
 
@@ -25,6 +25,8 @@ class StockMovement(BaseModel):
     work_order_id = Column(Integer, ForeignKey("work_orders.id"), index=True, comment="领用关联的工单")
     operator_id = Column(Integer, ForeignKey("users.id"))
     operator_name = Column(String(100))
+    serial_no = Column(String(500), comment="本次出入库的序列号 SN")
+    attachments = Column(JSON, comment="照片附件 URL 列表")
     remark = Column(Text)
 
     def __repr__(self):

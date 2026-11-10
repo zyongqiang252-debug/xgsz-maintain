@@ -62,6 +62,12 @@
         <el-form-item label="供应商">
           <el-input v-model="form.supplier" placeholder="供应商名称" />
         </el-form-item>
+        <el-form-item label="序列号 SN">
+          <el-input v-model="form.serial_no" maxlength="500" placeholder="一物一码，多个用逗号分隔" />
+        </el-form-item>
+        <el-form-item label="照片附件">
+          <PhotoUpload v-model="form.attachments" />
+        </el-form-item>
         <el-form-item>
           <el-button v-if="canManage" type="primary" @click="handleSave" :loading="saving">保存</el-button>
           <el-button @click="$router.push('/spare-parts')">返回列表</el-button>
@@ -77,6 +83,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import request from '../api'
+import PhotoUpload from '../components/PhotoUpload.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -94,7 +101,7 @@ const canManage = computed(() => {
 const form = ref({
   part_code: '', part_name: '', specification: '', unit: '个',
   stock_quantity: 0, safety_stock: 0, unit_price: 0,
-  device_type: '', location: '', supplier: ''
+  device_type: '', location: '', supplier: '', serial_no: '', attachments: []
 })
 
 const loadData = async () => {

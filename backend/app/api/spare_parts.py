@@ -11,12 +11,16 @@ from app.core.cache_service import cache_service
 from app.models.spare_part import SparePart
 from app.models.user import User
 from app.schemas import SparePartCreate, SparePartUpdate, SparePartResponse, PaginatedResponse
+from app.services.stock_service import lock_part
 
 router = APIRouter()
 
 
 def _sp_to_dict(s: SparePart) -> dict:
-    return {c.name: getattr(s, c.name) for c in s.__table__.columns}
+    d = {c.name: getattr(s, c.name) for c in s.__table__.columns}
+    d["reserved_quantity"] = int(s.reserved_quantity or 0)
+    d["available_quantity"] = float(s.stock_quantity or 0) - d["reserved_quantity"]
+    return d
 
 
 # ==================== 进货单导入 Schema ====================
@@ -206,6 +210,18 @@ def delete_spare_part(part_id: int, db: Session = Depends(get_db), current_user:
     part = db.query(SparePart).filter(SparePart.id == part_id).first()
     if not part:
         raise HTTPException(status_code=404, detail="备件不存在")
+    # 有实物实例或领用单在引用时不允许删，否则 SN 追溯会断链
+    from app.models.part_instance import PartInstance
+    from app.models.spare_part_requisition import SparePartRequisition
+    inst_cnt = db.query(PartInstance).filter(PartInstance.part_id == part_id).count()
+    if inst_cnt:
+        raise HTTPException(status_code=400,
+                            detail=f"该备件已登记 {inst_cnt} 件实物实例（SN），先处理实物再删")
+    req_cnt = db.query(SparePartRequisition).filter(
+        SparePartRequisition.part_id == part_id).count()
+    if req_cnt:
+        raise HTTPException(status_code=400,
+                            detail=f"该备件被 {req_cnt} 张领用单引用，不能删除（可把库存改为 0 停用）")
     db.delete(part)
     db.commit()
     cache_service.delete(f"spare_part:{part_id}")
@@ -218,12 +234,16 @@ def delete_spare_part(part_id: int, db: Session = Depends(get_db), current_user:
 class ConsumeIn(BaseModel):
     quantity: float = Field(..., gt=0, description="领用数量")
     work_order_id: Optional[int] = Field(None, description="关联工单（领料登记）")
+    serial_no: Optional[str] = Field(None, max_length=500, description="本次出库的序列号 SN")
+    attachments: Optional[List[str]] = Field(None, description="照片附件 URL")
     remark: Optional[str] = None
 
 
 class StockInIn(BaseModel):
     quantity: float = Field(..., gt=0, description="入库数量")
     unit_price: Optional[float] = Field(None, description="本次单价，不传则用备件单价")
+    serial_no: Optional[str] = Field(None, max_length=500, description="本次入库的序列号 SN")
+    attachments: Optional[List[str]] = Field(None, description="照片附件 URL")
     remark: Optional[str] = None
 
 
@@ -241,6 +261,8 @@ def _movement_to_dict(m) -> dict:
         "amount": m.amount,
         "work_order_id": m.work_order_id,
         "operator_name": m.operator_name,
+        "serial_no": getattr(m, "serial_no", None),
+        "attachments": getattr(m, "attachments", None),
         "remark": m.remark,
         "created_at": m.created_at.isoformat() if m.created_at else None,
     }
@@ -270,14 +292,19 @@ def consume_part(part_id: int, data: ConsumeIn, db: Session = Depends(get_db),
     from app.models.work_order import WorkOrder
     from app.services import sla as sla_service
 
-    part = db.query(SparePart).filter(SparePart.id == part_id).first()
+    part = lock_part(db, part_id)  # 行锁：并发领用排队，防超卖
     if not part:
         raise HTTPException(status_code=404, detail="备件不存在")
 
     before = float(part.stock_quantity or 0)
-    if data.quantity > before:
-        raise HTTPException(status_code=400,
-                            detail=f"库存不足：当前 {before:g} {part.unit or ''}，本次要领 {data.quantity:g}")
+    reserved = float(part.reserved_quantity or 0)
+    avail = before - reserved
+    if data.quantity > avail:
+        raise HTTPException(
+            status_code=400,
+            detail=f"可用库存不足：现存 {before:g}，已预占 {reserved:g}，"
+                   f"可用 {avail:g} {part.unit or ''}，本次要领 {data.quantity:g}",
+        )
     after = before - data.quantity
     part.stock_quantity = int(after) if float(after).is_integer() else after
 
@@ -295,6 +322,7 @@ def consume_part(part_id: int, data: ConsumeIn, db: Session = Depends(get_db),
         amount=round((part.unit_price or 0) * data.quantity, 2),
         work_order_id=data.work_order_id,
         operator_id=current_user.id, operator_name=current_user.real_name,
+        serial_no=data.serial_no, attachments=data.attachments,
         remark=data.remark,
     )
     db.add(mv)
@@ -326,7 +354,7 @@ def stock_in_part(part_id: int, data: StockInIn, db: Session = Depends(get_db),
                   current_user: User = Depends(require_supervisor)):
     from app.models.stock_movement import StockMovement
 
-    part = db.query(SparePart).filter(SparePart.id == part_id).first()
+    part = lock_part(db, part_id)  # 行锁：与领用/盘点串行，避免出入库互相覆盖
     if not part:
         raise HTTPException(status_code=404, detail="备件不存在")
 
@@ -343,9 +371,16 @@ def stock_in_part(part_id: int, data: StockInIn, db: Session = Depends(get_db),
         before_qty=before, after_qty=after,
         unit_price=price, amount=round(price * data.quantity, 2),
         operator_id=current_user.id, operator_name=current_user.real_name,
+        serial_no=data.serial_no, attachments=data.attachments,
         remark=data.remark,
     )
     db.add(mv)
+    # 库存台账同步：最新 SN + 入库照片（最多留 6 张）
+    if data.serial_no:
+        part.serial_no = data.serial_no
+    if data.attachments:
+        merged = list(part.attachments or []) + list(data.attachments)
+        part.attachments = merged[-6:]
     db.commit()
     db.refresh(mv)
     cache_service.delete(f"spare_part:{part_id}")
