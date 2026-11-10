@@ -104,18 +104,8 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="优先级 / 时效" width="156">
-          <template #default="{ row }">
-            <div class="prio-cell">
-              <el-tag v-if="row.alert_level" size="small" :type="alertLevelMeta(row.alert_level).type" effect="plain">
-                {{ row.alert_level }}
-              </el-tag>
-              <span v-else class="muted">—</span>
-              <el-tooltip :content="slaTooltip(row)" placement="top">
-                <el-tag size="small" :type="slaTagType(row)" effect="light">{{ slaLabel(row) }}</el-tag>
-              </el-tooltip>
-            </div>
-          </template>
+        <el-table-column prop="created_at" label="创建时间" width="140">
+          <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="212" header-align="left">
           <template #default="{ row }">
