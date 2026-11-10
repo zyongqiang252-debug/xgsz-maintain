@@ -240,9 +240,37 @@
     <!-- 编辑模式 -->
     <template v-if="!isViewMode">
       <div class="work-order-form-head">
-        <h3 class="work-order-form-title">{{ isNew ? '新增工单' : (form.work_order_no || '编辑工单') }}</h3>
+        <div class="head-left">
+          <h3 class="work-order-form-title">{{ isNew ? '新增工单' : (form.work_order_no || '编辑工单') }}</h3>
+          <el-tag v-if="!isNew" :type="statusTagType" size="small">{{ statusGroupLabel }}</el-tag>
+          <el-tag v-if="form.is_on_hold" type="warning" effect="dark" size="small">挂起 · {{ holdLabel }}</el-tag>
+          <span v-if="form.customer_id" class="head-meta">
+            {{ form.customer_company || form.customer_name }}
+            <span v-if="form.customer_site_name"> · {{ form.customer_site_name }}</span>
+          </span>
+          <span v-if="form.technician_name || form.technician?.real_name" class="head-meta">
+            负责人：{{ form.technician_name || form.technician?.real_name }}
+          </span>
+        </div>
         <div class="work-order-form-actions">
-          <el-button @click="viewDrafts">查看历史草稿</el-button>
+          <el-button
+            v-if="['SUBMITTED','ASSIGNED','ACCEPTED','ARRIVED','INSPECTING'].includes(form.status) && canDispatch"
+            type="primary" plain size="small" @click="openDispatch"
+          >{{ form.status === 'SUBMITTED' ? '派工' : '改派' }}</el-button>
+          <el-button v-if="form.status === 'SUBMITTED' && canClaim" type="primary" size="small"
+                     :loading="claiming" @click="claimTask">领取任务</el-button>
+          <template v-if="form.status === 'ASSIGNED' && isMyTask && !canDispatch">
+            <el-button type="primary" size="small" :loading="accepting" @click="acceptAssignment">接受</el-button>
+            <el-button type="danger" plain size="small" @click="rejectAssignment">拒收</el-button>
+          </template>
+          <el-button v-if="['ACCEPTED','ARRIVED','INSPECTING'].includes(form.status)"
+                     type="primary" size="small" :loading="starting" @click="startProcessing">
+            {{ startActionLabel }}
+          </el-button>
+          <el-button v-if="canHold" size="small" :type="form.is_on_hold ? 'success' : 'warning'" plain
+                     :loading="holdSaving" @click="onHoldAction">{{ form.is_on_hold ? '恢复处理' : '挂起' }}</el-button>
+          <el-button v-if="canRma" size="small" plain @click="openRma">RMA</el-button>
+          <el-button v-if="isNew" @click="viewDrafts">查看历史草稿</el-button>
           <el-button type="primary" @click="router.push('/work-orders')">返回列表</el-button>
         </div>
       </div>
@@ -275,8 +303,8 @@
         >报修人评价</el-button>
       </div>
       <div class="form-body">
-        <!-- 录入模式切换：标准录入 / 日志录入 -->
-        <div class="mode-switch-bar">
+        <!-- 录入模式切换：仅新建时显示 -->
+        <div v-if="isNew" class="mode-switch-bar">
           <span class="mode-switch-label">录入方式</span>
           <div class="mode-switch">
             <span class="mode-tab" :class="{ active: entryMode === 'standard' }" @click="switchEntryMode('standard')">标准录入</span>
@@ -705,7 +733,7 @@
         <div class="form-footer">
           <el-button type="info" @click="$router.back()">取消</el-button>
           <el-button type="primary" plain :loading="saving" @click="handleSaveDraft">
-            {{ saving ? '保存中...' : (form.status === 'ARCHIVED' ? '保存修改' : '保存草稿') }}
+            {{ saving ? '保存中...' : (isNew ? '保存草稿' : '保存修改') }}
           </el-button>
           <template v-if="form.status === 'ARCHIVING'">
             <el-button type="primary" :loading="archiving" @click="handleArchiveCheck">
@@ -723,7 +751,7 @@
               {{ submitting ? '提交中...' : '提交报修' }}
             </el-button>
             <el-button v-else-if="form.status === 'IN_PROGRESS'" type="success" :loading="submitting" @click="handleSubmit" :disabled="!canSubmit">
-              {{ submitting ? '提交中...' : '确认提交' }}
+              {{ submitting ? '提交中...' : '提交完成' }}
             </el-button>
           </template>
         </div>
@@ -1795,6 +1823,13 @@ const handleAnalyze = async () => {
   finally { analyzing.value = false }
 }
 
+const scrollToFirstError = () => {
+  nextTick(() => {
+    const el = document.querySelector('.el-form-item.is-error')
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+}
+
 const handleSubmit = async () => {
   if (!canSubmit.value) return
   // 补充信息选填：根因未填时仅文字提醒，不阻塞提交
@@ -1810,6 +1845,14 @@ const handleSubmit = async () => {
   } catch { return }
   submitting.value = true
   try {
+    // 提交完成时：没填结束时间就取当前时间，并自动算工时
+    if (!form.end_time) {
+      const start = form.start_time || form.first_response_at || form.created_at
+      if (start) {
+        timeRange.value = [dayjs(start).toDate(), new Date()]
+        calcWorkHours()
+      }
+    }
     const id = route.params.id || form.id
     await saveForm()
     const res = await request.post(`/work-orders/${id}/complete`, null, { timeout: 120000 })
@@ -1823,6 +1866,7 @@ const handleSubmit = async () => {
     const msg = (e && e.response && e.response.data && (e.response.data.detail || e.response.data.message))
       || (e && e.message) || '未知错误'
     ElMessage.error('提交失败：' + msg)
+    scrollToFirstError()
   }
   finally { submitting.value = false }
 }
@@ -1837,7 +1881,7 @@ const handleSaveDraft = async () => {
     } else {
       ElMessage.success('草稿已保存')
     }
-  } catch { /* error handled in saveForm */ }
+  } catch { scrollToFirstError() }
   finally { saving.value = false }
 }
 
@@ -1859,6 +1903,7 @@ const handleSubmitReport = async () => {
     const msg = (e && e.response && e.response.data && (e.response.data.detail || e.response.data.message))
       || (e && e.message) || '未知错误'
     ElMessage.error('提交报修失败：' + msg)
+    scrollToFirstError()
   } finally { submitting.value = false }
 }
 
@@ -2155,9 +2200,31 @@ onMounted(async () => {
         form.fault_code = []
       }
 
+      // 编辑已有工单：确保当前设备出现在下拉选项里，避免显示空白
+      if (!form.device_id && form.device_code) {
+        const byCode = devices.value.find((x) => x.device_code === form.device_code)
+        if (byCode) form.device_id = byCode.id
+      }
+      if (form.device_id) {
+        let d = devices.value.find((x) => x.id === form.device_id)
+        if (!d) {
+          try {
+            d = await request.get(`/devices/${form.device_id}`)
+            devices.value.unshift(d)
+          } catch { /* 设备可能已删除 */ }
+        }
+        if (d) {
+          if (!deviceFiltered.value.some((x) => x.id === d.id)) deviceFiltered.value.unshift(d)
+          if (!form.device_type) form.device_type = d.device_type
+          if (!form.location) form.location = d.location
+        }
+      }
+
       if (res.start_time && res.end_time) {
         timeRange.value = [dayjs(res.start_time).toDate(), dayjs(res.end_time).toDate()]
         calcWorkHours()
+      } else if (res.start_time) {
+        timeRange.value = [dayjs(res.start_time).toDate(), null]
       }
 
       usedParts.value = Array.isArray(res.used_parts) ? res.used_parts : []
@@ -2232,7 +2299,7 @@ onMounted(async () => {
 .analysis-card :deep(.el-card__header) { background: #FFF7D6; border-bottom: 1px solid #FFE58F; padding: 10px 16px; }
 .card-header-row { display: flex; justify-content: space-between; align-items: center; }
 .section-title { font-size: 14px; font-weight: 600; color: #D48806; }
-.form-footer { display: flex; gap: 12px; justify-content: center; margin-top: 24px; padding-bottom: 40px; }
+.form-footer { display: flex; gap: 12px; justify-content: center; margin-top: 16px; padding: 12px 16px; position: sticky; bottom: 0; z-index: 20; background: rgba(255,255,255,.97); border-top: 1px solid #E5E6EB; box-shadow: 0 -4px 14px rgba(0,0,0,.06); }
 .submit-hint { font-size: 12px; color: #FF7D00; text-align: center; margin-top: 8px; }
 .parts-list { display: flex; flex-direction: column; gap: 8px; }
 .part-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -2391,8 +2458,10 @@ onMounted(async () => {
 .supplement-badge { margin-left: 8px; }
 .supplement-body { padding-left: 4px; }
 
-.work-order-form-head { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; }
+.work-order-form-head { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; flex-wrap:wrap; }
 .work-order-form-title { font-size:20px; font-weight:600; color:var(--color-text-primary); margin:0; }
-.work-order-form-actions { display:flex; gap:10px; flex-shrink:0; }
+.head-left { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.head-meta { font-size:13px; color:#86909C; }
+.work-order-form-actions { display:flex; gap:8px; flex-shrink:0; flex-wrap:wrap; }
 .head-right { display:flex; align-items:center; gap:10px; }
 </style>
