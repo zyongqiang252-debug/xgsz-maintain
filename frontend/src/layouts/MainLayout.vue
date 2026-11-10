@@ -178,10 +178,6 @@
                 <el-icon><Upload /></el-icon>
                 <template #title>历史导入</template>
               </el-menu-item>
-              <el-menu-item index="/orders?tab=dispatch">
-                <el-icon><Connection /></el-icon>
-                <template #title>快速派工</template>
-              </el-menu-item>
               <el-menu-item v-if="FEATURES.deviceMonitor" index="/devices">
                 <el-icon><Monitor /></el-icon>
                 <template #title>服务器监控</template>
@@ -222,10 +218,6 @@
                 <el-menu-item index="/orders?tab=import">
                   <el-icon><Upload /></el-icon>
                   <template #title>历史导入</template>
-                </el-menu-item>
-                <el-menu-item index="/orders?tab=dispatch">
-                  <el-icon><Connection /></el-icon>
-                  <template #title>快速派工</template>
                 </el-menu-item>
               </template>
               <template v-else>
@@ -313,9 +305,6 @@
                 <el-menu-item index="/orders?tab=import">
                   <el-icon><Upload /></el-icon>
                 </el-menu-item>
-                <el-menu-item index="/orders?tab=dispatch">
-                  <el-icon><Connection /></el-icon>
-                </el-menu-item>
                 <el-menu-item v-if="FEATURES.deviceMonitor" index="/devices">
                   <el-icon><Monitor /></el-icon>
                 </el-menu-item>
@@ -343,9 +332,6 @@
                   </el-menu-item>
                   <el-menu-item index="/orders?tab=import">
                     <el-icon><Upload /></el-icon>
-                  </el-menu-item>
-                  <el-menu-item index="/orders?tab=dispatch">
-                    <el-icon><Connection /></el-icon>
                   </el-menu-item>
                 </template>
                 <template v-else>
@@ -453,7 +439,7 @@ const crumbs = computed(() => {
     const tab = String(route.query.tab || 'list')
     page = {
       list: '全部工单', progress: '进度看板', import: '历史导入',
-      dispatch: '快速派工', mine: '我的工单', pool: '工单池',
+      mine: '我的工单', pool: '工单池',
     }[tab] || page
   }
   if (path === '/dashboard') return { group: '', page: '' }

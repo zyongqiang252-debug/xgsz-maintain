@@ -52,7 +52,7 @@ const router = createRouter({
         { path: 'leave', name: 'LegacyLeaveRequests', redirect: '/me?tab=leave', meta: { title: '我的请假' } },
         { path: 'security', name: 'Security', component: () => import('../views/Security.vue'), meta: { title: '账号安全' } },
         { path: 'help', name: 'LegacyHelp', redirect: '/me?tab=help', meta: { title: '帮助中心' } },
-        { path: 'supervisor/dispatch', name: 'LegacySupervisorDispatch', redirect: '/orders?tab=dispatch', meta: { title: '派工中心', roles: ['SUPERVISOR', 'ADMIN'] } },
+        { path: 'supervisor/dispatch', name: 'LegacySupervisorDispatch', redirect: '/orders?tab=list', meta: { title: '工单列表', roles: ['SUPERVISOR', 'ADMIN'] } },
         { path: 'supervisor/progress', name: 'LegacySupervisorProgress', redirect: '/orders?tab=progress', meta: { title: '实时进度看板', roles: ['SUPERVISOR', 'ADMIN'] } },
         { path: 'supervisor/schedule', name: 'SupervisorSchedule', component: () => import('../views/SupervisorSchedule.vue'), meta: { title: '排班管理', roles: ['SUPERVISOR', 'ADMIN'] } },
       ]
