@@ -161,5 +161,52 @@ class DingTalkGroupRobot:
 
         self.send_markdown_async(title, "\n".join(lines))
 
+    # ---------- 库存预警 ----------
+    def stock_alert_event(self, part_code: str, part_name: str, stock: float,
+                          safety_stock: float, unit: str = "",
+                          location: str = "", operator: str = "") -> None:
+        """库存跌破安全库存时推一条：只在「这次出库刚好跌破」时调用，避免重复刷屏"""
+        if not self.enabled:
+            return
+        title = "备件库存预警"
+        lines = [f"### {title}", "", f"- **备件**：{part_code} {part_name}".rstrip()]
+        lines.append(f"- **当前库存**：{stock:g}{(' ' + unit) if unit else ''}"
+                     f"（安全库存 {safety_stock:g}）")
+        if location:
+            lines.append(f"- **存放位置**：{location}")
+        if operator:
+            lines.append(f"- **触发人**：{operator}")
+        lines.append("")
+        lines.append("> 请及时补货，避免维修时无件可换")
+        self.send_markdown_async(title, "\n".join(lines))
+
+    # ---------- 请假审批 ----------
+    def leave_event(self, event: str, lr: Dict, extra: str = "") -> None:
+        """lr: {id, requester_name, leave_type, start_date, end_date, days, approver_comment}"""
+        if not self.enabled:
+            return
+        title = {
+            "submitted": "新的请假申请待审批",
+            "approved": "请假申请已批准",
+            "rejected": "请假申请已驳回",
+            "cancelled": "请假申请已撤销",
+        }.get(event, "请假申请更新")
+
+        lines = [f"### {title}", ""]
+        if lr.get("requester_name"):
+            lines.append(f"- **申请人**：{lr['requester_name']}")
+        if lr.get("leave_type"):
+            lines.append(f"- **类型**：{lr['leave_type']}")
+        if lr.get("start_date") or lr.get("end_date"):
+            span = f"{lr.get('start_date') or ''} ~ {lr.get('end_date') or ''}".strip(" ~")
+            if lr.get("days"):
+                span += f"（{lr['days']:g} 天）"
+            lines.append(f"- **时间**：{span}")
+        if lr.get("approver_comment"):
+            lines.append(f"- **审批意见**：{lr['approver_comment']}")
+        if extra:
+            lines.append(f"- **说明**：{extra}")
+        self.send_markdown_async(title, "\n".join(lines))
+
 
 group_robot = DingTalkGroupRobot()

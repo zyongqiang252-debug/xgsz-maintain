@@ -17,6 +17,7 @@ from app.models.sys_config import SysConfig
 from app.models.notification import Notification
 from app.models.manual_code import ManualCodeEntry
 from app.models.work_order_import import WorkOrderImportBatch, WorkOrderImportItem
+from app.models.import_mapping_template import ImportMappingTemplate
 from app.models.work_order_edit_log import WorkOrderEditLog
 from app.models.work_order_collaborator import WorkOrderCollaborator
 from app.models.customer import Customer

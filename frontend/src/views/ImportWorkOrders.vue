@@ -14,19 +14,32 @@
             <el-upload
               :auto-upload="false"
               :show-file-list="false"
-              accept=".xlsx,.xlsm,.csv"
+              accept=".xlsx,.xls,.xlsm,.csv"
               :on-change="handleExcelChange"
             >
               <el-button type="primary" plain :loading="excelInspecting">选择台账文件</el-button>
             </el-upload>
             <el-button link type="primary" @click="downloadTemplate">下载导入模板</el-button>
             <span v-if="excelFile" class="file-name">已选：{{ excelFile.name }}（{{ excelRowCount }} 行数据）</span>
+            <span v-else class="file-name">支持 .xlsx / .xls / .csv，老版 .xls 可直接选</span>
           </div>
 
           <div v-if="excelHeaders.length" class="mapping-block">
             <div class="mapping-title">
               字段映射
               <span class="mapping-tip">系统已自动匹配 {{ mappedCount }} / {{ excelFields.length }} 个字段，可手动调整</span>
+            </div>
+            <div class="mapping-toolbar">
+              <el-tag v-if="excelTemplateId" type="success" size="small" effect="plain" closable
+                      @close="clearTemplate">
+                已套用模板：{{ excelTemplateName }}
+              </el-tag>
+              <el-select v-model="pickedTemplateId" clearable filterable size="small"
+                         placeholder="套用已有映射模板" style="width: 220px" @change="applyTemplate">
+                <el-option v-for="t in templateList" :key="t.id"
+                           :label="`${t.name}（用过 ${t.use_count} 次）`" :value="t.id" />
+              </el-select>
+              <el-button size="small" @click="saveAsTemplate">保存当前映射为模板</el-button>
             </div>
             <el-table :data="excelFields" size="small" border max-height="300" class="mapping-table">
               <el-table-column label="系统字段" width="150">
@@ -382,6 +395,73 @@ const excelMapping = reactive({})
 const excelRowCount = ref(0)
 const excelResult = ref(null)
 const mappedCount = computed(() => Object.values(excelMapping).filter(Boolean).length)
+// ---- 字段映射模板（记住表头→字段的对应关系，下次同格式台账自动套用）----
+const templateList = ref([])
+const pickedTemplateId = ref(null)
+const excelTemplateId = ref(null)
+const excelTemplateName = ref('')
+
+async function loadTemplates() {
+  try {
+    const res = await request.get('/work-order-imports/mapping-templates')
+    templateList.value = res.items || []
+  } catch (e) {
+    templateList.value = []
+  }
+}
+
+function clearTemplate() {
+  excelTemplateId.value = null
+  excelTemplateName.value = ''
+  pickedTemplateId.value = null
+}
+
+function currentMapping() {
+  const mapping = {}
+  Object.entries(excelMapping).forEach(([k, v]) => { if (v) mapping[k] = v })
+  return mapping
+}
+
+function applyTemplate(id) {
+  const tpl = templateList.value.find((t) => t.id === id)
+  if (!tpl) return
+  const headers = new Set(excelHeaders.value)
+  Object.keys(excelMapping).forEach((k) => delete excelMapping[k])
+  Object.entries(tpl.mapping || {}).forEach(([k, v]) => {
+    if (headers.has(v)) excelMapping[k] = v
+  })
+  excelTemplateId.value = tpl.id
+  excelTemplateName.value = tpl.name
+  ElMessage.success(`已套用模板「${tpl.name}」，共 ${mappedCount.value} 个字段`)
+}
+
+async function saveAsTemplate() {
+  if (!excelHeaders.value.length) return
+  const mapping = currentMapping()
+  if (!Object.keys(mapping).length) {
+    ElMessage.warning('还没有配置任何字段映射')
+    return
+  }
+  try {
+    const { value } = await ElMessageBox.prompt('给这套映射起个名字，下次表头相同的台账会自动套用', '保存字段映射模板', {
+      inputValue: `${excelFile.value?.name?.replace(/\.[^.]+$/, '') || '台账'}映射`,
+      inputValidator: (v) => (v && v.trim() ? true : '模板名不能为空'),
+      confirmButtonText: '保存',
+      cancelButtonText: '取消'
+    })
+    const res = await request.post('/work-order-imports/mapping-templates', {
+      name: value.trim(),
+      headers: excelHeaders.value,
+      mapping
+    })
+    await loadTemplates()
+    excelTemplateId.value = res.id
+    excelTemplateName.value = res.name
+    ElMessage.success('模板已保存')
+  } catch (e) {
+    // 取消或接口报错（拦截器已提示）
+  }
+}
 
 async function downloadTemplate() {
   try {
@@ -414,6 +494,13 @@ async function handleExcelChange(file) {
     excelRowCount.value = res.row_count
     Object.keys(excelMapping).forEach((k) => delete excelMapping[k])
     Object.assign(excelMapping, res.mapping)
+    if (res.template && res.mapping_source === 'template') {
+      excelTemplateId.value = res.template.id
+      excelTemplateName.value = res.template.name
+      ElMessage.success(`已套用映射模板「${res.template.name}」`)
+    } else {
+      clearTemplate()
+    }
     if (!mappedCount.value) ElMessage.warning('未能自动识别表头，请手动选择对应列')
   } catch (e) {
     resetExcel()
@@ -429,17 +516,18 @@ function resetExcel() {
   excelFields.value = []
   excelRowCount.value = 0
   Object.keys(excelMapping).forEach((k) => delete excelMapping[k])
+  clearTemplate()
 }
 
 async function handleExcelUpload() {
   if (!excelFile.value) return
-  const mapping = {}
-  Object.entries(excelMapping).forEach(([k, v]) => { if (v) mapping[k] = v })
+  const mapping = currentMapping()
   excelUploading.value = true
   try {
     const fd = new FormData()
     fd.append('file', excelFile.value)
     fd.append('mapping', JSON.stringify(mapping))
+    if (excelTemplateId.value) fd.append('template_id', String(excelTemplateId.value))
     const res = await request.post('/work-order-imports/upload-excel', fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 300000
@@ -629,6 +717,7 @@ async function loadCounts() {
 onMounted(() => {
   loadItems()
   loadCounts()
+  loadTemplates()
 })
 </script>
 
@@ -644,6 +733,7 @@ onMounted(() => {
 .mapping-block { margin-top: 16px; }
 .mapping-title { font-size: 14px; font-weight: 500; color: #1D2129; margin-bottom: 8px; }
 .mapping-tip { font-size: 12px; color: #86909C; font-weight: 400; margin-left: 8px; }
+.mapping-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .mapping-table { margin-bottom: 16px; }
 .preview-title { font-size: 14px; font-weight: 500; color: #1D2129; margin: 4px 0 8px; }
 .result-card { margin-bottom: 16px; }

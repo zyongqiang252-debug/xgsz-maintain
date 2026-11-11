@@ -22,13 +22,14 @@ from app.core.database import get_db, SessionLocal
 from app.core.security import get_current_user
 from app.models.user import User, UserRole
 from app.models.work_order_import import WorkOrderImportBatch, WorkOrderImportItem
+from app.models.import_mapping_template import ImportMappingTemplate
 from app.models.work_order import WorkOrder
 from app.models.device import Device
 from app.agents.work_order_importer import invoke_import_pdf
 from app.services.import_validate import validate_extracted
 from app.services.excel_import import (
     FIELD_DEFS, build_template_xlsx, read_table, suggest_mapping,
-    resolve_mapping, parse_sheet,
+    resolve_mapping, parse_sheet, header_signature,
 )
 from app.services.image_ocr import ocr_image, structure_text
 
@@ -465,6 +466,128 @@ def list_fields(current_user: User = Depends(get_current_user)):
     return {"fields": [{"key": f["key"], "label": f["label"], "required": f["required"]} for f in FIELD_DEFS]}
 
 
+# ============================================================
+# 字段映射模板：记住「哪列对应哪个字段」，下次同格式台账自动套用
+# ============================================================
+_MAPPING_SCENE = "work_order_excel"
+
+
+class MappingTemplateIn(BaseModel):
+    name: str
+    headers: List[str]
+    mapping: dict
+    scene: str = _MAPPING_SCENE
+
+
+def _tpl_dict(t: ImportMappingTemplate) -> dict:
+    return {
+        "id": t.id,
+        "name": t.name,
+        "scene": t.scene,
+        "headers": t.headers or [],
+        "mapping": t.mapping or {},
+        "creator_name": t.creator_name,
+        "created_by": t.created_by,
+        "use_count": int(t.use_count or 0),
+        "last_used_at": t.last_used_at.isoformat() if t.last_used_at else None,
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+    }
+
+
+def _match_mapping_template(db: Session, headers: List[str],
+                            scene: str = _MAPPING_SCENE) -> Optional[ImportMappingTemplate]:
+    """按表头签名找最该套用的模板：用得多的优先，其次最近用过的"""
+    sig = header_signature(headers)
+    if not sig:
+        return None
+    return (
+        db.query(ImportMappingTemplate)
+        .filter(ImportMappingTemplate.scene == scene,
+                ImportMappingTemplate.header_signature == sig)
+        .order_by(ImportMappingTemplate.use_count.desc(),
+                  ImportMappingTemplate.last_used_at.desc().nullslast(),
+                  ImportMappingTemplate.id.desc())
+        .first()
+    )
+
+
+def _apply_template_mapping(headers: List[str], tpl_mapping: dict) -> dict:
+    """模板里的列名可能在这次文件里不存在，逐条过滤，避免把死映射带进导入"""
+    available = {h for h in headers}
+    return {k: v for k, v in (tpl_mapping or {}).items() if v in available}
+
+
+@router.get("/mapping-templates", summary="字段映射模板列表")
+def list_mapping_templates(scene: str = _MAPPING_SCENE,
+                           current_user: User = Depends(get_current_user),
+                           db: Session = Depends(get_db)):
+    _require_manage(current_user)
+    rows = (db.query(ImportMappingTemplate)
+            .filter(ImportMappingTemplate.scene == scene)
+            .order_by(ImportMappingTemplate.use_count.desc(),
+                      ImportMappingTemplate.last_used_at.desc().nullslast(),
+                      ImportMappingTemplate.id.desc())
+            .all())
+    return {"items": [_tpl_dict(r) for r in rows]}
+
+
+@router.post("/mapping-templates", summary="保存字段映射模板（同签名同名则更新）")
+def save_mapping_template(data: MappingTemplateIn,
+                          current_user: User = Depends(get_current_user),
+                          db: Session = Depends(get_db)):
+    _require_manage(current_user)
+    name = (data.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="模板名不能为空")
+    if len(name) > 100:
+        raise HTTPException(status_code=400, detail="模板名最多 100 个字符")
+    headers = [h for h in (data.headers or []) if (h or "").strip()]
+    if not headers:
+        raise HTTPException(status_code=400, detail="表头为空，无法保存模板")
+    mapping = {k: v for k, v in (data.mapping or {}).items() if v in headers}
+    if not mapping:
+        raise HTTPException(status_code=400, detail="还没有配置任何字段映射，不需要保存")
+
+    sig = header_signature(headers)
+    tpl = (db.query(ImportMappingTemplate)
+           .filter(ImportMappingTemplate.scene == data.scene,
+                   ImportMappingTemplate.header_signature == sig,
+                   ImportMappingTemplate.name == name)
+           .first())
+    if tpl:
+        tpl.headers = headers
+        tpl.mapping = mapping
+        tpl.updated_at = datetime.now()
+    else:
+        tpl = ImportMappingTemplate(
+            name=name, scene=data.scene, header_signature=sig,
+            headers=headers, mapping=mapping,
+            created_by=current_user.id, creator_name=current_user.real_name,
+        )
+        db.add(tpl)
+    db.commit()
+    db.refresh(tpl)
+    logger.info(f"[ImportMapping] {current_user.real_name} 保存模板 #{tpl.id}「{name}」{len(mapping)} 个字段")
+    return _tpl_dict(tpl)
+
+
+@router.delete("/mapping-templates/{tid}", summary="删除字段映射模板（创建人或管理员）")
+def delete_mapping_template(tid: int,
+                            current_user: User = Depends(get_current_user),
+                            db: Session = Depends(get_db)):
+    _require_manage(current_user)
+    tpl = db.query(ImportMappingTemplate).filter(ImportMappingTemplate.id == tid).first()
+    if not tpl:
+        raise HTTPException(status_code=404, detail="模板不存在")
+    is_admin = getattr(current_user.role, "value", current_user.role) == UserRole.ADMIN.value
+    if tpl.created_by != current_user.id and not is_admin:
+        raise HTTPException(status_code=403, detail="只能删除自己保存的模板")
+    db.delete(tpl)
+    db.commit()
+    return {"message": "已删除"}
+
+
+
 async def _save_upload(file: UploadFile, directory: str, allowed: set) -> str:
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in allowed:
@@ -480,6 +603,7 @@ async def _save_upload(file: UploadFile, directory: str, allowed: set) -> str:
 async def inspect_excel(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     _require_manage(current_user)
     path = await _save_upload(file, EXCEL_DIR, {".xlsx", ".xlsm", ".csv", ".xls"})
@@ -488,6 +612,14 @@ async def inspect_excel(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     mapping = suggest_mapping(headers)
+    source = "auto"
+    tpl = _match_mapping_template(db, headers)
+    if tpl:
+        tpl_mapping = _apply_template_mapping(headers, tpl.mapping or {})
+        # 模板命中但不含新文件的关键列时，缺失部分先用自动匹配兜底
+        if tpl_mapping:
+            mapping = {**mapping, **tpl_mapping}
+            source = "template"
     preview = []
     for r in rows[:5]:
         preview.append({h: (r[i] if i < len(r) else "") for i, h in enumerate(headers)})
@@ -495,6 +627,8 @@ async def inspect_excel(
         "file_name": file.filename,
         "headers": headers,
         "mapping": mapping,
+        "mapping_source": source,
+        "template": _tpl_dict(tpl) if (tpl and source == "template") else None,
         "row_count": len(rows),
         "preview": preview,
         "fields": [{"key": f["key"], "label": f["label"], "required": f["required"]} for f in FIELD_DEFS],
@@ -505,6 +639,7 @@ async def inspect_excel(
 async def upload_excel(
     file: UploadFile = File(...),
     mapping: Optional[str] = Form(None, description="JSON 字符串：{系统字段: 表格列名}，不传则自动匹配"),
+    template_id: Optional[int] = Form(None, description="本次套用的字段映射模板 id，用于累计使用次数"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -516,7 +651,7 @@ async def upload_excel(
         logger.warning(f"[ExcelImport] 解析失败 {file.filename}: {e}")
         raise HTTPException(
             status_code=400,
-            detail="无法解析该文件：请确认是有效的 Excel(.xlsx/.xlsm) 或 CSV 文件（另存为 .xlsx 再试）",
+            detail="无法解析该文件：请确认是有效的 Excel(.xlsx/.xls/.xlsm) 或 CSV 文件（另存为 .xlsx 再试）",
         )
 
     user_mapping = None
@@ -613,6 +748,16 @@ async def upload_excel(
     batch.report = {"file": file.filename, "headers": headers, "mapping": col_index, "rows": results}
     db.commit()
 
+    # 映射模板记账：显式套用的按 id 记，未指定就按表头签名找（用户可能没点模板但实际套用了）
+    tpl = None
+    if template_id:
+        tpl = db.query(ImportMappingTemplate).filter(ImportMappingTemplate.id == template_id).first()
+    if tpl is None:
+        tpl = _match_mapping_template(db, headers)
+    if tpl is not None:
+        tpl.touch()
+        db.commit()
+
     return {
         "batch_id": batch.id,
         "batch_no": batch.batch_no,
@@ -621,6 +766,7 @@ async def upload_excel(
         "pending": ok_count,
         "failed": batch.failed_count,
         "mapping": {k: headers[v] for k, v in col_index.items() if v < len(headers)},
+        "template": _tpl_dict(tpl) if tpl is not None else None,
         "results": results,
     }
 

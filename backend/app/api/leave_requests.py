@@ -64,6 +64,28 @@ def _notify_leave(db: Session, lr, event: str) -> None:
             db.commit()
     except Exception as e:
         logger.warning(f"[Leave] 站内通知写入失败（忽略）: {e}")
+    _notify_leave_group(lr, event)
+
+
+def _notify_leave_group(lr, event: str) -> None:
+    """请假事件同步推送到钉钉群（未配置 webhook 自动跳过，失败不影响审批）"""
+    try:
+        from app.core.dingtalk_group import group_robot
+        if not group_robot.enabled:
+            return
+        days = list(getattr(lr, "details", []) or [])
+        dates = sorted(d.leave_date for d in days if getattr(d, "leave_date", None))
+        group_robot.leave_event(event, {
+            "id": getattr(lr, "id", None),
+            "requester_name": getattr(lr, "requester_name", "") or "",
+            "leave_type": getattr(lr, "leave_type", "") or "",
+            "start_date": str(dates[0]) if dates else "",
+            "end_date": str(dates[-1]) if len(dates) > 1 else "",
+            "days": len(dates),
+            "approver_comment": getattr(lr, "approver_comment", "") or "",
+        })
+    except Exception as e:
+        logger.warning(f"[Leave] 群机器人推送失败（忽略）: {e}")
 
 
 # ============================================================

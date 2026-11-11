@@ -93,8 +93,25 @@ def _cell_to_text(v: Any) -> str:
     return str(v).strip()
 
 
+def _xls_cell_to_text(book: Any, cell: Any) -> str:
+    """把 xlrd 单元格转成文本：日期按 xldate 还原，整数去掉 .0，错误值当空"""
+    import xlrd
+
+    ctype, value = cell.ctype, cell.value
+    if ctype in (xlrd.XL_CELL_EMPTY, xlrd.XL_CELL_BLANK, xlrd.XL_CELL_ERROR):
+        return ""
+    if ctype == xlrd.XL_CELL_DATE:
+        try:
+            return _cell_to_text(xlrd.xldate_as_datetime(value, book.datemode))
+        except Exception:
+            return _cell_to_text(value)
+    if ctype == xlrd.XL_CELL_BOOLEAN:
+        return "是" if value else "否"
+    return _cell_to_text(value)
+
+
 def read_table(path: str) -> Tuple[List[str], List[List[str]]]:
-    """读取 xlsx / csv，返回 (表头, 数据行)；自动跳过标题行与空行"""
+    """读取 xlsx / xls / csv，返回 (表头, 数据行)；自动跳过标题行与空行"""
     ext = path.rsplit(".", 1)[-1].lower()
     if ext in ("xlsx", "xlsm"):
         import openpyxl
@@ -115,7 +132,20 @@ def read_table(path: str) -> Tuple[List[str], List[List[str]]]:
             raise ValueError("CSV 编码无法识别，请另存为 UTF-8 或 GBK")
         raw = [row for row in csv.reader(io.StringIO(text))]
     elif ext == "xls":
-        raise ValueError("不支持旧版 .xls，请用 Excel 另存为 .xlsx 后再导入")
+        # 旧版 BIFF 格式（Excel 2003 及更早），openpyxl 读不了，用 xlrd
+        try:
+            import xlrd
+        except ImportError:
+            raise ValueError("解析 .xls 需要 xlrd 库：pip install xlrd，或把文件另存为 .xlsx 再导入")
+        book = xlrd.open_workbook(path, on_demand=True)
+        try:
+            sheet = book.sheet_by_index(0)
+            raw = [
+                [_xls_cell_to_text(book, sheet.cell(r, c)) for c in range(sheet.ncols)]
+                for r in range(sheet.nrows)
+            ]
+        finally:
+            book.release_resources()
     else:
         raise ValueError(f"不支持的文件类型：.{ext}")
 
@@ -149,6 +179,16 @@ def read_table(path: str) -> Tuple[List[str], List[List[str]]]:
 # ============================================================
 def _norm_header(h: str) -> str:
     return re.sub(r"[\s()（）:：*＊、/]", "", (h or "").lower())
+
+
+def header_signature(headers: List[str]) -> str:
+    """表头签名：规范化后排序拼接。
+
+    排序 + 去重意味着「列顺序变了」「多了重复列」仍命中同一份映射模板；
+    规范化会去掉空格/括号/冒号等噪音，避免「工单号 (必填)」和「工单号」被当成两套表头。
+    """
+    norm = sorted({_norm_header(h) for h in headers if (h or "").strip()})
+    return "|".join(norm)[:480]
 
 
 def suggest_mapping(headers: List[str]) -> Dict[str, str]:
