@@ -4,7 +4,7 @@
       <h2 class="page-title">盘点</h2>
       <div class="header-actions">
         <el-button @click="router.push('/stock?tab=movements')">盘点流水</el-button>
-        <el-button type="primary" :disabled="!isSupervisor" @click="openCreate">新建盘点单</el-button>
+        <el-button v-if="isSupervisor" type="primary" @click="openCreate">新建盘点单</el-button>
       </div>
     </div>
 

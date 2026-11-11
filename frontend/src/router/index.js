@@ -13,6 +13,8 @@ const router = createRouter({
         { path: 'work-orders', name: 'LegacyWorkOrders', redirect: '/orders?tab=list', meta: { title: '维修报表' } },
         { path: 'orders', name: 'WorkOrderCenter', component: () => import('../views/WorkOrderCenter.vue'), meta: { title: '工单中心' } },
         { path: 'stock', name: 'StockCenter', component: () => import('../views/StockHub.vue'), meta: { title: '库存中心' } },
+        { path: 'customers', name: 'CustomerDirectory', component: () => import('../views/CustomerDirectory.vue'), meta: { title: '客户' } },
+        { path: 'team', redirect: '/customers' },
         { path: 'stock/in', name: 'StockIn', redirect: { path: '/stock', query: { tab: 'parts' } } },
         { path: 'stock/out', name: 'StockOut', redirect: { path: '/stock', query: { tab: 'parts' } } },
         { path: 'stock/movements', name: 'StockMovements', redirect: { path: '/stock', query: { tab: 'movements' } } },

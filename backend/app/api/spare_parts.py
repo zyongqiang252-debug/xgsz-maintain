@@ -6,7 +6,7 @@ from datetime import datetime
 from loguru import logger
 
 from app.core.database import get_db
-from app.core.security import get_current_user, require_supervisor
+from app.core.security import get_current_user, require_roles, require_supervisor
 from app.core.notification import notification_service
 from app.core.cache_service import cache_service
 from app.models.spare_part import SparePart
@@ -150,13 +150,14 @@ def check_stock_alerts(db: Session = Depends(get_db), current_user: User = Depen
     return result
 
 
-@router.get("/movements", summary="出入库流水（全局，可按备件/工单筛选）")
+@router.get("/movements", summary="出入库流水（全局，可按备件/工单/类型/关键词筛选）")
 def list_movements(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     part_id: Optional[int] = None,
     work_order_id: Optional[int] = None,
     movement_type: Optional[str] = None,
+    keyword: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -168,6 +169,14 @@ def list_movements(
         q = q.filter(StockMovement.work_order_id == work_order_id)
     if movement_type:
         q = q.filter(StockMovement.movement_type == movement_type.upper())
+    if keyword:
+        like = f"%{keyword.strip()}%"
+        q = q.filter(
+            StockMovement.part_code.ilike(like)
+            | StockMovement.part_name.ilike(like)
+            | StockMovement.serial_no.ilike(like)
+            | StockMovement.operator_name.ilike(like)
+        )
     total = q.count()
     rows = q.order_by(StockMovement.created_at.desc(), StockMovement.id.desc()) \
             .offset((page - 1) * page_size).limit(page_size).all()
@@ -291,6 +300,8 @@ def _movement_to_dict(m) -> dict:
         "amount": m.amount,
         "work_order_id": m.work_order_id,
         "operator_name": m.operator_name,
+        "source_type": getattr(m, "source_type", None),
+        "source_id": getattr(m, "source_id", None),
         "serial_no": getattr(m, "serial_no", None),
         "attachments": getattr(m, "attachments", None),
         "remark": m.remark,
@@ -315,11 +326,25 @@ def part_movements(
             "items": [_movement_to_dict(m) for m in rows]}
 
 
-@router.post("/{part_id}/consume", summary="领用/消耗（仅管理员/主管；维修员走领用审批）")
+@router.post("/{part_id}/consume", summary="直接出库（例外通道：管理员/主管，需填事由）")
 def consume_part(part_id: int, data: ConsumeIn, db: Session = Depends(get_db),
-                 current_user: User = Depends(require_supervisor)):
+                 current_user: User = Depends(require_roles("ADMIN", "SUPERVISOR"))):
+    """直接出库 = 跳过领用审批的例外通道。
+
+    常规领用必须走：技术员申请 → 主管审批（预占）→ 主管发料（扣减）。
+    这里只留给管理员/主管做现场紧急处理，强制三道约束：
+      1. 只能管理员/主管调（技术员 403）；
+      2. 必须填出库事由；
+      3. 流水记 source_type=DIRECT，并通知其他管理员/主管留痕。
+    """
     from app.models.work_order import WorkOrder
     from app.services import sla as sla_service
+
+    if not (data.remark or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="直接出库必须填写出库事由（例外通道，需留痕）；常规领用请走「领用审批」：申请 → 审批 → 发料",
+        )
 
     part = lock_part(db, part_id)  # 行锁：并发领用排队，防超卖
     if not part:
@@ -360,6 +385,24 @@ def consume_part(part_id: int, data: ConsumeIn, db: Session = Depends(get_db),
         if not wo:
             raise HTTPException(status_code=404, detail="关联工单不存在")
 
+    # 已经有审批通过、还没发料的领用单时，不能再用「直接出库」把它冲掉：
+    # 领用单是审批链的凭证，必须从「领用审批」页面对它发料
+    from app.models.spare_part_requisition import (
+        SparePartRequisition, SparePartRequisitionStatus as ReqSt,
+    )
+    approved_q = (db.query(SparePartRequisition)
+                  .filter(SparePartRequisition.part_id == part.id,
+                          SparePartRequisition.status == ReqSt.APPROVED))
+    if wo is not None:
+        approved_q = approved_q.filter(SparePartRequisition.work_order_id == wo.id)
+    approved = approved_q.first()
+    if approved is not None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"该备件已有审批通过、待发料的领用单 #{approved.id}（申请人 {approved.applicant_name}），"
+                   f"请到「领用审批」页面点「发料出库」，不要用直接出库绕开审批",
+        )
+
     # SN 必须属于本备件且在库：先校验再动库存，避免"库存减了、实物档案没动"
     inst_map = {}
     if out_serials:
@@ -378,10 +421,18 @@ def consume_part(part_id: int, data: ConsumeIn, db: Session = Depends(get_db),
             raise HTTPException(status_code=400,
                                 detail=f"这些 SN 不在库（已装机/待返厂/已报废）：{'、'.join(not_in_stock)}")
 
+    # 成本价：按本次实际出库的 SN 实例入库单价加权；没有实例价时退回台账单价
+    billing_price = float(part.unit_price or 0)
+    if inst_map:
+        prices = [float(i.unit_price or part.unit_price or 0) for i in inst_map.values()]
+        if prices:
+            billing_price = sum(prices) / len(prices)
+
     mv = apply_stock_change(
-        db, part, "OUT", -qty_f, unit_price=part.unit_price or 0,
+        db, part, "OUT", -qty_f, unit_price=billing_price,
         work_order_id=data.work_order_id, operator=current_user,
         remark=data.remark,
+        source_type="DIRECT",
     )
     mv.serial_no = data.serial_no
     mv.attachments = data.attachments
@@ -405,7 +456,7 @@ def consume_part(part_id: int, data: ConsumeIn, db: Session = Depends(get_db),
         parts = list(wo.used_parts or [])
         parts.append({
             "name": part.part_name, "code": part.part_code,
-            "count": data.quantity, "unit_price": part.unit_price or 0,
+            "count": data.quantity, "unit_price": billing_price,
         })
         wo.used_parts = parts
         try:
@@ -448,13 +499,35 @@ def consume_part(part_id: int, data: ConsumeIn, db: Session = Depends(get_db),
     cache_service.delete(f"spare_part:{part_id}")
     cache_service.invalidate_pattern("stock_alerts:*")
     logger.info(f"[SparePart] 领用 {part.part_code} x{data.quantity}，库存 {before} -> {part.stock_quantity}")
+
+    # 例外通道留痕：通知其他管理员/主管（操作人自己不收）
+    try:
+        from app.api.notifications import create_notification
+        recipients = db.query(User).filter(
+            User.is_active == True,
+            User.id != current_user.id,
+            User.role.in_(["ADMIN", "SUPERVISOR"]),
+        ).all()
+        wo_txt = f"，关联工单 {wo.work_order_no}" if wo is not None else ""
+        content = (f"{current_user.real_name} 直接出库（跳过审批）{part.part_code} {part.part_name} "
+                   f"x{qty_f:g}{wo_txt}；事由：{data.remark}")
+        for u in recipients:
+            create_notification(
+                db, user_id=u.id, type="STOCK_OUT", title="备件直接出库（例外通道）",
+                content=content, work_order_id=data.work_order_id, level="P2",
+            )
+        if recipients:
+            db.commit()
+    except Exception as e:
+        logger.warning(f"[SparePart] 直接出库通知写入失败（忽略）: {e}")
+
     return {"message": "领用成功", "stock_quantity": float(part.stock_quantity),
             "movement": _movement_to_dict(mv)}
 
 
-@router.post("/{part_id}/stock-in", summary="入库（管理员/主管）")
+@router.post("/{part_id}/stock-in", summary="入库（管理员/主管/技术员）")
 def stock_in_part(part_id: int, data: StockInIn, db: Session = Depends(get_db),
-                  current_user: User = Depends(require_supervisor)):
+                  current_user: User = Depends(require_roles("ADMIN", "SUPERVISOR", "TECHNICIAN"))):
 
     part = lock_part(db, part_id)  # 行锁：与领用/盘点串行，避免出入库互相覆盖
     if not part:
@@ -493,8 +566,12 @@ def stock_in_part(part_id: int, data: StockInIn, db: Session = Depends(get_db),
                 detail=f"这些 SN 已经登记过：{'、'.join(dup)}；拆回来的件请走备件实例的「拆回入库」，不要重复登记",
             )
 
-    price = data.unit_price if data.unit_price is not None else (part.unit_price or 0)
-    if data.unit_price is not None:
+    # 单价属于成本口径：只有管理员/主管可以改台账单价；技术员入库沿用原单价
+    role = getattr(current_user.role, "value", current_user.role) or ""
+    can_set_price = role.upper() in ("ADMIN", "SUPERVISOR")
+    price = part.unit_price or 0
+    if can_set_price and data.unit_price is not None:
+        price = data.unit_price
         part.unit_price = data.unit_price
 
     mv = apply_stock_change(

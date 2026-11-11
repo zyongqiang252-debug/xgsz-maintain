@@ -81,6 +81,44 @@ def _wo_to_dict(w: WorkOrder) -> dict:
     return {c.name: getattr(w, c.name) for c in w.__table__.columns}
 
 
+def _role_value(user: User) -> str:
+    return (getattr(user.role, "value", user.role) or "").upper()
+
+
+def _apply_technician_scope(query, db: Session, user: User):
+    """技术员只能看自己相关工单：本人创建/上报/负责/协作，以及待派工工单池"""
+    if _role_value(user) != "TECHNICIAN":
+        return query
+    me = user.id
+    collab_ids = (db.query(WorkOrderCollaborator.work_order_id)
+                  .filter(WorkOrderCollaborator.user_id == me))
+    return query.filter(or_(
+        WorkOrder.created_by == me,
+        WorkOrder.reporter_id == me,
+        WorkOrder.technician_id == me,
+        WorkOrder.assignee_id == me,
+        WorkOrder.id.in_(collab_ids),
+        and_(WorkOrder.status == WorkOrderStatus.SUBMITTED.value,
+             WorkOrder.technician_id.is_(None)),
+    ))
+
+
+def _can_view_work_order(w: WorkOrder, db: Session, user: User) -> bool:
+    role = _role_value(user)
+    if role in ("ADMIN", "SUPERVISOR"):
+        return True
+    if role != "TECHNICIAN":
+        return False
+    if user.id in (w.created_by, w.reporter_id, w.technician_id, w.assignee_id):
+        return True
+    if w.status == WorkOrderStatus.SUBMITTED and not w.technician_id:
+        return True
+    return db.query(WorkOrderCollaborator.id).filter(
+        WorkOrderCollaborator.work_order_id == w.id,
+        WorkOrderCollaborator.user_id == user.id,
+    ).first() is not None
+
+
 def _get_current_shift() -> str:
     """根据当前小时判断时段：MORNING / AFTERNOON / NIGHT"""
     hour = datetime.now().hour
@@ -99,6 +137,7 @@ def list_work_orders(
     status: Optional[str] = None,
     status_group: Optional[str] = Query(None, description="状态分组：DRAFT/SUBMITTED/PROCESSING/ARCHIVING/ARCHIVED/REJECTED"),
     mine: Optional[str] = Query(None, description="我的工单：assigned(派给我) / processing(我在处理) / created(我报修) / completed(我完成)"),
+    relation: Optional[str] = Query(None, description="我的工单关系筛选：created(我发起的) / assigned(我接受的)"),
     keyword: Optional[str] = None,
     user_id: Optional[int] = Query(None, description="按用户名筛选：报修人 / 上报人 / 负责人"),
     device_type: Optional[str] = Query(None, description="设备类型筛选"),
@@ -112,6 +151,7 @@ def list_work_orders(
     current_user: User = Depends(get_current_user),
 ):
     query = db.query(WorkOrder)
+    query = _apply_technician_scope(query, db, current_user)
     if status_group:
         statuses = SG.statuses_of(status_group)
         if statuses:
@@ -125,9 +165,21 @@ def list_work_orders(
                 WorkOrder.technician_id.is_(None),
             )
         elif mine == "all":
-            # 我的：我创建的 或 派给我的（不区分状态）
-            query = query.filter(or_(WorkOrder.created_by == me,
-                                     WorkOrder.technician_id == me))
+            # 我的：我创建的 或 派给我的；草稿不算正式工单，不进「我的工单」
+            query = query.filter(
+                or_(WorkOrder.created_by == me, WorkOrder.technician_id == me),
+                WorkOrder.status != WorkOrderStatus.DRAFT.value,
+            )
+            if relation == "created":
+                query = query.filter(WorkOrder.created_by == me)
+            elif relation == "assigned":
+                query = query.filter(WorkOrder.technician_id == me)
+        elif mine == "drafts":
+            # 草稿箱：只看自己创建、还没正式提交的草稿
+            query = query.filter(
+                WorkOrder.status == WorkOrderStatus.DRAFT.value,
+                WorkOrder.created_by == me,
+            )
         elif mine == "assigned":
             # 派给我的（含待接受/处理中，排除已归档）
             query = query.filter(WorkOrder.technician_id == me)
@@ -147,6 +199,17 @@ def list_work_orders(
                 WorkOrderStatus.COMPLETED.value, WorkOrderStatus.ARCHIVED.value]))
     elif status:
         query = query.filter(WorkOrder.status == status)
+        if str(status).upper() == WorkOrderStatus.DRAFT.value:
+            query = query.filter(WorkOrder.created_by == current_user.id)
+    # 草稿不进「全部工单」：没有显式指定状态/我的视图时，默认过滤掉 DRAFT
+    _explicit_draft = (
+        (status and str(status).upper() == WorkOrderStatus.DRAFT.value)
+        or (status_group and str(status_group).upper() == WorkOrderStatus.DRAFT.value)
+    )
+    if not mine and not _explicit_draft:
+        query = query.filter(WorkOrder.status != WorkOrderStatus.DRAFT.value)
+    if status_group and str(status_group).upper() == WorkOrderStatus.DRAFT.value:
+        query = query.filter(WorkOrder.created_by == current_user.id)
     if sla_status:
         query = query.filter(WorkOrder.sla_status == sla_status.upper())
     if order_type:
@@ -413,7 +476,18 @@ def start_processing(work_order_id: int, db: Session = Depends(get_db),
     if not wo:
         raise HTTPException(status_code=404, detail="工单不存在")
 
+    if wo.is_on_hold:
+        raise HTTPException(status_code=400, detail="工单处于挂起状态，请先恢复后再开始处理")
+
     status_val = wo.status.value if wo.status else None
+    role = getattr(current_user.role, "value", current_user.role) or ""
+    is_super = role.upper() in ("ADMIN", "SUPERVISOR")
+    is_assigned = wo.technician_id == current_user.id or wo.assignee_id == current_user.id
+    if status_val == WorkOrderStatus.SUBMITTED.value:
+        raise HTTPException(status_code=400, detail="待派工工单请先由主管派工，或由维修员在工单池领取")
+    if not (is_super or is_assigned):
+        raise HTTPException(status_code=403, detail="仅当前负责人、主管或管理员可开始处理该工单")
+
     path = []
     mode = (wo.service_mode or "").upper()
     remote_skip = mode in ("REMOTE", "RMA", "VENDOR")
@@ -448,6 +522,8 @@ def start_processing(work_order_id: int, db: Session = Depends(get_db),
     wo.status = WorkOrderStatus(prev)
     if not wo.technician_id:
         wo.technician_id = current_user.id
+    if not wo.start_time:
+        wo.start_time = datetime.now()
     db.commit()
     db.refresh(wo)
     _notify_wo(wo, "in_progress", actor=current_user.real_name)
@@ -466,6 +542,8 @@ def export_work_order_pdf(work_order_id: int, db: Session = Depends(get_db),
     wo = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
     if not wo:
         raise HTTPException(status_code=404, detail="工单不存在")
+    if not _can_view_work_order(wo, db, current_user):
+        raise HTTPException(status_code=403, detail="无权查看该工单")
     tech = db.query(User).filter(User.id == wo.technician_id).first() if wo.technician_id else None
     creator = db.query(User).filter(User.id == wo.created_by).first() if wo.created_by else None
     disp_user = db.query(User).filter(User.id == wo.dispatcher_id).first() if wo.dispatcher_id else None
@@ -485,10 +563,13 @@ def export_work_order_pdf(work_order_id: int, db: Session = Depends(get_db),
 
 
 @router.get("/{work_order_id}", response_model=WorkOrderResponse, summary="获取工单详情")
-def get_work_order(work_order_id: int, db: Session = Depends(get_db)):
+def get_work_order(work_order_id: int, db: Session = Depends(get_db),
+                   current_user: User = Depends(get_current_user)):
     work_order = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
     if not work_order:
         raise HTTPException(status_code=404, detail="工单不存在")
+    if not _can_view_work_order(work_order, db, current_user):
+        raise HTTPException(status_code=403, detail="无权查看该工单")
     resp = WorkOrderResponse.model_validate(work_order)
     # 对外 6 状态分组（详情页与列表保持一致）
     resp.status_group = SG.group_of(work_order.status)
@@ -526,30 +607,28 @@ def get_work_order(work_order_id: int, db: Session = Depends(get_db)):
 @router.post("/", response_model=WorkOrderResponse, summary="创建草稿工单")
 def create_work_order(data: WorkOrderCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """创建工单草稿，状态为 DRAFT，不触发 AI 分析"""
-    # 自动生成工单编号: WO-YYYYMMDD-NNN
+    # 自动生成工单编号: xgsz-YYYYMMDD-NNN（每天从 001 开始）
     if not data.work_order_no:
-        today_str = date.today().strftime("%Y%m%d")
-        prefix = f"WO-{today_str}-"
-        latest = db.query(WorkOrder).filter(
-            WorkOrder.work_order_no.like(f"{prefix}%")
-        ).order_by(WorkOrder.work_order_no.desc()).first()
-        if latest and latest.work_order_no:
-            try:
-                seq = int(latest.work_order_no.split("-")[-1]) + 1
-            except ValueError:
-                seq = 1
-        else:
-            seq = 1
-        data.work_order_no = f"{prefix}{seq:03d}"
+        from app.services.work_order_no import next_work_order_no
+        data.work_order_no = next_work_order_no(db)
     existing = db.query(WorkOrder).filter(WorkOrder.work_order_no == data.work_order_no).first()
     if existing:
         raise HTTPException(status_code=400, detail="工单编号已存在")
+    # 影响程度 -> 优先级；非法值降级为 MEDIUM，避免旧客户端报错
+    from app.services.priority import normalize_priority
+    data.priority = normalize_priority(data.priority)
     work_order = WorkOrder(**data.model_dump(exclude_unset=True))
     work_order.created_by = current_user.id
+    # 报修人不选故障部位，提交后按描述/涉及对象自动归大类（GPU/集群/网络/存储/供电/其他）
+    if not getattr(work_order, "fault_category", None):
+        from app.services.fault_classify import classify_fault
+        work_order.fault_category = classify_fault(
+            work_order.fault_description, getattr(work_order, "fault_object", None))
     # 只有维修员自己建单才自动归自己；管理员/主管建单不预占维修员，
     # 否则待派工工单"看起来已有人"，别人无法抢单。
     if current_user.role == UserRole.TECHNICIAN.value:
         work_order.technician_id = current_user.id
+        work_order.assignee_id = current_user.id
     else:
         work_order.technician_id = None
         work_order.assignee_id = None
@@ -592,28 +671,28 @@ def update_work_order(work_order_id: int, data: WorkOrderUpdate, db: Session = D
     work_order = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
     if not work_order:
         raise HTTPException(status_code=404, detail="工单不存在")
-    if work_order.status == WorkOrderStatus.COMPLETED:
-        raise HTTPException(status_code=400, detail="已完成工单不可修改")
-    if work_order.status == WorkOrderStatus.ARCHIVED and current_user.role != UserRole.ADMIN.value:
-        raise HTTPException(status_code=403, detail="已归档工单仅管理员可修改")
+    # COMPLETED 是历史状态，对外归入「待归档」，仍允许补齐归档字段后再归档
+    if work_order.status == WorkOrderStatus.ARCHIVED and current_user.role not in (
+            UserRole.ADMIN.value, UserRole.SUPERVISOR.value):
+        raise HTTPException(status_code=403, detail="已归档工单仅管理员/主管可修改")
 
-    # 权限校验：创建者 / 被指派维修员（主管派工场景）/ 管理员可编辑
+    # 权限校验：创建者 / 被指派维修员（用于填写维修结果）/ 管理员 / 主管可编辑
     is_assigned_tech = (
         (work_order.technician_id and work_order.technician_id == current_user.id)
         or (work_order.assignee_id and work_order.assignee_id == current_user.id)
     )
-    if (
-        work_order.created_by
-        and current_user.id != work_order.created_by
-        and not is_assigned_tech
-        and current_user.role != UserRole.ADMIN.value
-    ):
-        raise HTTPException(status_code=403, detail="仅工单创建者、被指派维修员或管理员可编辑此工单")
+    is_creator = bool(work_order.created_by) and current_user.id == work_order.created_by
+    is_admin = current_user.role == UserRole.ADMIN.value
+    is_supervisor = current_user.role == UserRole.SUPERVISOR.value
+    # 客户门户报修的单 created_by 为空，不能因此对所有登录用户放开
+    if not (is_creator or is_assigned_tech or is_admin or is_supervisor):
+        raise HTTPException(status_code=403, detail="仅工单创建者、被指派维修员、管理员或主管可编辑此工单")
 
     changes: Dict[str, Any] = {}
     for key, val in data.model_dump(exclude_unset=True).items():
-        # 维修员和创建者不可通过更新修改（维修员锁定为创建者）
-        if key in ("technician_id", "created_by"):
+        # 负责人 / 创建人 / 当前负责人 / 状态不允许通过普通保存改：
+        # 状态必须走 /transition（否则可以 PUT 直接跳过派工、接单、归档校验）
+        if key in ("technician_id", "created_by", "assignee_id", "status"):
             continue
         before = getattr(work_order, key, None)
         if before != val:
@@ -644,8 +723,68 @@ def update_work_order(work_order_id: int, data: WorkOrderUpdate, db: Session = D
     return _build_work_order_response(work_order, db)
 
 
+class AttachmentAppendIn(BaseModel):
+    """查看页「上传附件」弹窗单张提交"""
+    url: str = Field(..., max_length=1000, description="已上传文件的访问路径")
+    name: Optional[str] = Field(None, max_length=255, description="原始文件名")
+    type: Optional[str] = Field(None, max_length=32, description="image / video / file")
+
+
+@router.post("/{work_order_id}/attachments", summary="追加附件（查看页直接上传，不必进入编辑态）")
+def append_work_order_attachments(
+    work_order_id: int,
+    payload: AttachmentAppendIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """把一张已上传的文件挂到工单上。
+
+    存在意义：详情页只补附件时不该被迫进整页编辑态（编辑态会整行提交表单，
+    且要求把所有必填项填对）。这里只追加一个元素，其它字段一律不碰。
+    """
+    work_order = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
+    if not work_order:
+        raise HTTPException(status_code=404, detail="工单不存在")
+
+    role = _role_value(current_user)
+    is_admin = role == "ADMIN"
+    if work_order.status == WorkOrderStatus.ARCHIVED and not is_admin:
+        raise HTTPException(status_code=403, detail="已归档工单仅管理员可修改")
+
+    is_assigned = (
+        (work_order.technician_id and work_order.technician_id == current_user.id)
+        or (work_order.assignee_id and work_order.assignee_id == current_user.id)
+    )
+    is_creator = bool(work_order.created_by) and current_user.id == work_order.created_by
+    if not (is_admin or role == "SUPERVISOR" or is_creator or is_assigned):
+        raise HTTPException(status_code=403, detail="仅工单创建者、被指派维修员、主管或管理员可上传附件")
+
+    item = {
+        "url": payload.url,
+        "name": payload.name or payload.url.rsplit("/", 1)[-1],
+        "type": payload.type or ("image" if payload.url.lower().rsplit(".", 1)[-1] in
+                                 ("png", "jpg", "jpeg", "gif", "webp", "bmp", "heic") else "file"),
+    }
+    current = work_order.attachments if isinstance(work_order.attachments, list) else []
+    if any(isinstance(x, dict) and x.get("url") == item["url"] for x in current):
+        return {"attachments": current, "count": len(current), "added": False}
+    new_list = [*current, item]
+    work_order.attachments = new_list
+    db.commit()
+    db.refresh(work_order)
+    logger.info(f"[WorkOrder] {work_order.work_order_no} 追加附件 {item['name']} "
+                f"by {current_user.real_name}，现 {len(new_list)} 个")
+    return {"attachments": new_list, "count": len(new_list), "added": True}
+
+
 @router.get("/{work_order_id}/edit-logs", summary="工单修改记录（已归档工单管理员修改审计）")
-def list_work_order_edit_logs(work_order_id: int, db: Session = Depends(get_db)):
+def list_work_order_edit_logs(work_order_id: int, db: Session = Depends(get_db),
+                              current_user: User = Depends(get_current_user)):
+    wo = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
+    if not wo:
+        raise HTTPException(status_code=404, detail="工单不存在")
+    if not _can_view_work_order(wo, db, current_user):
+        raise HTTPException(status_code=403, detail="无权查看该工单")
     rows = (
         db.query(WorkOrderEditLog)
         .filter(WorkOrderEditLog.work_order_id == work_order_id)
@@ -728,8 +867,10 @@ def analyze_work_order(work_order_id: int, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/{work_order_id}/complete", summary="提交完成工单（AI 分析+去重+收录知识）")
-def complete_work_order(work_order_id: int, db: Session = Depends(get_db)):
+@router.post("/{work_order_id}/complete", summary="提交完成工单（立即返回，AI 分析与知识收录后台跑）")
+def complete_work_order(work_order_id: int, background: BackgroundTasks,
+                        db: Session = Depends(get_db),
+                        current_user: User = Depends(get_current_user)):
     """
     维修人员确认全部填写完成并提交：
     1. AI 标准化分析（补全缺失的标准化字段）
@@ -741,6 +882,13 @@ def complete_work_order(work_order_id: int, db: Session = Depends(get_db)):
     work_order = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
     if not work_order:
         raise HTTPException(status_code=404, detail="工单不存在")
+    role = getattr(current_user.role, "value", current_user.role) or ""
+    is_super = role.upper() in ("ADMIN", "SUPERVISOR")
+    is_assigned = work_order.technician_id == current_user.id or work_order.assignee_id == current_user.id
+    if not (is_super or is_assigned):
+        raise HTTPException(status_code=403, detail="仅当前负责人、主管或管理员可提交完成")
+    if work_order.is_on_hold:
+        raise HTTPException(status_code=400, detail="工单处于挂起状态，请先恢复后再提交完成")
     if work_order.status == WorkOrderStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="工单已完成")
     # 修复：只有维修中的工单才能提交完成，避免 DRAFT/SUBMITTED 直接跳到 COMPLETED 跳过整个状态机
@@ -750,99 +898,121 @@ def complete_work_order(work_order_id: int, db: Session = Depends(get_db)):
             detail=f"仅「维修中」的工单可提交完成，当前状态：{work_order.status.value if hasattr(work_order.status, 'value') else work_order.status}",
         )
 
-    # 1. AI 标准化分析
-    wo_data = {
-        "fault_description": work_order.fault_description,
-        "fault_code": work_order.fault_code,
-        "fault_phenomenon": work_order.fault_phenomenon,
-        "root_cause": work_order.root_cause,
-        "solution_steps": work_order.solution_steps,
-        "device_error_code": work_order.device_error_code,
-        "device_type": getattr(work_order, "device_type", None),
-        "log_text": work_order.log_text,
-        "repair_result": work_order.repair_result,
-        "work_hours": work_order.work_hours,
-    }
-    try:
-        analysis = ticket_agent.analyze(wo_data)
-        work_order.confidence = analysis.confidence
-        work_order.analysis_result = {
-            "device_type": analysis.device_type,
-            "fault_category": analysis.fault_category,
-            "severity": analysis.severity,
-            "completeness_score": analysis.completeness_score,
-            "missing_fields": analysis.missing_fields,
-            "validation_notes": analysis.validation_notes,
-            "raw_reasoning": analysis.raw_reasoning,
-            "suggested_actions": analysis.suggested_actions,
-            "standardized_fields": {
-                "fault_code": analysis.standardized_fault_code,
-                "fault_phenomenon": analysis.standardized_fault_phenomenon,
-                "root_cause": analysis.standardized_root_cause,
-                "solution_steps": analysis.standardized_solution_steps,
-            },
-        }
-        # 补全标准化字段
-        if analysis.standardized_fault_code and not work_order.fault_code:
-            work_order.fault_code = analysis.standardized_fault_code
-        if analysis.standardized_fault_phenomenon and not work_order.fault_phenomenon:
-            work_order.fault_phenomenon = analysis.standardized_fault_phenomenon
-        if analysis.standardized_root_cause and not work_order.root_cause:
-            work_order.root_cause = analysis.standardized_root_cause
-        if analysis.standardized_solution_steps and not work_order.solution_steps:
-            work_order.solution_steps = analysis.standardized_solution_steps
-        if analysis.tags:
-            work_order.tags = analysis.tags
-    except Exception as e:
-        logger.warning(f"[WorkOrder] 提交时 AI 分析失败: {e}")
-
-    # 2. 自动提取知识并发布（含去重检测）
-    knowledge_synced = False
-    try:
-        knowledge_synced = _auto_publish_knowledge(work_order, db)
-    except Exception as e:
-        logger.warning(f"[WorkOrder] 知识收录失败: {e}")
-
-    # 2.5 扣减备件库存
+    # 备件扣减 / 故障码映射：都是本地计算，同步做，保证库存立即对得上
     deduction_details = _deduct_spare_parts(work_order, db)
-
-    # 2.6 收录故障码到映射表（一一对应，不可修改）
     _ensure_fault_code_mappings(work_order, db)
 
-    # 3. 标记完成
-    work_order.status = WorkOrderStatus.COMPLETED
+    # 标记为「待归档」：统一完成入口，后续必须补齐归档字段并通过归档校验
+    old_status_enum = work_order.status
+    work_order.status = WorkOrderStatus.ARCHIVING
     work_order.resolved_at = work_order.resolved_at or datetime.now()
+    _add_progress_log(
+        db=db, work_order_id=work_order.id,
+        from_status=old_status_enum, to_status=WorkOrderStatus.ARCHIVING,
+        operator_id=current_user.id, operator_name=current_user.real_name,
+        source="WEB", remark="提交完成（AI 分析与知识收录后台进行），进入待归档",
+    )
     try:
         sla_service.recompute_cost(work_order, db)
         sla_service.mark_overdue(work_order)
-        work_order.alert_level = "P0" if work_order.sla_status == "OVERDUE" else AL.from_priority(work_order.priority)  # 完成时刷新 alert_level
+        work_order.alert_level = "P0" if work_order.sla_status == "OVERDUE" else AL.from_priority(work_order.priority)
     except Exception as e:
         logger.warning(f"[WorkOrder] 完成时刷新 SLA/成本失败（忽略）: {e}")
     db.commit()
     db.refresh(work_order)
-    logger.info(f"[WorkOrder] 工单 {work_order.work_order_no} 已提交完成，knowledge_synced={knowledge_synced}")
+
+    # AI 标准化分析 + 知识收录放到响应之后跑，前端不用等 4~12 秒
+    try:
+        background.add_task(_run_completion_ai_background, work_order.id)
+    except Exception as e:
+        logger.warning(f"[WorkOrder] 后台任务注册失败，改为同步兜底: {e}")
+        _run_completion_ai_background(work_order.id)
+
+    logger.info(f"[WorkOrder] 工单 {work_order.work_order_no} 已提交完成，进入待归档（AI 后台分析已排队）")
     return {
         "id": work_order.id,
         "work_order_no": work_order.work_order_no,
-        "status": "COMPLETED",
+        "status": "ARCHIVING",
         "sla_status": work_order.sla_status,
         "labor_cost": work_order.labor_cost,
         "parts_cost": work_order.parts_cost,
         "total_cost": work_order.total_cost,
-        "knowledge_synced": knowledge_synced,
-        "message": "知识已收录到知识库" if knowledge_synced else "提交成功（检测到相似知识，未重复收录）",
+        "ai_pending": True,
+        "knowledge_synced": None,
+        "message": "已提交完成，工单进入待归档；AI 分析与知识收录在后台进行",
         "inventory_deducted": deduction_details,
     }
 
 
+# 删除工单时的状态中文名（只用于报错提示）
+_DELETE_STATUS_LABEL = {
+    "DRAFT": "草稿", "SUBMITTED": "待派工", "ASSIGNED": "已派单", "ACCEPTED": "已接单",
+    "ARRIVED": "已到场", "INSPECTING": "检查中", "IN_PROGRESS": "维修中",
+    "ARCHIVING": "待归档", "ARCHIVED": "已归档", "COMPLETED": "已完成", "REJECTED": "已退回",
+}
+
+
 @router.delete("/{work_order_id}", summary="删除工单")
 def delete_work_order(work_order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """删除工单（仅「草稿」且无任何业务痕迹时允许）。
+
+    权限口径（2026-11-11 收口，见《平台评审》权限模型一节）：
+    1. 只有建单人本人或管理员可以删；
+    2. **只有 DRAFT 草稿能删**——一旦提交报修就产生了业务事实（进度日志、SLA 计时、
+       可能还有备件与附件），不提供删除，要终止请走「退回」；
+    3. 即使是草稿，只要已有进度日志 / 备件流水 / 已收录知识，同样拒绝，
+       避免把已经产生痕迹的记录抹掉。
+    """
     work_order = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
     if not work_order:
         raise HTTPException(status_code=404, detail="工单不存在")
-    # 权限校验：仅创建者或管理员可删除
-    if work_order.created_by and current_user.id != work_order.created_by and current_user.role != UserRole.ADMIN.value:
+
+    # ① 角色 / 归属校验：客户门户报修的单 created_by 为空，只有管理员能删
+    role = _role_value(current_user)
+    is_creator = bool(work_order.created_by) and current_user.id == work_order.created_by
+    if not (is_creator or role == "ADMIN"):
         raise HTTPException(status_code=403, detail="仅工单创建者或管理员可删除此工单")
+
+    # ② 状态校验：提交后谁都不能删（含管理员）
+    status_val = work_order.status.value if hasattr(work_order.status, "value") else str(work_order.status)
+    if status_val != WorkOrderStatus.DRAFT.value:
+        raise HTTPException(
+            status_code=400,
+            detail=(f"「{_DELETE_STATUS_LABEL.get(status_val, status_val)}」的工单不能删除。"
+                    f"只有草稿可以删；已提交的工单请用「退回」，归档数据只能保留。"),
+        )
+
+    # ③ 痕迹校验：已经发生过任何业务动作的草稿也不删
+    # 注意：本函数下面的清理块里还有 `from app.models.progress_log import WorkOrderProgressLog`，
+    # 那会把该名字变成函数局部变量，这里必须换个别名，否则 UnboundLocalError
+    from app.models.progress_log import WorkOrderProgressLog as _ProgressLog
+    log_count = db.query(_ProgressLog).filter(
+        _ProgressLog.work_order_id == work_order.id).count()
+    if log_count:
+        raise HTTPException(status_code=400, detail=f"该工单已有 {log_count} 条处理记录，不能删除")
+
+    try:
+        from app.models.stock_movement import StockMovement
+        mv_count = db.query(StockMovement).filter(StockMovement.work_order_id == work_order.id).count()
+        if mv_count:
+            raise HTTPException(status_code=400, detail=f"该工单已产生 {mv_count} 条备件流水，不能删除")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"[WorkOrder] 检查备件流水失败（忽略）: {e}")
+
+    try:
+        knowledge_count = db.query(KnowledgeItem).filter(
+            KnowledgeItem.source_type == "WORK_ORDER",
+            KnowledgeItem.source_id == work_order.id,
+        ).count()
+        if knowledge_count:
+            raise HTTPException(status_code=400, detail="该工单已收录到知识库，不能删除")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"[WorkOrder] 检查知识收录失败（忽略）: {e}")
+
     # 删除工单前清理关联站内通知，避免通知点进去指向已删除工单
     try:
         from app.models.notification import Notification
@@ -1287,11 +1457,17 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
         is_supervisor_role = current_user.role in (UserRole.SUPERVISOR.value, UserRole.ADMIN.value)
         is_owner = work_order.technician_id == current_user.id
         if not is_supervisor_role:
-            # 维修员只能在「已派单」阶段转派自己名下的工单
-            if to_status_val != WorkOrderStatus.ASSIGNED.value or not is_owner:
+            # 维修员可转派自己名下的工单：已派单/已接单/已到场/检查中；接单后必须填原因
+            tech_reassignable = {
+                WorkOrderStatus.ASSIGNED.value,
+                WorkOrderStatus.ACCEPTED.value,
+                WorkOrderStatus.ARRIVED.value,
+                WorkOrderStatus.INSPECTING.value,
+            }
+            if to_status_val not in tech_reassignable or not is_owner:
                 raise HTTPException(
                     status_code=403,
-                    detail="只有主管/管理员可改派；维修员仅能在已派单阶段转派自己名下的工单")
+                    detail="只有主管/管理员可改派；维修员仅能在自己名下、尚未开始维修（已派单~检查中）的工单上转派")
         # 接单之后改派可能已产生现场工作，必须写原因
         if to_status_val in (WorkOrderStatus.ACCEPTED.value,
                              WorkOrderStatus.ARRIVED.value,
@@ -1309,19 +1485,23 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
         old_tech = db.query(User).filter(User.id == work_order.technician_id).first()
         old_name = old_tech.real_name if old_tech else "-"
         old_id = work_order.technician_id
+        old_status_enum = work_order.status
 
         work_order.technician_id = tech.id
         work_order.assignee_id = tech.id
         work_order.dispatcher_id = current_user.id
         work_order.dispatched_at = datetime.now()
+        # 改派后新负责人必须重新接单：已接单/已到场/检查中一律退回「已派单」
+        work_order.status = WorkOrderStatus.ASSIGNED.value
         if data.collaborator_ids is not None:
             _set_collaborators(db, work_order.id, data.collaborator_ids, primary_id=tech.id)
         _add_progress_log(
             db=db, work_order_id=work_order.id,
-            from_status=work_order.status, to_status=work_order.status,
+            from_status=old_status_enum, to_status=WorkOrderStatus.ASSIGNED,
             operator_id=current_user.id, operator_name=current_user.real_name,
             source=data.source or "WEB",
-            remark=f"改派：{old_name} → {tech.real_name}" + (f"（{data.remark}）" if data.remark else ""),
+            remark=f"改派：{old_name} → {tech.real_name}（待新负责人接单）"
+                   + (f"；原因：{data.remark}" if data.remark else ""),
         )
         # 工作量：原维修员减一，新维修员加一
         if old_id:
@@ -1370,6 +1550,13 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
     is_supervisor = current_user.role == UserRole.SUPERVISOR.value
     is_technician = current_user.role == UserRole.TECHNICIAN.value
     is_assigned_tech = work_order.technician_id == current_user.id
+
+    # 服务方式由技术员在接单/领取时确认，创建阶段不再让报修人决定
+    if data.service_mode:
+        sm = (data.service_mode or "").upper()
+        if sm not in ("REMOTE", "SITE", "RMA"):
+            raise HTTPException(status_code=400, detail="服务方式只能是 REMOTE / SITE / RMA")
+        work_order.service_mode = sm
 
     if to_status_val == WorkOrderStatus.ACCEPTED.value:
         if not (is_assigned_tech or is_admin):
@@ -1453,6 +1640,24 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
     old_technician_id = work_order.technician_id
     from_status_enum = work_order.status
 
+    # 技术员自己建的单：提交时可选「我自己处理」或「放入工单池」
+    if (to_status_val == WorkOrderStatus.SUBMITTED.value
+            and from_status_val == WorkOrderStatus.DRAFT.value
+            and is_technician
+            and work_order.created_by == current_user.id
+            and work_order.technician_id == current_user.id):
+        if data.to_pool:
+            # 放入工单池：不占负责人，回到待派工池
+            work_order.technician_id = None
+            work_order.assignee_id = None
+        else:
+            # 我自己处理：直接自动接单
+            to_status_val = WorkOrderStatus.ACCEPTED.value
+            to_status_enum = WorkOrderStatus.ACCEPTED
+            work_order.assignee_id = current_user.id
+            if not work_order.first_response_at:
+                work_order.first_response_at = datetime.now()
+
     # 拒收回池：清空负责人（old_technician_id 已用于工作量回退）
     if to_status_val == WorkOrderStatus.SUBMITTED.value and from_status_val == WorkOrderStatus.ASSIGNED.value:
         work_order.technician_id = None
@@ -1479,6 +1684,10 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
     else:
         work_order.status = to_status_enum
         db.flush()
+
+    # 首次进入维修中时记录实际开始维修时间（时间线/工时用）
+    if to_status_val == WorkOrderStatus.IN_PROGRESS.value and not work_order.start_time:
+        work_order.start_time = datetime.now()
 
     _add_progress_log(
         db=db,
@@ -1531,6 +1740,30 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
     if _event:
         _notify_wo(work_order, _event, actor=current_user.real_name, extra=(data.remark or ""))
 
+    # 维修完成 → 待归档：提醒派工人和主管去归档（不然单子会一直停在待归档）
+    if to_status_val == WorkOrderStatus.ARCHIVING.value:
+        try:
+            from app.api.notifications import notify_roles, notify_user
+            level = AL.from_priority(getattr(work_order, "priority", None))
+            tech_name = ""
+            try:
+                tech_name = work_order.technician.real_name if work_order.technician else ""
+            except Exception:
+                tech_name = ""
+            content = (f"工单 {work_order.work_order_no}（{work_order.device_code or '未指定设备'}）"
+                       f"已由 {tech_name or '维修员'} 维修完成，进入待归档；请核对归档字段并完成归档")
+            if work_order.dispatcher_id and work_order.dispatcher_id != current_user.id:
+                notify_user(db, work_order.dispatcher_id, type="WORK_ORDER",
+                            title="工单维修完成，待归档", content=content,
+                            work_order_id=work_order.id, level=level)
+            notify_roles(db, ["ADMIN", "SUPERVISOR"], type="WORK_ORDER",
+                         title="工单维修完成，待归档", content=content,
+                         work_order_id=work_order.id, level=level,
+                         exclude_user_id=current_user.id)
+            db.commit()
+        except Exception as e:
+            logger.warning(f"[WorkOrder] 待归档通知写入失败（忽略）: {e}")
+
     # 状态变更后，异步刷新维修员钉钉上的派工进度卡片（Web 端操作实时反映到钉钉，不阻塞接口响应）
     # 钉钉卡片回调走 DINGTALK_CARD 来源，卡片已由 dingtalk_wo_card._dispatch_action 异步刷新，此处跳过避免重复。
     if data.source != "DINGTALK_CARD":
@@ -1545,6 +1778,77 @@ def _do_transition(work_order_id: int, data: WorkOrderTransition, db: Session, c
 
     logger.info(f"[WorkOrder] 状态流转 #{work_order.id}: {from_status_val} → {to_status_val} by {current_user.real_name}")
     return _build_work_order_response(work_order, db)
+
+
+def _run_completion_ai_background(work_order_id: int) -> None:
+    """提交完成后的重活：AI 标准化分析 + 知识收录，放后台跑（接口立即返回）"""
+    from app.core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        wo = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
+        if not wo:
+            return
+        # 1) AI 标准化分析（失败不影响工单已进入待归档）
+        try:
+            wo_data = {
+                "fault_description": wo.fault_description,
+                "fault_code": wo.fault_code,
+                "fault_phenomenon": wo.fault_phenomenon,
+                "root_cause": wo.root_cause,
+                "solution_steps": wo.solution_steps,
+                "device_error_code": wo.device_error_code,
+                "device_type": getattr(wo, "device_type", None),
+                "log_text": wo.log_text,
+                "repair_result": wo.repair_result,
+                "work_hours": wo.work_hours,
+            }
+            analysis = ticket_agent.analyze(wo_data)
+            wo.confidence = analysis.confidence
+            wo.analysis_result = {
+                "device_type": analysis.device_type,
+                "fault_category": analysis.fault_category,
+                "severity": analysis.severity,
+                "completeness_score": analysis.completeness_score,
+                "missing_fields": analysis.missing_fields,
+                "validation_notes": analysis.validation_notes,
+                "raw_reasoning": analysis.raw_reasoning,
+                "suggested_actions": analysis.suggested_actions,
+                "standardized_fields": {
+                    "fault_code": analysis.standardized_fault_code,
+                    "fault_phenomenon": analysis.standardized_fault_phenomenon,
+                    "root_cause": analysis.standardized_root_cause,
+                    "solution_steps": analysis.standardized_solution_steps,
+                },
+            }
+            if analysis.standardized_fault_code and not wo.fault_code:
+                wo.fault_code = analysis.standardized_fault_code
+            if analysis.standardized_fault_phenomenon and not wo.fault_phenomenon:
+                wo.fault_phenomenon = analysis.standardized_fault_phenomenon
+            if analysis.standardized_root_cause and not wo.root_cause:
+                wo.root_cause = analysis.standardized_root_cause
+            if analysis.standardized_solution_steps and not wo.solution_steps:
+                wo.solution_steps = analysis.standardized_solution_steps
+            if analysis.tags:
+                wo.tags = analysis.tags
+            db.commit()
+            logger.info(f"[WorkOrder] 后台 AI 分析完成 #{work_order_id}（置信度 {analysis.confidence}）")
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"[WorkOrder] 后台 AI 分析失败 #{work_order_id}: {e}")
+
+        # 2) 知识收录（含去重检测），同样失败不影响工单状态
+        try:
+            wo = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
+            if not wo:
+                return
+            synced = _auto_publish_knowledge(wo, db)
+            db.commit()
+            logger.info(f"[WorkOrder] 后台知识收录 #{work_order_id}: synced={synced}")
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"[WorkOrder] 后台知识收录失败 #{work_order_id}: {e}")
+    finally:
+        db.close()
 
 
 def complete_work_order_internal(work_order_id: int, db: Session):
@@ -1701,6 +2005,21 @@ def hold_work_order(work_order_id: int, data: HoldIn,
         source="WEB", remark=f"挂起：{HOLD_LABELS[reason]} {data.remark or ''}".strip(),
     ))
     db.commit()
+    try:
+        from app.api.notifications import notify_roles, notify_user
+        level = AL.from_priority(getattr(wo, "priority", None))
+        content = (f"工单 {wo.work_order_no}（{wo.device_code or '未指定设备'}）已挂起："
+                   f"{HOLD_LABELS[reason]}" + (f"，{data.remark}" if data.remark else "")
+                   + f"（操作人：{current_user.real_name}）")
+        if wo.dispatcher_id and wo.dispatcher_id != current_user.id:
+            notify_user(db, wo.dispatcher_id, type="WORK_ORDER", title="工单已挂起",
+                        content=content, work_order_id=wo.id, level=level)
+        notify_roles(db, ["ADMIN", "SUPERVISOR"], type="WORK_ORDER", title="工单已挂起",
+                     content=content, work_order_id=wo.id, level=level,
+                     exclude_user_id=current_user.id)
+        db.commit()
+    except Exception as e:
+        logger.warning(f"[WorkOrder] 挂起通知写入失败（忽略）: {e}")
     return {"message": "已挂起，SLA 暂停计时", "hold_reason": reason,
             "hold_label": HOLD_LABELS[reason]}
 
@@ -1737,6 +2056,20 @@ def resume_work_order(work_order_id: int,
         source="WEB", remark=f"恢复处理（本次挂起 {minutes} 分钟，累计 {wo.hold_total_minutes} 分钟）",
     ))
     db.commit()
+    try:
+        from app.api.notifications import notify_roles, notify_user
+        level = AL.from_priority(getattr(wo, "priority", None))
+        content = (f"工单 {wo.work_order_no}（{wo.device_code or '未指定设备'}）已恢复处理，"
+                   f"本次挂起 {minutes} 分钟（操作人：{current_user.real_name}）")
+        if wo.dispatcher_id and wo.dispatcher_id != current_user.id:
+            notify_user(db, wo.dispatcher_id, type="WORK_ORDER", title="工单已恢复",
+                        content=content, work_order_id=wo.id, level=level)
+        notify_roles(db, ["ADMIN", "SUPERVISOR"], type="WORK_ORDER", title="工单已恢复",
+                     content=content, work_order_id=wo.id, level=level,
+                     exclude_user_id=current_user.id)
+        db.commit()
+    except Exception as e:
+        logger.warning(f"[WorkOrder] 恢复通知写入失败（忽略）: {e}")
     return {"message": "已恢复，SLA 继续计时", "hold_minutes": minutes,
             "hold_total_minutes": wo.hold_total_minutes, "sla_status": wo.sla_status}
 
@@ -1773,6 +2106,16 @@ def update_rma(work_order_id: int, data: RmaIn,
             "rma_no": wo.rma_no, "rma_status": wo.rma_status}
 
 
+def _ensure_fault_phenomenon_fallback(work_order: WorkOrder) -> bool:
+    """归档前兜底：故障现象没填时，用故障描述回填，避免归档被卡住。"""
+    current = (getattr(work_order, "fault_phenomenon", None) or "").strip()
+    desc = (getattr(work_order, "fault_description", None) or "").strip()
+    if not current and desc:
+        work_order.fault_phenomenon = desc
+        return True
+    return False
+
+
 @router.post("/{work_order_id}/archive-check", summary="工单归档校验（关键字段齐全性）")
 def archive_check(
     work_order_id: int,
@@ -1783,7 +2126,7 @@ def archive_check(
     work_order = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
     if not work_order:
         raise HTTPException(status_code=404, detail="工单不存在")
-    if work_order.status != WorkOrderStatus.ARCHIVING:
+    if work_order.status not in (WorkOrderStatus.ARCHIVING, WorkOrderStatus.COMPLETED):
         raise HTTPException(status_code=400, detail="仅待归档状态工单可执行归档校验")
 
     is_admin = current_user.role == UserRole.ADMIN.value
@@ -1791,6 +2134,8 @@ def archive_check(
     if not (is_assigned_tech or is_admin):
         raise HTTPException(status_code=403, detail="仅被指派的维修员或管理员可归档")
 
+    if _ensure_fault_phenomenon_fallback(work_order):
+        db.commit()
     result = _archive_field_check(work_order)
     logger.info(
         f"[Archive] 归档校验 #{work_order_id}: passed={result['passed']}, "
@@ -1809,7 +2154,7 @@ def archive_complete(
     work_order = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
     if not work_order:
         raise HTTPException(status_code=404, detail="工单不存在")
-    if work_order.status != WorkOrderStatus.ARCHIVING:
+    if work_order.status not in (WorkOrderStatus.ARCHIVING, WorkOrderStatus.COMPLETED):
         raise HTTPException(status_code=400, detail="仅待归档状态工单可执行归档完成")
 
     is_admin = current_user.role == UserRole.ADMIN.value
@@ -1819,6 +2164,7 @@ def archive_complete(
 
     if work_order.customer_id and work_order.customer_accept_status != "ACCEPTED":
         raise HTTPException(status_code=400, detail="客户尚未确认解决，请客户在门户确认后再归档")
+    _ensure_fault_phenomenon_fallback(work_order)
     result = _archive_field_check(work_order)
     if not result["passed"]:
         logger.warning(
@@ -1879,9 +2225,14 @@ def submit_feedback(
         raise HTTPException(status_code=400, detail="仅已完成/已归档的工单可评价")
     if data.score < 1 or data.score > 5:
         raise HTTPException(status_code=400, detail="评分需在 1-5 之间")
-    is_admin = current_user.role == UserRole.ADMIN.value
-    if not is_admin and current_user.id not in (work_order.created_by, work_order.reporter_id, work_order.technician_id):
-        raise HTTPException(status_code=403, detail="仅报修人、维修员或管理员可评价")
+    # 只允许真正的报修人（建单人/上报人）评价；维修员不能给自己处理的工单评价，
+    # 管理员也不代评（客户报修单的评分走客户门户）
+    is_reporter = current_user.id in (work_order.created_by, work_order.reporter_id)
+    is_technician = current_user.id in (work_order.technician_id, work_order.assignee_id)
+    if not is_reporter:
+        raise HTTPException(status_code=403, detail="仅报修人可评价")
+    if is_technician:
+        raise HTTPException(status_code=403, detail="维修员不能给自己的工单评价")
 
     work_order.satisfaction_score = data.score
     work_order.satisfaction_comment = (data.comment or "").strip() or None
@@ -1901,6 +2252,8 @@ def get_work_order_progress(
     work_order = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
     if not work_order:
         raise HTTPException(status_code=404, detail="工单不存在")
+    if not _can_view_work_order(work_order, db, current_user):
+        raise HTTPException(status_code=403, detail="无权查看该工单")
 
     current_status_val = work_order.status.value if work_order.status else None
     allowed_next = VALID_TRANSITIONS.get(current_status_val, [])
@@ -1980,22 +2333,8 @@ def create_work_order_from_dispatch(
             f"[WorkOrder] 维修员 #{data.technician_id} 今日无排班记录，允许临时派工"
         )
 
-    today_str = date.today().strftime("%Y%m%d")
-    prefix = f"WO-{today_str}-"
-    latest = (
-        db.query(WorkOrder)
-        .filter(WorkOrder.work_order_no.like(f"{prefix}%"))
-        .order_by(WorkOrder.work_order_no.desc())
-        .first()
-    )
-    if latest and latest.work_order_no:
-        try:
-            seq = int(latest.work_order_no.split("-")[-1]) + 1
-        except ValueError:
-            seq = 1
-    else:
-        seq = 1
-    work_order_no = f"{prefix}{seq:03d}"
+    from app.services.work_order_no import next_work_order_no
+    work_order_no = next_work_order_no(db)
 
     work_order = WorkOrder(
         work_order_no=work_order_no,

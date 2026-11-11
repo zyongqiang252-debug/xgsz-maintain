@@ -71,10 +71,11 @@ def dashboard_stats(
     ).all()
     stock_alert = len(low_stock) + len(out_of_stock)
 
-    # 最近 6 条工单
-    recent_orders = db.query(WorkOrder).order_by(
-        WorkOrder.created_at.desc()
-    ).limit(6).all()
+    # 最近 6 条工单（技术员只看自己相关 + 工单池，与工单列表口径一致）
+    from app.api.work_orders import _apply_technician_scope
+    recent_orders = _apply_technician_scope(
+        db.query(WorkOrder), db, current_user
+    ).order_by(WorkOrder.created_at.desc()).limit(6).all()
 
     # ===== 管理指标：MTTR / 故障分布 / 备件消耗 / 维修员工作量 / 满意度 / 成本 =====
     from sqlalchemy import case

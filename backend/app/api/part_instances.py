@@ -371,6 +371,19 @@ def rma_instance(instance_id: int, data: RmaIn, db: Session = Depends(get_db),
     db.commit()
     db.refresh(inst)
     logger.info(f"[PartInstance] {inst.part_code} sn={inst.sn} 转待返厂")
+    try:
+        from app.api.notifications import notify_roles
+        notify_roles(
+            db, ["ADMIN", "SUPERVISOR"], type="PART", title="备件转待返厂（RMA）",
+            content=f"{inst.part_code} {inst.part_name} SN={inst.sn or '-'}"
+                    + (f"（拆自 {from_device}）" if from_device else "")
+                    + f" 已转待返厂，操作人 {current_user.real_name}"
+                    + (f"；备注：{data.remark}" if data.remark else ""),
+            work_order_id=inst.work_order_id, level="P1", exclude_user_id=current_user.id,
+        )
+        db.commit()
+    except Exception as e:
+        logger.warning(f"[PartInstance] RMA 通知失败（忽略）: {e}")
     return _inst_dict(inst)
 
 
@@ -403,6 +416,18 @@ def scrap_instance(instance_id: int, data: ScrapIn, db: Session = Depends(get_db
     db.commit()
     db.refresh(inst)
     logger.info(f"[PartInstance] {inst.part_code} sn={inst.sn} 报废")
+    try:
+        from app.api.notifications import notify_roles
+        notify_roles(
+            db, ["ADMIN", "SUPERVISOR"], type="PART", title="备件报废",
+            content=f"{inst.part_code} {inst.part_name} SN={inst.sn or '-'} 已报废，"
+                    f"操作人 {current_user.real_name}"
+                    + (f"；原因：{data.remark}" if data.remark else ""),
+            work_order_id=inst.work_order_id, level="P1", exclude_user_id=current_user.id,
+        )
+        db.commit()
+    except Exception as e:
+        logger.warning(f"[PartInstance] 报废通知失败（忽略）: {e}")
     return _inst_dict(inst)
 
 

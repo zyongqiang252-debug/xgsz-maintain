@@ -132,23 +132,9 @@ def confirm_dispatch(
         if s.schedule_type == 'LEAVE' and s.shift == cur_shift:
             raise HTTPException(status_code=400, detail=f"该维修员当前时段请假（{cur_shift}），无法派工")
 
-    # 3. 生成工单号
-    today_str = today.strftime("%Y%m%d")
-    prefix = f"WO-{today_str}-"
-    latest = (
-        db.query(WorkOrder)
-        .filter(WorkOrder.work_order_no.like(f"{prefix}%"))
-        .order_by(WorkOrder.work_order_no.desc())
-        .first()
-    )
-    if latest and latest.work_order_no:
-        try:
-            seq = int(latest.work_order_no.split("-")[-1]) + 1
-        except ValueError:
-            seq = 1
-    else:
-        seq = 1
-    work_order_no = f"{prefix}{seq:03d}"
+    # 3. 生成工单号（xgsz-YYYYMMDD-NNN）
+    from app.services.work_order_no import next_work_order_no
+    work_order_no = next_work_order_no(db)
 
     # 4. 创建工单
     work_order = WorkOrder(

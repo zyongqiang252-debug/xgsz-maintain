@@ -307,10 +307,37 @@ def main(keep=False):
     stk16, rsv16 = part_stock(part_a["id"])
     check("5-16 审批后库存未扣、预占+1", stk16 == 2 and rsv16 == 1,
           f"stock={stk16} reserved={rsv16}（审批响应预占={appr.get('reserved_quantity')}）")
-    st, _ = api("POST", f"/spare-parts/requisitions/{rid}/issue", tech_token, json={"remark": "越权发料"})
-    check("5-17 技术员发料应 403", st == 403, f"status={st}")
-    st, iss = api("POST", f"/spare-parts/requisitions/{rid}/issue", admin_token, json={"remark": "E2E 发料"})
-    check("5-18 管理员发料成功", st == 200 and iss.get("status") == "ISSUED", f"status={st} {iss.get('status')}")
+    st, block = api("POST", f"/spare-parts/{part_a['id']}/consume", admin_token,
+                    json={"quantity": 1, "serial_no": sn2, "remark": "想绕开审批直接出库"})
+    check("5-16b 有待发料领用单时禁止直接出库", st == 400 and "领用审批" in str(block.get("detail", "")),
+          f"status={st} {block.get('detail', '')}")
+    st, iss = api("POST", f"/spare-parts/requisitions/{rid}/issue", tech_token,
+                  json={"remark": "E2E 申请人自助领料"})
+    check("5-17 申请人可自助领料出库", st == 200 and iss.get("status") == "ISSUED",
+          f"status={st} {iss.get('status') or iss.get('detail')}")
+
+    # 主管代发 + 越权校验：用一件临时备件单独验证，避免影响主流程库存
+    st, part_c = api("POST", "/spare-parts/", admin_token, json={
+        "part_code": f"E2E-FAN-C-{RUN}", "part_name": f"E2E 风扇C{RUN}", "unit": "个",
+        "stock_quantity": 1, "safety_stock": 0, "unit_price": 50.0, "need_sn": False})
+    if isinstance(part_c, dict) and part_c.get("id"):
+        IDS["parts"].append(part_c["id"])
+        st, req_c = api("POST", "/spare-parts/requisitions/", admin_token,
+                        json={"part_id": part_c["id"], "quantity": 1, "reason": "E2E 代发校验"})
+        if isinstance(req_c, dict) and req_c.get("id"):
+            IDS["requisitions"].append(req_c["id"])
+            st, _ = api("POST", f"/spare-parts/requisitions/{req_c['id']}/approve", admin_token)
+            st, deny = api("POST", f"/spare-parts/requisitions/{req_c['id']}/issue", tech_token,
+                           json={"remark": "越权发别人的单"})
+            check("5-18a 技术员发别人的单应 403", st == 403, f"status={st} {deny.get('detail', '')}")
+            st, iss2 = api("POST", f"/spare-parts/requisitions/{req_c['id']}/issue", admin_token,
+                           json={"remark": "E2E 主管代发"})
+            check("5-18b 主管代发成功", st == 200 and iss2.get("status") == "ISSUED",
+                  f"status={st} {iss2.get('status') or iss2.get('detail')}")
+        else:
+            check("5-18a 技术员发别人的单应 403", False, f"建领用单失败：{req_c}")
+    else:
+        check("5-18a 技术员发别人的单应 403", False, f"建临时备件失败：{part_c}")
 
     st, pa3 = api("GET", f"/spare-parts/{part_a['id']}", admin_token)
     stk, rsv = part_stock(part_a["id"])
@@ -382,13 +409,16 @@ def main(keep=False):
             json={"root_cause": "线缆松动", "solution_steps": "重插", "repair_result": "已修复", "work_hours": 1})
         st, comp = api("POST", f"/work-orders/{wo2_id}/complete", tech_token)
         _, wo2_det = api("GET", f"/work-orders/{wo2_id}", admin_token)
-        check("5-31 /complete 返回 COMPLETED", wo2_det.get("status") == "COMPLETED",
+        check("5-31 详情页提交完成→待归档", wo2_det.get("status") == "ARCHIVING",
               f"status={wo2_det.get('status')} {comp.get('knowledge_synced')}")
+        api("PUT", f"/work-orders/{wo2_id}", admin_token, json={
+            "fault_phenomenon": "掉卡", "root_cause": "线缆松动",
+            "solution_steps": "重插", "repair_result": "已修复", "work_hours": 1})
         st, chk2 = api("POST", f"/work-orders/{wo2_id}/archive-check", admin_token)
         st, arch2 = api("POST", f"/work-orders/{wo2_id}/archive-complete", admin_token)
-        if st != 200:
-            gap("5-32 COMPLETED 是死状态", f"详情页提交完成后状态为 COMPLETED，但归档完成要求 ARCHIVING → {st} "
-                f"{arch2.get('detail', '')}；前端把 COMPLETED 显示成「待归档」却点不了归档按钮")
+        _, wo2_det2 = api("GET", f"/work-orders/{wo2_id}", admin_token)
+        check("5-32 提交完成后可直接归档", st == 200 and wo2_det2.get("status") == "ARCHIVED",
+              f"status={wo2_det2.get('status')} {arch2.get('detail', '')}")
 
     # ================= 6. 客户门户报修 → 派工维修 → 验收 → 评价 =================
     st, rep = api("POST", "/customer/reports", customer_token, json={
@@ -429,14 +459,26 @@ def main(keep=False):
     # ================= 7. 库存联动：直接出库 / 预警 / 盘点 =================
     st, cons = api("POST", f"/spare-parts/{part_a['id']}/consume", tech_token,
                    json={"quantity": 1, "serial_no": sn2, "remark": "E2E 技术员直接出库"})
-    check("7-1 技术员直接出库(带SN)", st == 200, f"status={st} {cons.get('detail', '')}")
+    check("7-1 技术员直接出库应 403", st == 403, f"status={st} {cons.get('detail', '')}")
+    st, no_reason = api("POST", f"/spare-parts/{part_a['id']}/consume", admin_token,
+                        json={"quantity": 1, "serial_no": sn2})
+    check("7-1b 直接出库不填事由应 400", st == 400, f"status={st} {no_reason.get('detail', '')}")
+    st, cons = api("POST", f"/spare-parts/{part_a['id']}/consume", admin_token,
+                   json={"quantity": 1, "serial_no": sn2, "remark": "E2E 例外通道直接出库"})
+    check("7-1c 管理员直接出库(填事由)成功", st == 200, f"status={st} {cons.get('detail', '')}")
+    mv_src = None
+    st, mvs = api("GET", f"/spare-parts/{part_a['id']}/movements", admin_token, params={"page_size": 20})
+    for m in (mvs.get("items") or []):
+        if (m.get("serial_no") or "") == sn2:
+            mv_src = m.get("source_type")
+    check("7-1d 直出流水来源标记 DIRECT", mv_src == "DIRECT", f"source_type={mv_src}")
     st, pa4 = api("GET", f"/spare-parts/{part_a['id']}", admin_token)
     check("7-2 出库后库存=0", float(pa4.get("stock_quantity") or 0) == 0, pa4.get("stock_quantity"))
     st, al = api("GET", "/spare-parts/alerts", admin_token)
     al_text = json.dumps(al, ensure_ascii=False)
     check("7-3 跌破安全库存进预警", st == 200 and (part_a["part_code"] in al_text),
           f"status={st} alerts={al_text[:200]}")
-    st, same_sn = api("POST", f"/spare-parts/{part_a['id']}/consume", tech_token,
+    st, same_sn = api("POST", f"/spare-parts/{part_a['id']}/consume", admin_token,
                       json={"quantity": 1, "serial_no": sn2, "remark": "重复SN"})
     check("7-4 同一SN重复出库被拒", st == 400, f"status={st} {same_sn.get('detail', '')}")
 
@@ -510,14 +552,16 @@ def main(keep=False):
     check("11-4 删除有设备的客户", st in (200, 400, 409),
           f"status={st} {del_cust.get('detail', '') if isinstance(del_cust, dict) else ''}")
     st, del_wo = api("DELETE", f"/work-orders/{wo_id}", admin_token)
+    del_detail = str((del_wo or {}).get("detail") or "") if isinstance(del_wo, dict) else ""
     if st in (200, 204):
         check("11-5 删除工单", True, f"status={st}")
         if wo_id in IDS["work_orders"]:
             IDS["work_orders"].remove(wo_id)
+    elif st == 400 and "不能删除" in del_detail:
+        # 有进度记录/备件流水/知识收录的工单禁止物理删除（后端防护，属预期）
+        check("11-5 有记录的工单禁止删除", True, del_detail[:60])
     else:
-        gap("11-5 删除已消耗备件的工单报 500", f"status={st} "
-            "（工单已产生 stock_movements / part_instances / requisitions 引用，"
-            "delete_work_order 未先清关联行，库外键报错）")
+        gap("11-5 删除已消耗备件的工单报 500", f"status={st} {del_detail}")
 
     # ================= 10. 技术员权限矩阵（补充） =================
     matrix = [

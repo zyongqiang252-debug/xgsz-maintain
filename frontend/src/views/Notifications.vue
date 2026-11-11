@@ -55,7 +55,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Bell, Document, Warning, Box, ChatDotRound } from '@element-plus/icons-vue'
+import { Bell, Document, Warning, Box, ChatDotRound, Tickets, Checked, Tools, Calendar } from '@element-plus/icons-vue'
 import request from '../api'
 
 const router = useRouter()
@@ -72,6 +72,11 @@ const iconOf = (type) => {
   if (t.includes('WORK_ORDER') || t.includes('DISPATCH')) return Document
   if (t.includes('ALERT') || t.includes('TIMEOUT') || t.includes('WARN')) return Warning
   if (t.includes('STOCK') || t.includes('PART')) return Box
+  if (t.includes('REQUISITION')) return Box
+  if (t.includes('STOCKTAKE')) return Tickets
+  if (t.includes('INSPECTION')) return Checked
+  if (t.includes('MAINTENANCE')) return Tools
+  if (t.includes('LEAVE')) return Calendar
   if (t.includes('KNOWLEDGE')) return ChatDotRound
   return Bell
 }

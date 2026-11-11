@@ -19,6 +19,7 @@
         </el-button>
       </el-form>
       <p class="c-hint">账号由服务方开通，忘记密码请联系管理员</p>
+      <p class="c-staff"><a @click.prevent="goStaffLogin">内部员工登录 →</a></p>
     </div>
   </div>
 </template>
@@ -34,8 +35,19 @@ const phone = ref('')
 const password = ref('')
 const loading = ref(false)
 
-onMounted(() => {
-  if (localStorage.getItem('customer_token')) router.replace('/c')
+const goStaffLogin = () => { window.location.href = '/login' }
+
+// 只有 token 仍然有效才直接进门户；否则清掉残留 token，正常显示登录表单
+// （旧逻辑只看「有没有 token」，过期 token 会让人在 /c 与 /c/login 之间来回跳，看着像登不上）
+onMounted(async () => {
+  if (!localStorage.getItem('customer_token')) return
+  try {
+    await customerRequest.get('/customer/sites')
+    router.replace('/c')
+  } catch {
+    localStorage.removeItem('customer_token')
+    localStorage.removeItem('customer_user')
+  }
 })
 
 const login = async () => {
@@ -71,4 +83,7 @@ const login = async () => {
 .c-brand p { margin: 0; color: #86909C; font-size: 14px; }
 .c-btn { width: 100%; margin-top: 4px; }
 .c-hint { margin: 18px 0 0; text-align: center; font-size: 12px; color: #C9CDD4; }
+.c-staff { margin: 10px 0 0; text-align: center; font-size: 12px; }
+.c-staff a { color: #86909C; cursor: pointer; text-decoration: none; }
+.c-staff a:hover { color: #0FC6C2; text-decoration: underline; }
 </style>

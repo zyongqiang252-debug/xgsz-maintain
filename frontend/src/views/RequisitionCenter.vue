@@ -13,7 +13,7 @@
           <el-option v-for="s in STATUS" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
         <el-checkbox v-model="mine" @change="reload">只看我的</el-checkbox>
-        <div class="toolbar-tip">审批通过只预占库存，发料出库才真正扣减</div>
+        <div class="toolbar-tip">审批通过只预占库存，「出库」才真正扣减（与库存中心的出库是同一个动作）</div>
         <el-button style="margin-left: auto" @click="load">刷新</el-button>
       </div>
 
@@ -32,7 +32,13 @@
         </el-table-column>
         <el-table-column label="状态" width="110">
           <template #default="{ row }">
-            <el-tag size="small" :type="statusTag(row.status)">{{ statusLabel(row.status) }}</el-tag>
+            <el-tooltip v-if="row.status === 'REJECTED' && row.reject_reason"
+                        :content="`驳回原因：${row.reject_reason}`" placement="top">
+              <el-tag size="small" :type="statusTag(row.status)" class="clickable-tag">
+                {{ statusLabel(row.status) }}
+              </el-tag>
+            </el-tooltip>
+            <el-tag v-else size="small" :type="statusTag(row.status)">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="关联工单" width="100">
@@ -51,24 +57,20 @@
           </template>
         </el-table-column>
         <el-table-column prop="reason" label="事由" min-width="100" show-overflow-tooltip />
-        <el-table-column label="操作" width="190">
+        <el-table-column label="操作" width="200">
           <template #default="{ row }">
-            <div class="row-actions">
+            <div v-if="hasActions(row)" class="row-actions">
               <template v-if="isSupervisor && row.status === 'PENDING'">
                 <el-button link type="primary" @click="approve(row)">通过</el-button>
-                <el-button link type="danger" @click="reject(row)">驳回</el-button>
               </template>
-              <template v-if="isSupervisor && row.status === 'APPROVED'">
-                <el-button link type="primary" @click="issue(row)">发料出库</el-button>
-                <el-button link type="danger" @click="reject(row)">驳回</el-button>
-              </template>
+              <el-button v-if="canIssue(row)" link type="primary" @click="issue(row)">出库</el-button>
               <el-button
-                v-if="canCancel(row)" link type="info" @click="cancel(row)"
-              >撤销</el-button>
-              <span v-if="row.status === 'REJECTED'" class="muted reason-text" :title="row.reject_reason">
-                {{ row.reject_reason || '—' }}
-              </span>
+                v-if="isSupervisor && (row.status === 'PENDING' || row.status === 'APPROVED')"
+                link type="danger" @click="reject(row)"
+              >驳回</el-button>
+              <el-button v-if="canCancel(row)" link type="info" @click="cancel(row)">撤销</el-button>
             </div>
+            <span v-else class="muted">—</span>
           </template>
         </el-table-column>
       </el-table>
@@ -100,14 +102,15 @@
         <el-form-item label="领用数量" required>
           <el-input-number v-model="create.quantity" :min="0.01" :step="1" :precision="2" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="关联工单">
+        <el-form-item label="关联工单" :required="!isSupervisor">
           <el-select
             v-model="create.workOrderId" filterable remote clearable
             :remote-method="searchOrders" :loading="orders.loading"
-            placeholder="选填，输入工单号 / 故障描述搜索" style="width: 100%"
+            :placeholder="isSupervisor ? '选填，输入工单号 / 故障描述搜索' : '技术员必填：输入工单号 / 故障描述搜索'" style="width: 100%"
           >
             <el-option v-for="w in orders.options" :key="w.id" :label="`${w.work_order_no} · ${w.fault_description || ''}`" :value="w.id" />
           </el-select>
+          <div v-if="!isSupervisor" class="field-tip">技术员领用必须关联工单，备件成本才会自动计入该维修单</div>
         </el-form-item>
         <el-form-item label="领用事由">
           <el-input v-model="create.reason" type="textarea" :rows="2" maxlength="200" placeholder="例如：GPU 服务器 Xid 48 更换显存" />
@@ -207,6 +210,7 @@ const openCreate = () => {
 const submitCreate = async () => {
   if (!create.partId) return ElMessage.warning('请选择备件')
   if (!(create.quantity > 0)) return ElMessage.warning('领用数量要大于 0')
+  if (!isSupervisor && !create.workOrderId) return ElMessage.warning('技术员领用必须关联工单')
   create.submitting = true
   try {
     await request.post('/spare-parts/requisitions/', {
@@ -257,7 +261,7 @@ const issue = async (row) => {
   try {
     await ElMessageBox.confirm(
       `出库会扣减库存 ${row.quantity}${row.unit || ''} 并释放预占，同时计入工单成本。`,
-      '发料出库', { confirmButtonText: '确认出库', cancelButtonText: '取消', type: 'warning' },
+      '出库确认', { confirmButtonText: '确认出库', cancelButtonText: '取消', type: 'warning' },
     )
   } catch { return }
   try {
@@ -266,6 +270,15 @@ const issue = async (row) => {
     load()
   } catch { /* ignored */ }
 }
+
+// 谁能出库：主管/管理员可代发；申请人本人可对自己的「已批准」单自助出库（与库存中心出库同一动作）
+const canIssue = (row) =>
+  row.status === 'APPROVED' && (isSupervisor || row.applicant_id === currentUser.id)
+
+
+const hasActions = (row) =>
+  canIssue(row) || canCancel(row) ||
+  (isSupervisor && (row.status === 'PENDING' || row.status === 'APPROVED'))
 
 const canCancel = (row) =>
   ['PENDING', 'APPROVED'].includes(row.status) &&
@@ -295,9 +308,12 @@ onMounted(load)
 .cell-main { font-size: 13px; color: #1D2129; line-height: 1.4; }
 .cell-sub { font-size: 12px; color: #86909C; line-height: 1.4; }
 .muted { color: #C9CDD4; }
-.row-actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.reason-text { font-size: 12px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-actions { display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; white-space: nowrap; }
+.row-actions :deep(.el-button) { margin-left: 0; padding: 0; height: auto; font-size: 13px; }
+.row-actions :deep(.el-button + .el-button) { margin-left: 0; }
+.clickable-tag { cursor: help; }
 .stock-hint { margin: 4px 0 0 90px; padding: 8px 10px; background: #F7F8FA; border-radius: 6px; font-size: 12.5px; color: #4E5969; }
+.field-tip { font-size: 12px; color: #FF7D00; line-height: 1.5; margin-top: 2px; }
 .stock-hint b { color: #0FC6C2; }
 .opt-row { display: flex; justify-content: space-between; gap: 12px; }
 .opt-main { overflow: hidden; text-overflow: ellipsis; }

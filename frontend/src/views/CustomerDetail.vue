@@ -25,7 +25,7 @@
     </div>
 
     <el-row :gutter="16">
-      <el-col :span="9">
+      <el-col :span="8">
         <el-card shadow="never" class="info-card">
           <template #header><span class="card-title">客户信息</span></template>
           <el-descriptions :column="1" size="small" border>
@@ -47,27 +47,51 @@
           </el-descriptions>
         </el-card>
       </el-col>
-      <el-col :span="15">
+      <el-col :span="16">
         <el-card shadow="never">
           <el-tabs v-model="tab">
             <el-tab-pane label="工单记录" name="orders">
-              <el-table :data="orders" size="small" stripe v-loading="ordersLoading">
-                <el-table-column prop="work_order_no" label="工单号" width="160">
+              <div class="orders-summary">
+                <span>共 <b>{{ c.order_count || 0 }}</b> 单</span>
+                <span class="sum-open" v-if="c.open_count">未完成 <b>{{ c.open_count }}</b></span>
+                <span class="sum-done" v-if="c.archived_count">已归档 <b>{{ c.archived_count }}</b></span>
+                <span class="sum-hint">点行进入工单详情</span>
+              </div>
+              <el-table :data="orders" size="small" stripe v-loading="ordersLoading"
+                        class="orders-table" row-class-name="order-row" @row-click="openOrder">
+                <el-table-column label="工单号" width="136">
                   <template #default="{ row }">
-                    <el-link type="primary" @click="$router.push(`/work-orders/${row.id}`)">{{ row.work_order_no }}</el-link>
+                    <span class="wo-no">{{ row.work_order_no }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column prop="device_code" label="设备" width="120" show-overflow-tooltip />
-                <el-table-column prop="fault_description" label="故障描述" min-width="180" show-overflow-tooltip />
-                <el-table-column label="状态" width="86">
+                <el-table-column label="设备" width="118" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <span class="muted" v-if="!row.device_code">—</span>
+                    <span v-else>{{ row.device_code }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="fault_description" label="故障描述" min-width="150" show-overflow-tooltip />
+                <el-table-column label="状态" width="80">
                   <template #default="{ row }">
                     <el-tag size="small" :type="statusType(row.status)" effect="plain">{{ statusLabel(row.status) }}</el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column prop="technician_name" label="负责人" width="90" />
-                <el-table-column label="提交时间" width="140">
-                  <template #default="{ row }">{{ fmt(row.created_at) }}</template>
+                <el-table-column label="负责人" width="76" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <span class="muted" v-if="!row.technician_name">未指派</span>
+                    <span v-else>{{ row.technician_name }}</span>
+                  </template>
                 </el-table-column>
+                <el-table-column label="提交时间" width="92">
+                  <template #default="{ row }">
+                    <el-tooltip :content="fmtFull(row.created_at)" placement="top" :show-after="300">
+                      <span class="time-cell">{{ fmtShort(row.created_at) }}</span>
+                    </el-tooltip>
+                  </template>
+                </el-table-column>
+                <template #empty>
+                  <div class="orders-empty">该客户还没有工单<span class="muted">（客户通过报修门户提交后会出现在这里）</span></div>
+                </template>
               </el-table>
               <div class="pager">
                 <el-pagination v-model:current-page="orderPage" :page-size="10" :total="orderTotal"
@@ -175,12 +199,13 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api'
 import { downloadFile } from '../utils/download'
 
 const route = useRoute()
+const router = useRouter()
 const id = route.params.id
 const loading = ref(false)
 const exporting = ref(false)
@@ -215,6 +240,16 @@ const statusType = (s) => ({
 }[s] || 'info')
 const levelType = (lv) => ({ VIP: 'danger', KEY: 'warning', NORMAL: 'info' }[lv] || 'info')
 const fmt = (t) => t ? t.replace('T', ' ').slice(0, 16) : '—'
+// 工单表里时间列窄，默认只显示 MM-DD HH:mm，完整时间放 tooltip
+const fmtShort = (t) => t ? t.replace('T', ' ').slice(5, 16) : '—'
+const fmtFull = (t) => t ? t.replace('T', ' ').slice(0, 16) : '—'
+
+const openOrder = (row) => {
+  router.push({
+    path: `/work-orders/${row.id}`,
+    query: { from: 'customers', customer_id: id, customer_name: c.value?.name || '' },
+  })
+}
 
 const load = async () => {
   loading.value = true
@@ -347,4 +382,19 @@ onMounted(load)
 .info-card { margin-bottom: 16px; }
 .contacts-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .pager { margin-top: 12px; display: flex; justify-content: flex-end; }
+
+/* 工单记录：紧凑排版，避免 6 列在右侧卡片里被挤出滚动条 */
+.orders-summary { display: flex; align-items: center; gap: 12px; margin: 2px 0 10px;
+  font-size: 12.5px; color: #4E5969; }
+.orders-summary b { color: #1D2129; font-size: 14px; }
+.orders-summary .sum-open b { color: #FF7D00; }
+.orders-summary .sum-done b { color: #00B42A; }
+.orders-summary .sum-hint { margin-left: auto; color: #C9CDD4; font-size: 12px; }
+.orders-table :deep(tbody .order-row) { cursor: pointer; }
+.orders-table :deep(tbody .order-row:hover > td) { background: #F2FBFA; }
+.orders-table .wo-no { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: #0FA9A6; }
+.orders-table .time-cell { font-variant-numeric: tabular-nums; color: #4E5969; font-size: 12px; }
+.orders-empty { padding: 18px 0; color: #86909C; font-size: 13px; }
+.orders-empty .muted { color: #C9CDD4; margin-left: 4px; }
+.muted { color: #C9CDD4; }
 </style>

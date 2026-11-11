@@ -287,21 +287,8 @@ def _parse_dt(value) -> Optional[datetime]:
 
 
 def _gen_wo_no(db: Session) -> str:
-    today_str = date.today().strftime("%Y%m%d")
-    prefix = f"WO-{today_str}-"
-    latest = (
-        db.query(WorkOrder)
-        .filter(WorkOrder.work_order_no.like(f"{prefix}%"))
-        .order_by(WorkOrder.work_order_no.desc())
-        .first()
-    )
-    seq = 1
-    if latest and latest.work_order_no:
-        try:
-            seq = int(latest.work_order_no.split("-")[-1]) + 1
-        except ValueError:
-            seq = 1
-    return f"{prefix}{seq:03d}"
+    from app.services.work_order_no import next_work_order_no
+    return next_work_order_no(db)
 
 
 def _resolve_user(db: Session, name: Optional[str]) -> Optional[int]:
@@ -314,6 +301,7 @@ def _resolve_user(db: Session, name: Optional[str]) -> Optional[int]:
 @router.post("/items/{item_id}/confirm", summary="确认入库（写入工单 + 收录知识库）")
 def confirm_item(
     item_id: int,
+    force: bool = Query(False, description="疑似重复时是否强制入库"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -336,6 +324,17 @@ def confirm_item(
     fault_description = str(data.get("fault_description") or "").strip()
     if not fault_description:
         raise HTTPException(status_code=400, detail="故障描述不能为空")
+
+    # 二次查重（导入时可能还没这条，或用户改过字段）：内容相同就要求确认
+    if not force:
+        dup = _find_duplicate_work_order(db, data, exclude_id=item.work_order_id)
+        if dup is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"疑似重复：已有工单 {dup.work_order_no}"
+                       f"（设备 {dup.device_code or '-'}，日期 {_fp_date(data) or '-'}）"
+                       f"内容相同。确认是新单请点「强制入库」",
+            )
 
     # 设备 / 用户
     device_id = data.get("device_id")
@@ -588,6 +587,56 @@ def delete_mapping_template(tid: int,
 
 
 
+# ============================================================
+# 内容指纹查重：台账里不一定有工单号，用「设备编码 + 故障描述 + 日期」判断是否重复
+# ============================================================
+_FP_PUNCT = re.compile(r"[\s，。；、,.!！?？:：;；\-—_/\\()（）\[\]【】\"'“”‘’]+")
+
+
+def _fp_norm(text) -> str:
+    return _FP_PUNCT.sub("", str(text or "").strip().lower())[:200]
+
+
+def _fp_date(data: dict) -> str:
+    """取导入行里的日期（报修/开始/完成/创建），统一成 YYYY-MM-DD"""
+    for key in ("start_time", "end_time", "reported_at", "created_at", "finish_time", "completed_at"):
+        v = data.get(key)
+        if not v:
+            continue
+        m = re.match(r"(\d{4}-\d{2}-\d{2})", str(v).strip())
+        if m:
+            return m.group(1)
+    return ""
+
+
+def _find_duplicate_work_order(db: Session, data: dict, exclude_id: Optional[int] = None):
+    """按内容指纹找已有工单：设备编码（有则限定）+ 归一化故障描述（必一致）+ 日期（有则限定）"""
+    fault = _fp_norm(data.get("fault_description") or data.get("fault_phenomenon") or "")
+    if not fault:
+        return None
+    from sqlalchemy import or_, and_
+    q = db.query(WorkOrder)
+    dev = str(data.get("device_code") or "").strip()
+    if dev:
+        q = q.filter(WorkOrder.device_code == dev)
+    d = _fp_date(data)
+    if d:
+        try:
+            day = datetime.strptime(d, "%Y-%m-%d").date()
+            start = datetime.combine(day, time.min)
+            end = datetime.combine(day, time.max)
+            q = q.filter(or_(and_(WorkOrder.start_time >= start, WorkOrder.start_time <= end),
+                             and_(WorkOrder.created_at >= start, WorkOrder.created_at <= end)))
+        except Exception:
+            pass
+    for w in q.order_by(WorkOrder.id.desc()).limit(300).all():
+        if exclude_id and w.id == exclude_id:
+            continue
+        if _fp_norm(w.fault_description or w.fault_phenomenon or "") == fault:
+            return w
+    return None
+
+
 async def _save_upload(file: UploadFile, directory: str, allowed: set) -> str:
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in allowed:
@@ -685,6 +734,7 @@ async def upload_excel(
     parsed = parse_sheet(headers, rows, col_index)
     seen_numbers: set = set()
     seen_nos_in_file: set = set()
+    seen_fps: dict = {}   # 内容指纹 → 本次文件里的行号，用于抓「同一文件内重复」
     results: List[dict] = []
     ok_count = 0
 
@@ -723,6 +773,22 @@ async def upload_excel(
             ))
             results.append({"row_no": row_no, "status": "ERROR", "message": dup_msg})
             continue
+
+        # 没有工单号（或工单号不同）时，用内容指纹核对是否已有同样的单
+        dup_wo = _find_duplicate_work_order(db, data)
+        if dup_wo is not None:
+            warnings.append(
+                f"疑似重复：与已有工单 {dup_wo.work_order_no} 的设备/故障/日期相同，请先核对再入库"
+            )
+        fp = (
+            str(data.get("device_code") or "").strip(),
+            _fp_norm(data.get("fault_description") or ""),
+            _fp_date(data),
+        )
+        if fp in seen_fps:
+            warnings.append(f"疑似重复：与本次导入的第 {seen_fps[fp]} 行内容相同")
+        else:
+            seen_fps[fp] = row_no
 
         item = WorkOrderImportItem(
             batch_id=batch.id, file_name=label, file_path=path, row_no=row_no,

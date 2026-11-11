@@ -26,6 +26,8 @@
   --color-divider: #2A2E35;
   --color-primary-light: rgba(15, 198, 194, .14);
   --color-primary-mid: rgba(15, 198, 194, .22);
+  --color-warning-text: #FFA940;
+  --color-warning-bg: rgba(255, 154, 60, .18);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, .4);
   --shadow-card-hover: 0 4px 14px rgba(0, 0, 0, .45);
 

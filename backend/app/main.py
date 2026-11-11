@@ -33,6 +33,7 @@ from app.api.cascade_data import router as cascade_data_router
 from app.api.upload import router as upload_router
 from app.api.auth import router as auth_router
 from app.api.dingtalk_mock import router as dingtalk_mock_router
+from app.api.mobile import router as mobile_router
 from app.mcp.server import mcp_http_app
 
 logger.remove()
@@ -137,6 +138,7 @@ app.include_router(categories.router, prefix="/api/v1/categories", tags=["分类
 app.include_router(search.router, prefix="/api/v1/search", tags=["知识检索"])
 app.include_router(session_router, prefix="/api/v1/session", tags=["会话管理"])
 app.include_router(dingtalk_router, prefix="/api/v1/dingtalk", tags=["钉钉集成"])
+app.include_router(mobile_router, prefix="/api/v1", tags=["移动端"])
 app.include_router(fault_codes_router, prefix="/api/v1", tags=["故障码映射"])
 app.include_router(cascade_data_router, prefix="/api/v1", tags=["级联分类数据"])
 app.include_router(upload_router, prefix="/api/v1", tags=["文件上传"])

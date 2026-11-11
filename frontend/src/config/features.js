@@ -7,7 +7,7 @@
  * 2026-11-09 精简版：只保留「工单导入 / 工单生命周期 / 知识问答」主线
  */
 export const FEATURES = {
-  deviceMonitor: false,    // 服务器监控（无实时数据源）
+  deviceMonitor: false,   // 设备台账 / 服务器监控（暂时隐藏）
   maintenance: false,      // 保养与点检（无实际使用）
   schedule: false,         // 排班管理（0 条排班）
   stockMovements: true,    // 出入库流水（独立页面 /stock/movements）

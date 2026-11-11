@@ -31,6 +31,7 @@ class WorkOrder(BaseModel):
     work_order_no = Column(String(50), unique=True, nullable=False, index=True)
     device_id = Column(Integer, ForeignKey("devices.id"))
     device_code = Column(String(50))  # 扫码获取的设备编码
+    fault_object = Column(String(200), comment="涉及对象（集群/网络/其他，非单台设备时填写）")
     fault_code = Column(Text, comment="故障码，多个用逗号分隔")
     device_error_code = Column(String(200), comment="设备运行日志/屏幕报警的错误码（如 SV0436 / 6401），仅带错误码的机电设备填，多个用逗号分隔")
     log_text = Column(Text, comment="设备日志/屏幕原文（错误码录入模式粘贴，供知识抽取抠码与溯源）")

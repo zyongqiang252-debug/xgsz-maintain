@@ -25,6 +25,7 @@
         </el-tooltip>
         <!-- 消息通知 -->
         <el-popover
+          ref="noticePopoverRef"
           placement="bottom-end"
           :width="380"
           trigger="click"
@@ -34,7 +35,7 @@
           popper-class="notice-popover"
         >
           <template #reference>
-            <el-badge :value="unreadCount" :max="99" :hidden="unreadCount === 0" class="notice-badge">
+            <el-badge ref="noticeBellRef" :value="unreadCount" :max="99" :hidden="unreadCount === 0" class="notice-badge">
               <el-icon :size="20" @click="noticeVisible = !noticeVisible"><Bell /></el-icon>
             </el-badge>
           </template>
@@ -137,7 +138,7 @@
     </header>
 
     <div class="layout-body">
-      <!-- 侧边栏 (220px) -->
+      <!-- 侧边栏（232px，可折叠到 68px） -->
       <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }">
         <template v-if="!sidebarCollapsed">
           <!-- 菜单 -->
@@ -156,7 +157,6 @@
                 <el-icon><DataAnalysis /></el-icon>
                 <template #title>首页</template>
               </el-menu-item>
-              <div class="menu-divider"></div>
               <el-menu-item index="/orders?tab=list">
                 <el-icon><Document /></el-icon>
                 <template #title>全部工单</template>
@@ -164,10 +164,6 @@
               <el-menu-item index="/orders?tab=progress">
                 <el-icon><Histogram /></el-icon>
                 <template #title>进度看板</template>
-              </el-menu-item>
-              <el-menu-item index="/orders?tab=import">
-                <el-icon><Upload /></el-icon>
-                <template #title>历史导入</template>
               </el-menu-item>
               <el-menu-item v-if="FEATURES.deviceMonitor" index="/devices">
                 <el-icon><Monitor /></el-icon>
@@ -178,13 +174,15 @@
                 <template #title>保养与点检</template>
               </el-menu-item>
 
-              <div class="menu-divider"></div>
               <el-menu-item index="/stock">
                 <el-icon><Box /></el-icon>
                 <template #title>库存中心</template>
               </el-menu-item>
+              <el-menu-item index="/customers">
+                <el-icon><UserFilled /></el-icon>
+                <template #title>客户</template>
+              </el-menu-item>
 
-              <div class="menu-divider"></div>
               <el-menu-item v-if="FEATURES.schedule" index="/supervisor/schedule">
                 <el-icon><Calendar /></el-icon>
                 <template #title>排班管理</template>
@@ -201,7 +199,6 @@
                 <el-icon><DataAnalysis /></el-icon>
                 <template #title>首页</template>
               </el-menu-item>
-              <div class="menu-divider"></div>
               <template v-if="isSupervisor">
                 <el-menu-item index="/orders?tab=list">
                   <el-icon><Document /></el-icon>
@@ -211,23 +208,19 @@
                   <el-icon><Histogram /></el-icon>
                   <template #title>进度看板</template>
                 </el-menu-item>
-                <el-menu-item index="/orders?tab=import">
-                  <el-icon><Upload /></el-icon>
-                  <template #title>历史导入</template>
-                </el-menu-item>
               </template>
               <template v-else>
                 <el-menu-item index="/orders?tab=mine">
                   <el-icon><Tickets /></el-icon>
                   <template #title>我的工单</template>
                 </el-menu-item>
+                <el-menu-item index="/orders?tab=drafts">
+                  <el-icon><EditPen /></el-icon>
+                  <template #title>草稿箱</template>
+                </el-menu-item>
                 <el-menu-item index="/orders?tab=pool">
                   <el-icon><Box /></el-icon>
                   <template #title>工单池</template>
-                </el-menu-item>
-                <el-menu-item index="/orders?tab=import">
-                  <el-icon><Upload /></el-icon>
-                  <template #title>历史导入</template>
                 </el-menu-item>
               </template>
               <el-menu-item v-if="FEATURES.deviceMonitor" index="/devices">
@@ -239,7 +232,6 @@
                 <template #title>保养与点检</template>
               </el-menu-item>
 
-              <div class="menu-divider"></div>
               <el-menu-item index="/knowledge-center">
                 <el-icon><ChatLineSquare /></el-icon>
                 <template #title>知识中心</template>
@@ -248,8 +240,11 @@
                 <el-icon><Box /></el-icon>
                 <template #title>库存中心</template>
               </el-menu-item>
+              <el-menu-item v-if="!isAdmin" index="/customers">
+                <el-icon><UserFilled /></el-icon>
+                <template #title>客户</template>
+              </el-menu-item>
 
-              <div class="menu-divider"></div>
               <el-menu-item v-if="(isSupervisor) && FEATURES.schedule" index="/supervisor/schedule">
                 <el-icon><Calendar /></el-icon>
                 <template #title>排班管理</template>
@@ -302,9 +297,6 @@
                 <el-menu-item index="/orders?tab=progress">
                   <el-icon><Histogram /></el-icon>
                 </el-menu-item>
-                <el-menu-item index="/orders?tab=import">
-                  <el-icon><Upload /></el-icon>
-                </el-menu-item>
                 <el-menu-item v-if="FEATURES.deviceMonitor" index="/devices">
                   <el-icon><Monitor /></el-icon>
                 </el-menu-item>
@@ -313,6 +305,9 @@
                 </el-menu-item>
                 <el-menu-item index="/stock">
                   <el-icon><Box /></el-icon>
+                </el-menu-item>
+                <el-menu-item index="/customers">
+                  <el-icon><UserFilled /></el-icon>
                 </el-menu-item>
                 <el-menu-item v-if="FEATURES.schedule" index="/supervisor/schedule">
                   <el-icon><Calendar /></el-icon>
@@ -333,19 +328,16 @@
                   <el-menu-item index="/orders?tab=progress">
                     <el-icon><Histogram /></el-icon>
                   </el-menu-item>
-                  <el-menu-item index="/orders?tab=import">
-                    <el-icon><Upload /></el-icon>
-                  </el-menu-item>
                 </template>
                 <template v-else>
                   <el-menu-item index="/orders?tab=mine">
                     <el-icon><Tickets /></el-icon>
                   </el-menu-item>
+                  <el-menu-item index="/orders?tab=drafts">
+                    <el-icon><EditPen /></el-icon>
+                  </el-menu-item>
                   <el-menu-item index="/orders?tab=pool">
                     <el-icon><Box /></el-icon>
-                  </el-menu-item>
-                  <el-menu-item index="/orders?tab=import">
-                    <el-icon><Upload /></el-icon>
                   </el-menu-item>
                 </template>
                 <el-menu-item v-if="FEATURES.deviceMonitor" index="/devices">
@@ -359,6 +351,9 @@
                 </el-menu-item>
                 <el-menu-item index="/stock">
                   <el-icon><Box /></el-icon>
+                </el-menu-item>
+                <el-menu-item v-if="!isAdmin" index="/customers">
+                  <el-icon><UserFilled /></el-icon>
                 </el-menu-item>
                 <el-menu-item v-if="(isSupervisor) && FEATURES.schedule" index="/supervisor/schedule">
                   <el-icon><Calendar /></el-icon>
@@ -436,7 +431,7 @@ onMounted(applyTheme)
 // 顶部面包屑：模块分组 + 当前页
 const CRUMB_GROUPS = [
   [['/orders', '/work-orders', '/supervisor', '/work-order-imports', '/devices', '/maintenance'], '工单维修'],
-  [['/supervisor/schedule', '/sys', '/users', '/system-settings', '/dict', '/categories', '/fault-codes', '/me', '/leave', '/notifications', '/help', '/profile', '/security'], '管理与个人'],
+  [['/supervisor/schedule', '/sys', '/users', '/system-settings', '/dict', '/categories', '/fault-codes', '/customers', '/me', '/leave', '/notifications', '/help', '/profile', '/security'], '管理与个人'],
 ]
 const crumbs = computed(() => {
   const path = route.path || '/'
@@ -452,10 +447,19 @@ const crumbs = computed(() => {
     const tab = String(route.query.tab || 'users')
     page = { users: '用户管理', customers: '客户管理', settings: '系统设置' }[tab] || page
   }
+  // 从客户详情进入工单详情：面包屑上一级保持「客户管理」，不显示「工单维修/工单中心」
+  if (path.startsWith('/work-orders') && route.query.from === 'customers') {
+    const cname = String(route.query.customer_name || '')
+    return { group: '客户管理', page: cname ? `${cname} · 工单详情` : '工单详情' }
+  }
   if (path === '/dashboard') return { group: '', page: '' }
   const hit = CRUMB_GROUPS.find(([prefixes]) => prefixes.some((p) => path.startsWith(p)))
   return { group: hit ? hit[1] : '', page }
 })
+
+// 点击菜单后先给即时高亮，路由落地/切换完成后交给 activeMenu 计算
+const pendingMenu = ref('')
+watch(() => route.fullPath, () => { pendingMenu.value = '' })
 
 // 点击 Logo 回到首页（数据驾驶舱）
 function goHome() {
@@ -468,6 +472,8 @@ function onMenuSelect(index) {
   if (!index || typeof index !== 'string') return
   // 子菜单标题（如 center-workorder）不是路由，忽略
   if (!index.startsWith('/')) return
+  // 先点亮被点的菜单，避免页面懒加载/路由跳转期间“点了没颜色”
+  pendingMenu.value = index
   if (index === route.path) return
   let landed = false
   const t0 = performance.now()
@@ -482,15 +488,30 @@ function onMenuSelect(index) {
   }, 600)
 }
 
-const activeMenu = computed(() => {
+const baseActiveMenu = computed(() => {
   const path = route.path
-  if (path.startsWith('/orders') || path.startsWith('/work-orders')) {
-    const role = currentUser.role
-    const fallback = (role === 'ADMIN' || role === 'SUPERVISOR') ? 'list' : 'mine'
+  const role = currentUser.role
+  const fallback = (role === 'ADMIN' || role === 'SUPERVISOR') ? 'list' : 'mine'
+  const roleTabs = (role === 'ADMIN' || role === 'SUPERVISOR')
+    ? ['list', 'progress', 'import']
+    : ['mine', 'pool', 'import']
+  if (path.startsWith('/orders')) {
     return `/orders?tab=${route.query.tab || fallback}`
+  }
+  // 工单详情：从客户页进入时保持「客户」高亮，不跳到工单 tab
+  if (path.startsWith('/work-orders') && route.query.from === 'customers') {
+    return role === 'ADMIN' ? '/sys?tab=customers' : '/customers'
+  }
+  // 工单详情：沿用进入前所在列表的 tab（从工单池点进来，左侧仍高亮工单池）
+  if (path.startsWith('/work-orders')) {
+    let last = ''
+    try { last = sessionStorage.getItem('wo_last_tab') || '' } catch { /* ignore */ }
+    if (!roleTabs.includes(last)) last = fallback
+    return `/orders?tab=${last}`
   }
   if (path.startsWith('/sys')) return `/sys?tab=${route.query.tab || 'users'}`
   if (path.startsWith('/devices')) return '/devices'
+  if (path.startsWith('/knowledge-center')) return '/knowledge-center'
   if (path.startsWith('/knowledge/manuals')) return '/knowledge/manuals'
   if (path.startsWith('/knowledge/list')) return '/knowledge/list'
   if (path.startsWith('/knowledge')) return '/knowledge'
@@ -500,6 +521,8 @@ const activeMenu = computed(() => {
   if (path.startsWith('/supervisor')) return path
   return path
 })
+// 点击瞬间优先用 pendingMenu，路由完成后回落到按路径计算
+const activeMenu = computed(() => pendingMenu.value || baseActiveMenu.value)
 
 const isSupervisor = computed(() => {
   const role = currentUser.role
@@ -539,6 +562,21 @@ const fetchCurrentUser = async () => {
 
 // ===== 消息通知（真实 API）=====
 const noticeVisible = ref(false)
+const noticePopoverRef = ref(null)
+const noticeBellRef = ref(null)
+
+// 点击面板/铃铛之外的任何地方自动收起（否则切左侧菜单时面板一直挡视野）
+const onDocumentClick = (e) => {
+  if (!noticeVisible.value) return
+  const bellEl = noticeBellRef.value?.$el || noticeBellRef.value
+  if (bellEl && bellEl.contains && bellEl.contains(e.target)) return
+  const panelEl = document.querySelector('.notice-popover')
+  if (panelEl && panelEl.contains(e.target)) return
+  noticeVisible.value = false
+}
+const onDocumentKeydown = (e) => {
+  if (e.key === 'Escape' && noticeVisible.value) noticeVisible.value = false
+}
 const noticeTab = ref('all')
 const noticeTabs = [
   { key: 'all', label: '全部' },
@@ -706,9 +744,13 @@ onMounted(() => {
   connectNoticeWs()
   // 每 30 秒轮询未读数（WebSocket 断线时的兜底）
   noticePollTimer = setInterval(fetchUnreadCount, 30000)
+  document.addEventListener('click', onDocumentClick, true)
+  document.addEventListener('keydown', onDocumentKeydown)
 })
 
 onUnmounted(() => {
+  document.removeEventListener('click', onDocumentClick, true)
+  document.removeEventListener('keydown', onDocumentKeydown)
   if (noticePollTimer) { clearInterval(noticePollTimer); noticePollTimer = null }
   noticeWsClosed = true
   if (noticeWsRetry) { clearTimeout(noticeWsRetry); noticeWsRetry = null }
@@ -723,6 +765,7 @@ watch(noticeVisible, (val) => {
 
 // 路由变化时重新同步用户信息 + 刷新未读数
 watch(() => route.path, () => {
+  noticeVisible.value = false
   fetchCurrentUser()
   fetchUnreadCount()
 })
@@ -796,7 +839,7 @@ watch(() => route.path, () => {
 
 /* ===== 侧边栏 ===== */
 .sidebar {
-  width: 220px;
+  width: 232px;
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
@@ -805,7 +848,7 @@ watch(() => route.path, () => {
   overflow: hidden;
   border-right: 1px solid var(--color-sidebar-border);
 }
-.sidebar.collapsed { width: 64px; }
+.sidebar.collapsed { width: 68px; }
 
 .sidebar-logo {
   display: flex;
@@ -833,24 +876,30 @@ watch(() => route.path, () => {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 8px 0;
+  padding: 10px 0;
 }
 .sidebar-menu :deep(.el-menu-item) {
-  height: 40px;
-  line-height: 40px;
-  margin: 2px 12px;
-  border-radius: 8px;
-  font-size: 14px;
+  height: 44px;
+  line-height: 44px;
+  margin: 6px 10px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 15px;
   color: var(--color-sidebar-text) !important;
   transition: background .15s, color .15s;
 }
 .sidebar-menu :deep(.el-menu-item .el-icon) {
-  font-size: 18px;
-  margin-right: 10px;
+  font-size: 20px;
+  width: 20px;
+  margin-right: 12px;
+  color: #86909C;
 }
 .sidebar-menu :deep(.el-menu-item:hover) {
-  background-color: #F7F8FA !important;
+  background-color: #F5F7FA !important;
   color: var(--color-text-primary) !important;
+}
+.sidebar-menu :deep(.el-menu-item:hover .el-icon) {
+  color: var(--color-text-primary);
 }
 .sidebar-menu :deep(.el-menu-item.is-active) {
   background: var(--color-sidebar-active-bg) !important;
@@ -861,9 +910,9 @@ watch(() => route.path, () => {
 .sidebar-menu :deep(.el-menu-item.is-active)::before {
   content: '';
   position: absolute;
-  left: -12px;
-  top: 10px;
-  bottom: 10px;
+  left: -10px;
+  top: 12px;
+  bottom: 12px;
   width: 3px;
   border-radius: 0 3px 3px 0;
   background: var(--color-primary);
@@ -873,16 +922,17 @@ watch(() => route.path, () => {
 }
 
 .sidebar-menu :deep(.el-sub-menu__title) {
-  height: 40px;
-  line-height: 40px;
-  margin: 2px 12px;
-  border-radius: 8px;
-  font-size: 14px;
+  height: 44px;
+  line-height: 44px;
+  margin: 6px 10px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 15px;
   color: var(--color-sidebar-text) !important;
   transition: background .15s, color .15s;
 }
 .sidebar-menu :deep(.el-sub-menu__title:hover) {
-  background: #F7F8FA !important;
+  background: #F5F7FA !important;
   color: var(--color-text-primary) !important;
 }
 .sidebar-menu :deep(.el-sub-menu.is-active > .el-sub-menu__title) {
@@ -891,14 +941,14 @@ watch(() => route.path, () => {
 }
 
 .sidebar.collapsed :deep(.el-menu-item) {
-  margin: 2px 8px;
+  margin: 6px 10px;
   justify-content: center;
 }
 .sidebar.collapsed :deep(.el-menu-item .el-icon) {
   margin-right: 0;
 }
 .sidebar.collapsed :deep(.el-sub-menu__title) {
-  margin: 2px 8px;
+  margin: 6px 10px;
   justify-content: center;
 }
 .sidebar.collapsed :deep(.el-sub-menu__title .el-icon) {
@@ -917,28 +967,23 @@ watch(() => route.path, () => {
   letter-spacing: 1px;
 }
 
-/* 单条目的分组不再用标题，改一条细线分隔 */
-.menu-divider {
-  height: 1px;
-  margin: 12px 20px;
-  background: var(--color-sidebar-border, #EDEFF3);
-}
+/* 菜单条目间距统一（不再单独插分组留白/横线） */
 
 /* 折叠区域 */
 .sidebar-footer {
   border-top: 1px solid var(--color-sidebar-border);
-  padding: 12px 0;
+  padding: 14px 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   color: var(--color-text-tertiary);
   cursor: pointer;
   transition: color .2s;
   user-select: none;
 }
 .sidebar-footer:hover { color: var(--color-primary); }
-.collapse-text { font-size: 12px; }
+.collapse-text { font-size: 13px; }
 
 /* ===== 主内容区 ===== */
 .main-content { flex:1; overflow-y:auto; background:var(--color-bg-page); }

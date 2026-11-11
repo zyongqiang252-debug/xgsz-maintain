@@ -69,8 +69,8 @@ def main():
     ws = wb.active
     ws.title = "维修台账"
     ws.append(["工单号", "设备编号", "故障描述", "故障现象", "维修人", "维修工时", "报修时间", "备注"])
-    ws.append([f"WO-SMOKE-{tag}-101", "CNC-L-001", "主轴异响，转速超 8000 转后明显", "主轴异响", "张伟", 2.5, "2026-11-01 09:30", "冒烟"])
-    ws.append([f"WO-SMOKE-{tag}-102", "CNC-M-002", "冷却液压力不足，报警 E1023", "压力低", "张伟", 1.0, "2026-11-02 14:00", ""])
+    ws.append([f"WO-SMOKE-{tag}-101", "CNC-L-001", f"主轴异响，转速超 8000 转后明显（{tag}）", "主轴异响", "张伟", 2.5, "2026-11-01 09:30", "冒烟"])
+    ws.append([f"WO-SMOKE-{tag}-102", "CNC-M-002", f"冷却液压力不足，报警 E1023（{tag}）", "压力低", "张伟", 1.0, "2026-11-02 14:00", ""])
     ws.append([f"WO-SMOKE-{tag}-103", "AC-003", "", "", "", "", "", "缺故障描述，应被拦下"])
     wb.save(xlsx)
 
@@ -113,7 +113,7 @@ def main():
         rows = items.get("rows") or []
         if not rows:
             return False, "无待确认记录"
-        r = s.post(API + f"/work-order-imports/items/{rows[0]['id']}/confirm", timeout=60)
+        r = s.post(API + f"/work-order-imports/items/{rows[0]['id']}/confirm", params={"force": "true"}, timeout=60)
         d = j(r)
         return r.status_code == 200, {"work_order_id": d.get("work_order_id"), "msg": d.get("message")}
 
@@ -267,7 +267,11 @@ def main():
 
     def cleanup_b():
         r = s.delete(API + f"/work-orders/{wo2['id']}", timeout=30)
-        return r.status_code == 200, {"status": r.status_code}
+        d = j(r)
+        detail = str(d.get("detail") or "")
+        # 有进度记录/备件流水/知识收录的工单被后端禁止物理删除，这是预期行为
+        ok = r.status_code in (200, 204) or (r.status_code == 400 and "不能删除" in detail)
+        return ok, {"status": r.status_code, "detail": detail}
 
     step("B-4 清理测试工单", cleanup_b)
 

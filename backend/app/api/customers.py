@@ -10,7 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import require_supervisor
+from app.core.security import get_current_user, require_supervisor
 from app.models.customer import Customer
 from app.models.customer_contact import CustomerContact
 from app.models.customer_site import CustomerSite
@@ -20,7 +20,7 @@ from app.models.user import User
 from app.models.work_order import WorkOrder, WorkOrderStatus
 
 router = APIRouter(prefix="/customers", tags=["客户管理"],
-                   dependencies=[Depends(require_supervisor)])
+                   dependencies=[Depends(get_current_user)])
 
 
 class CustomerIn(BaseModel):
@@ -148,7 +148,7 @@ def list_sites(customer_id: int, db: Session = Depends(get_db)):
                        "contact_name": x.contact_name or "", "contact_phone": x.contact_phone or "",
                        "is_default": bool(x.is_default), "remark": x.remark or ""} for x in rows]}
 
-@router.post("/{customer_id}/sites", summary="新增客户机房")
+@router.post("/{customer_id}/sites", summary="新增客户机房", dependencies=[Depends(require_supervisor)])
 def add_site(customer_id: int, data: SiteIn, db: Session = Depends(get_db)):
     if not db.query(Customer).filter(Customer.id == customer_id).first():
         raise HTTPException(status_code=404, detail="客户不存在")
@@ -161,7 +161,7 @@ def add_site(customer_id: int, data: SiteIn, db: Session = Depends(get_db)):
     db.add(s); db.commit(); db.refresh(s)
     return {"id": s.id, "name": s.name}
 
-@router.put("/{customer_id}/sites/{site_id}", summary="修改客户机房")
+@router.put("/{customer_id}/sites/{site_id}", summary="修改客户机房", dependencies=[Depends(require_supervisor)])
 def update_site(customer_id: int, site_id: int, data: SiteIn, db: Session = Depends(get_db)):
     s = (db.query(CustomerSite).filter(CustomerSite.id == site_id,
                                        CustomerSite.customer_id == customer_id).first())
@@ -179,7 +179,7 @@ def update_site(customer_id: int, site_id: int, data: SiteIn, db: Session = Depe
     db.commit()
     return {"message": "已保存"}
 
-@router.delete("/{customer_id}/sites/{site_id}", summary="删除客户机房")
+@router.delete("/{customer_id}/sites/{site_id}", summary="删除客户机房", dependencies=[Depends(require_supervisor)])
 def delete_site(customer_id: int, site_id: int, db: Session = Depends(get_db)):
     s = (db.query(CustomerSite).filter(CustomerSite.id == site_id,
                                        CustomerSite.customer_id == customer_id).first())
@@ -195,6 +195,8 @@ def _order_brief(w: WorkOrder) -> dict:
         "device_code": w.device_code or "", "fault_description": w.fault_description,
         "status": w.status.value if hasattr(w.status, "value") else str(w.status),
         "created_at": w.created_at.isoformat() if w.created_at else None,
+        "technician_id": w.technician_id,
+        "assignee_id": getattr(w, "assignee_id", None),
         "technician_name": w.technician.real_name if getattr(w, "technician", None) else "",
         "sla_status": w.sla_status or "",
         "satisfaction_score": w.satisfaction_score,
@@ -225,7 +227,7 @@ def list_customers(
     return {"total": len(items), "items": items}
 
 
-@router.post("/", summary="新建客户")
+@router.post("/", summary="新建客户", dependencies=[Depends(require_supervisor)])
 def create_customer(data: CustomerIn, db: Session = Depends(get_db)):
     if db.query(Customer).filter(Customer.phone == data.phone.strip()).first():
         raise HTTPException(status_code=400, detail="该手机号已存在客户账号")
@@ -259,14 +261,18 @@ def create_customer(data: CustomerIn, db: Session = Depends(get_db)):
 
 
 @router.get("/{customer_id}", summary="客户详情（360）")
-def get_customer(customer_id: int, db: Session = Depends(get_db)):
+def get_customer(customer_id: int, db: Session = Depends(get_db),
+                 current_user: User = Depends(get_current_user)):
     c = db.query(Customer).filter(Customer.id == customer_id).first()
     if not c:
         raise HTTPException(status_code=404, detail="客户不存在")
-    return _cust_dict(db, c, detail=True)
+    # 联系人/机房/最近工单等明细仅管理员/主管可见；技术员只读基本信息
+    role = getattr(current_user.role, "value", current_user.role) or ""
+    detail = role.upper() in ("ADMIN", "SUPERVISOR")
+    return _cust_dict(db, c, detail=detail)
 
 
-@router.put("/{customer_id}", summary="修改客户")
+@router.put("/{customer_id}", summary="修改客户", dependencies=[Depends(require_supervisor)])
 def update_customer(customer_id: int, data: CustomerIn, db: Session = Depends(get_db)):
     c = db.query(Customer).filter(Customer.id == customer_id).first()
     if not c:
@@ -298,7 +304,7 @@ def update_customer(customer_id: int, data: CustomerIn, db: Session = Depends(ge
     return _cust_dict(db, c, detail=True)
 
 
-@router.delete("/{customer_id}", summary="停用客户（不物理删除）")
+@router.delete("/{customer_id}", summary="停用客户（不物理删除）", dependencies=[Depends(require_supervisor)])
 def deactivate_customer(customer_id: int, db: Session = Depends(get_db)):
     c = db.query(Customer).filter(Customer.id == customer_id).first()
     if not c:
@@ -321,7 +327,7 @@ def customer_devices(customer_id: int, db: Session = Depends(get_db)):
                       for d, _ in rows]}
 
 
-@router.put("/{customer_id}/devices", summary="覆盖式绑定客户设备")
+@router.put("/{customer_id}/devices", summary="覆盖式绑定客户设备", dependencies=[Depends(require_supervisor)])
 def bind_devices(customer_id: int, data: CustomerDevicesIn, db: Session = Depends(get_db)):
     c = db.query(Customer).filter(Customer.id == customer_id).first()
     if not c:
@@ -358,9 +364,60 @@ def customer_orders(customer_id: int,
             "items": [_order_brief(w) for w in rows]}
 
 
+@router.get("/{customer_id}/orders/{work_order_id}", summary="客户工单详情（只读，客户服务历史）")
+def customer_order_detail(customer_id: int, work_order_id: int,
+                          db: Session = Depends(get_db),
+                          current_user: User = Depends(get_current_user)):
+    """客户页里查看某张工单的只读详情：含处理过程，不含成本/内部账号信息。
+
+    权限：任何登录用户都可以看，但必须属于该客户；这是客户服务历史的只读视图，
+    操作仍需回到工单模块（且受工单归属权限控制）。
+    """
+    from app.core import status_group as SG
+    from app.models.progress_log import WorkOrderProgressLog
+
+    w = (db.query(WorkOrder)
+         .filter(WorkOrder.id == work_order_id, WorkOrder.customer_id == customer_id)
+         .first())
+    if not w:
+        raise HTTPException(status_code=404, detail="该客户下没有这张工单")
+    tech = db.query(User).filter(User.id == w.technician_id).first() if w.technician_id else None
+    logs = (db.query(WorkOrderProgressLog)
+            .filter(WorkOrderProgressLog.work_order_id == w.id)
+            .order_by(WorkOrderProgressLog.created_at.asc(), WorkOrderProgressLog.id.asc())
+            .limit(100).all())
+    return {
+        "id": w.id,
+        "work_order_no": w.work_order_no,
+        "status": w.status.value if hasattr(w.status, "value") else str(w.status),
+        "status_label": SG.label_of(w.status),
+        "device_code": w.device_code or "",
+        "fault_description": w.fault_description,
+        "fault_phenomenon": w.fault_phenomenon,
+        "root_cause": w.root_cause,
+        "solution_steps": w.solution_steps,
+        "repair_result": w.repair_result,
+        "work_hours": w.work_hours,
+        "technician_id": w.technician_id,
+        "technician_name": tech.real_name if tech else "",
+        "customer_accept_status": w.customer_accept_status,
+        "created_at": w.created_at.isoformat() if w.created_at else None,
+        "resolved_at": w.resolved_at.isoformat() if w.resolved_at else None,
+        "progress": [{
+            "id": x.id,
+            "from_status": x.from_status.value if hasattr(x.from_status, "value") else x.from_status,
+            "to_status": x.to_status.value if hasattr(x.to_status, "value") else x.to_status,
+            "operator_name": x.operator_name,
+            "source": x.source,
+            "remark": x.remark,
+            "created_at": x.created_at.isoformat() if x.created_at else None,
+        } for x in logs],
+    }
+
+
 # ==================== 联系人 ====================
 
-@router.get("/{customer_id}/contacts", summary="客户联系人")
+@router.get("/{customer_id}/contacts", summary="客户联系人", dependencies=[Depends(require_supervisor)])
 def list_contacts(customer_id: int, db: Session = Depends(get_db)):
     rows = (db.query(CustomerContact)
             .filter(CustomerContact.customer_id == customer_id)
@@ -371,7 +428,7 @@ def list_contacts(customer_id: int, db: Session = Depends(get_db)):
                       for x in rows]}
 
 
-@router.post("/{customer_id}/contacts", summary="新增联系人")
+@router.post("/{customer_id}/contacts", summary="新增联系人", dependencies=[Depends(require_supervisor)])
 def add_contact(customer_id: int, data: ContactIn, db: Session = Depends(get_db)):
     if not db.query(Customer).filter(Customer.id == customer_id).first():
         raise HTTPException(status_code=404, detail="客户不存在")
@@ -388,7 +445,7 @@ def add_contact(customer_id: int, data: ContactIn, db: Session = Depends(get_db)
             "title": c.title or "", "is_primary": bool(c.is_primary), "remark": c.remark or ""}
 
 
-@router.put("/{customer_id}/contacts/{contact_id}", summary="修改联系人")
+@router.put("/{customer_id}/contacts/{contact_id}", summary="修改联系人", dependencies=[Depends(require_supervisor)])
 def update_contact(customer_id: int, contact_id: int, data: ContactIn,
                    db: Session = Depends(get_db)):
     c = (db.query(CustomerContact)
@@ -409,7 +466,7 @@ def update_contact(customer_id: int, contact_id: int, data: ContactIn,
     return {"message": "已保存"}
 
 
-@router.delete("/{customer_id}/contacts/{contact_id}", summary="删除联系人")
+@router.delete("/{customer_id}/contacts/{contact_id}", summary="删除联系人", dependencies=[Depends(require_supervisor)])
 def delete_contact(customer_id: int, contact_id: int, db: Session = Depends(get_db)):
     c = (db.query(CustomerContact)
          .filter(CustomerContact.id == contact_id,
@@ -423,7 +480,7 @@ def delete_contact(customer_id: int, contact_id: int, db: Session = Depends(get_
     return {"message": "已删除"}
 
 
-@router.get("/{customer_id}/export", summary="导出客户服务报告")
+@router.get("/{customer_id}/export", summary="导出客户服务报告", dependencies=[Depends(require_supervisor)])
 def export_customer(customer_id: int, db: Session = Depends(get_db)):
     c = db.query(Customer).filter(Customer.id == customer_id).first()
     if not c:

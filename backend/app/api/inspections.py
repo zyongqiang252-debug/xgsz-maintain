@@ -138,6 +138,22 @@ def create_record(data: RecordIn, db: Session = Depends(get_db),
     db.commit()
     db.refresh(rec)
     logger.info(f"[Inspection] {data.device_code} 点检 {len(data.results)} 项，异常 {len(abnormal)} 项")
+
+    # 点检发现异常：通知管理员/主管（异常转的工单仍是 DRAFT，需要有人接）
+    if abnormal:
+        try:
+            from app.api.notifications import notify_roles
+            names = "、".join(r.name for r in abnormal[:5])
+            notify_roles(
+                db, ["ADMIN", "SUPERVISOR"], type="INSPECTION", title="点检发现异常",
+                content=f"{current_user.real_name} 提交点检：设备 {data.device_code}，"
+                        f"异常 {len(abnormal)} 项（{names}）"
+                        + (f"，已生成待处理工单 #{wo_id}" if wo_id else "，未自动建单"),
+                work_order_id=wo_id, level="P1", exclude_user_id=current_user.id,
+            )
+            db.commit()
+        except Exception as e:
+            logger.warning(f"[Inspection] 异常通知失败（忽略）: {e}")
     return {"message": "点检已提交", "id": rec.id, "result": rec.result,
             "abnormal_count": rec.abnormal_count, "work_order_id": wo_id}
 

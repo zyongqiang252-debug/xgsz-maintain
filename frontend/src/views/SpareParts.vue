@@ -3,8 +3,8 @@
     <div class="page-header">
       <h2 class="page-title">库存管理</h2>
       <div class="header-actions">
-        <el-button v-if="canManage" type="primary" plain @click="openIn()">入库</el-button>
-        <el-button v-if="canManage" type="warning" plain @click="openOut()">出库</el-button>
+        <el-button v-if="canStockIn" type="primary" plain @click="openIn()">入库</el-button>
+        <el-button v-if="canStockOut" type="warning" plain @click="openOut()">出库</el-button>
         <el-button v-if="canManage" @click="importDialog.visible = true">进货单导入</el-button>
         <div style="display:flex;gap:8px">
         <el-button :loading="exporting" @click="handleExport">导出 Excel</el-button>
@@ -94,18 +94,13 @@
         </el-table-column>
         <el-table-column prop="unit_price" label="单价" width="96" align="right" />
         <el-table-column prop="location" label="存放位置" width="106" show-overflow-tooltip />
-        <el-table-column label="操作" width="150" header-align="left">
+        <el-table-column label="操作" width="110" header-align="left">
           <template #default="{ row }">
             <div class="action-group">
-              <IconAction :icon="Tickets" title="SN 明细" @click="openInstances(row)" />
+              <IconAction :icon="Tickets" title="详情 / SN 明细" @click="openInstances(row)" />
               <IconAction
                 v-if="canManage"
                 :icon="Edit" title="编辑"
-                @click="router.push(`/spare-parts/${row.id}`)"
-              />
-              <IconAction
-                v-else
-                :icon="View" title="查看"
                 @click="router.push(`/spare-parts/${row.id}`)"
               />
               <IconAction
@@ -240,17 +235,37 @@
       </template>
     </el-dialog>
 
-    <!-- 领用 -->
-    <!-- SN 明细 -->
-    <el-dialog v-model="instances.visible" :title="`SN 明细 · ${instances.row?.part_name || ''}`" width="1000px">
+    <!-- 备件详情 + SN 明细（点整行也进这里；技术员只有这一个入口，不再单开只读详情页） -->
+    <el-dialog v-model="instances.visible" :title="`${instances.row?.part_code || ''} · ${instances.row?.part_name || '备件详情'}`" width="min(1120px, 94vw)">
+      <el-descriptions :column="3" border size="small" class="inst-info">
+        <el-descriptions-item label="规格型号">{{ instances.row?.specification || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="单位">{{ instances.row?.unit || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="适用设备">{{ instances.row?.device_type || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="库存">{{ instances.row?.stock_quantity ?? '—' }}</el-descriptions-item>
+        <el-descriptions-item label="已预占">{{ instances.row?.reserved_quantity ?? 0 }}</el-descriptions-item>
+        <el-descriptions-item label="可用">{{ availableOf(instances.row) }}</el-descriptions-item>
+        <el-descriptions-item label="安全库存">{{ instances.row?.safety_stock ?? '—' }}</el-descriptions-item>
+        <el-descriptions-item label="单价">{{ instances.row?.unit_price ?? '—' }}</el-descriptions-item>
+        <el-descriptions-item label="存放位置">{{ instances.row?.location || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="供应商" :span="2">{{ instances.row?.supplier || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="已登记 SN">{{ instances.rows.length }} 件</el-descriptions-item>
+      </el-descriptions>
+      <div v-if="instances.row?.attachments && instances.row.attachments.length" class="part-photo-block">
+        <div class="part-photo-label">备件照片（{{ instances.row.attachments.length }} 张）</div>
+        <div class="part-photo-grid">
+          <el-image
+            v-for="(u, i) in instances.row.attachments" :key="u + i"
+            :src="u" :preview-src-list="instances.row.attachments" :initial-index="i"
+            fit="cover" preview-teleported class="part-photo"
+          />
+        </div>
+      </div>
       <div class="inst-summary">
-        {{ instances.row?.part_code }} · 总库存 {{ instances.row?.stock_quantity }} {{ instances.row?.unit || '' }}
-        · 已登记 SN {{ instances.rows.length }} 件
         <span class="inst-tip">在库件可直接装机 / 报废；装机的件可拆回或标记待返厂</span>
       </div>
       <el-table :data="instances.rows" v-loading="instances.loading" size="small" stripe>
-        <el-table-column prop="sn" label="序列号 SN" width="130" show-overflow-tooltip />
-        <el-table-column label="入库照片" width="120">
+        <el-table-column prop="sn" label="序列号 SN" min-width="150" show-overflow-tooltip />
+        <el-table-column label="入库照片" width="100">
           <template #default="{ row }">
             <div v-if="row.inbound_attachments && row.inbound_attachments.length" class="inst-photos">
               <el-image
@@ -263,18 +278,18 @@
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="90" align="center">
+        <el-table-column label="状态" width="80" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="instStatusType(row.status)" effect="plain">{{ row.status_label }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="location_text" label="库位" width="110" show-overflow-tooltip>
+        <el-table-column prop="location_text" label="库位" width="104" show-overflow-tooltip>
           <template #default="{ row }">{{ row.location_text || '—' }}</template>
         </el-table-column>
         <el-table-column prop="device_code" label="装机设备" width="110" show-overflow-tooltip>
           <template #default="{ row }">{{ row.device_code || '—' }}</template>
         </el-table-column>
-        <el-table-column label="关联工单" width="100">
+        <el-table-column label="关联工单" width="88">
           <template #default="{ row }">
             <el-link v-if="row.work_order_id" type="primary" @click="router.push(`/work-orders/${row.work_order_id}`)">
               #{{ row.work_order_id }}
@@ -282,10 +297,10 @@
             <span v-else>—</span>
           </template>
         </el-table-column>
-        <el-table-column label="入库时间" width="130">
+        <el-table-column label="入库时间" width="150" show-overflow-tooltip>
           <template #default="{ row }">{{ (row.inbound_at || row.created_at || '').replace('T', ' ').slice(0, 16) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" width="150">
           <template #default="{ row }">
             <div class="inst-actions">
               <el-button v-if="row.status === 'IN_STOCK'" link type="primary" @click="openInstall(row)">装机</el-button>
@@ -338,7 +353,7 @@
 <script setup>
 import { ref, onMounted, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Edit, View, Delete, Sort, SortUp, SortDown, Tickets } from '@element-plus/icons-vue'
+import { Edit, Delete, Sort, SortUp, SortDown, Tickets } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import request from '../api'
 import { downloadFile } from '../utils/download'
@@ -349,11 +364,27 @@ import StockInDrawer from './StockInDrawer.vue'
 import StockOutDrawer from './StockOutDrawer.vue'
 const router = useRouter()
 
-// 备件台账维护权限：仅管理员/主管可增删改，维修员只读
+// 备件台账维护权限：仅管理员/主管可增删改，技术员只读
 const canManage = computed(() => {
   try {
     const role = JSON.parse(localStorage.getItem('current_user') || '{}').role
     return role === 'ADMIN' || role === 'SUPERVISOR'
+  } catch { return false }
+})
+
+// 入库：管理员/主管/技术员（到货登记现场就能做）
+const canStockIn = computed(() => {
+  try {
+    const role = JSON.parse(localStorage.getItem('current_user') || '{}').role
+    return role === 'ADMIN' || role === 'SUPERVISOR' || role === 'TECHNICIAN'
+  } catch { return false }
+})
+
+// 出库：三种角色都能进，但抽屉里技术员只能「按领用单出库」（已批准的单），管理员/主管另有直出例外通道
+const canStockOut = computed(() => {
+  try {
+    const role = JSON.parse(localStorage.getItem('current_user') || '{}').role
+    return role === 'ADMIN' || role === 'SUPERVISOR' || role === 'TECHNICIAN'
   } catch { return false }
 })
 
@@ -383,6 +414,11 @@ const instances = reactive({ visible: false, row: null, rows: [], loading: false
 const instStatusType = (s) => ({
   IN_STOCK: 'success', ISSUED: 'primary', INSTALLED: 'primary', RMA: 'warning', SCRAPPED: 'info',
 }[s] || 'info')
+const availableOf = (p) => {
+  if (!p) return '—'
+  const n = Number(p.available_quantity ?? (Number(p.stock_quantity || 0) - Number(p.reserved_quantity || 0)))
+  return Number.isFinite(n) ? n : '—'
+}
 const openInstances = async (row) => {  instances.row = row
   instances.rows = []
   instances.visible = true
@@ -673,6 +709,11 @@ defineExpose({ refresh: () => { fetchData(); fetchAlerts() } })
 .inst-empty { margin-top: 12px; padding: 14px; background: #F7F8FA; border-radius: 6px;
   color: #86909C; font-size: 13px; text-align: center; }
 .inst-summary { margin: -4px 0 10px; color: #86909C; font-size: 13px; }
+.inst-info { margin-bottom: 12px; }
+.part-photo-block { margin: 0 0 12px; }
+.part-photo-label { font-size: 12px; color: #86909C; margin-bottom: 6px; }
+.part-photo-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.part-photo { width: 96px; height: 96px; border-radius: 6px; }
 .inst-tip { margin-left: 8px; font-size: 12px; color: #C9CDD4; }
 .inst-actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .inst-photos { display: flex; align-items: center; gap: 4px; }

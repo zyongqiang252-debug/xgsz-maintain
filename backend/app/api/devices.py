@@ -93,6 +93,46 @@ def list_devices(
     return {"total": total, "items": [_device_to_dict(d) for d in items], "page": page, "page_size": page_size}
 
 
+@router.get("/by-code/{code}", summary="按设备编码/序列号查设备（扫码填报用）")
+def get_device_by_code(code: str, db: Session = Depends(get_db)):
+    """扫码/输入设备编码或 SN 后，返回设备档案 + 客户 + 最近工单，供移动端自动带出位置、型号、SN。"""
+    c = (code or "").strip().lower()
+    if not c:
+        raise HTTPException(status_code=400, detail="请输入设备编码或 SN")
+    d = (db.query(Device)
+         .filter((func.lower(Device.device_code) == c) | (func.lower(Device.serial_no) == c))
+         .first())
+    if not d:
+        raise HTTPException(status_code=404, detail=f"未找到设备：{code}（请核对设备编码/SN）")
+    from app.models.customer_device import CustomerDevice
+    from app.models.customer import Customer
+    cust = (db.query(Customer)
+            .join(CustomerDevice, CustomerDevice.customer_id == Customer.id)
+            .filter(CustomerDevice.device_id == d.id).first())
+    recent = (db.query(WorkOrder).filter(WorkOrder.device_id == d.id)
+              .order_by(WorkOrder.id.desc()).limit(5).all())
+    return {
+        "id": d.id,
+        "device_code": d.device_code,
+        "device_name": d.device_name,
+        "device_type": d.device_type or "",
+        "model": d.model or "",
+        "manufacturer": d.manufacturer or "",
+        "serial_no": d.serial_no or "",
+        "room": d.room or "",
+        "rack_no": d.rack_no or "",
+        "location": d.location or "",
+        "run_status": d.run_status or "",
+        "customer_name": cust.name if cust else "",
+        "recent_orders": [{
+            "id": w.id, "work_order_no": w.work_order_no,
+            "status": w.status.value if hasattr(w.status, "value") else str(w.status),
+            "fault_description": (w.fault_description or "")[:60],
+            "created_at": w.created_at.isoformat() if w.created_at else None,
+        } for w in recent],
+    }
+
+
 @router.get("/{device_id}", response_model=DeviceResponse, summary="获取设备详情")
 def get_device(device_id: int, db: Session = Depends(get_db)):
     device = db.query(Device).filter(Device.id == device_id).first()

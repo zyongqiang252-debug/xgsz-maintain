@@ -211,6 +211,11 @@ body { background: var(--ui-bg); }
 .el-button { font-weight: 500; border-radius: 8px; }
 .el-button--small { border-radius: 7px; }
 .el-button.is-link { font-weight: 500; }
+/* 统一按钮尺寸：主按钮 32px、小按钮 30px、大按钮 40px；链接/文字/圆形按钮不套 */
+.el-button:not(.is-link):not(.is-text):not(.is-circle) { min-height: 32px; padding: 0 14px; }
+.el-button--small:not(.is-link):not(.is-text):not(.is-circle) { min-height: 30px; padding: 0 12px; }
+.el-button--large:not(.is-link):not(.is-text):not(.is-circle) { min-height: 40px; padding: 0 20px; border-radius: 10px; }
+.el-button.is-link, .el-button.is-text { padding: 0 4px; }
 .el-input__wrapper, .el-select__wrapper { border-radius: 8px; }
 .el-pagination { margin-top: 18px; }
 .el-pagination.is-background .el-pager li { border-radius: 6px; }
@@ -229,7 +234,11 @@ body { background: var(--ui-bg); }
 .el-dialog__header { padding: 18px 22px 12px !important; margin-right: 0 !important; }
 .el-dialog__title { font-size: 16px !important; font-weight: 600 !important; }
 .el-dialog__body { padding: 8px 22px 18px !important; }
-.el-dialog__footer { padding: 0 22px 18px !important; }
+.el-dialog__footer { padding: 0 22px 18px !important; display: flex; justify-content: flex-end; gap: 10px; }
+.el-dialog__footer .el-button, .el-drawer__footer .el-button {
+  margin-left: 0 !important; min-height: 34px; padding: 0 18px; border-radius: 8px;
+}
+.el-drawer__footer { display: flex; justify-content: flex-end; gap: 10px; }
 
 /* ---------- 13. 工单 11 状态配色（覆盖 global.css 的旧色板） ---------- */
 .status-tag {

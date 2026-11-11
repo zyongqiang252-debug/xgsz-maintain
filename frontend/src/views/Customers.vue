@@ -42,10 +42,18 @@
         <el-table-column label="设备" width="70" align="center">
           <template #default="{ row }">{{ row.device_count }}</template>
         </el-table-column>
-        <el-table-column label="工单" width="110" align="center">
+        <el-table-column label="工单" width="132">
           <template #default="{ row }">
-            <span class="order-count">{{ row.order_count }}</span>
-            <span v-if="row.open_count" class="open-count">未完成 {{ row.open_count }}</span>
+            <el-tooltip placement="top" :show-after="300"
+                        :content="`共 ${row.order_count} 单 · 未完成 ${row.open_count} 单 · 已归档 ${row.archived_count} 单`">
+              <div class="order-cell" :class="{ 'is-zero': !row.order_count }">
+                <span class="order-total">{{ row.order_count }}</span>
+                <span class="order-unit">单</span>
+                <span v-if="row.open_count" class="order-divider"></span>
+                <span v-if="row.open_count" class="order-open">未完成 {{ row.open_count }}</span>
+                <span v-else-if="row.order_count" class="order-done">全部完成</span>
+              </div>
+            </el-tooltip>
           </template>
         </el-table-column>
         <el-table-column label="最近报修" width="140">
@@ -93,6 +101,10 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <p class="pwd-hint">
+          客户用「手机号 + 登录密码」在<b>客户报修中心</b>登录（<span class="mono">{{ portalUrl }}</span>），
+          不是在主站登录页。忘记密码可在此重置。
+        </p>
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="客户级别">
@@ -156,6 +168,25 @@
         <el-button type="primary" :loading="bind.saving" @click="saveBind">保存绑定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 新建成功后：把「客户从哪登录、账号密码是什么」直接给管理员 -->
+    <el-dialog v-model="created.visible" title="客户已开通" width="520px">
+      <el-descriptions :column="1" border size="small">
+        <el-descriptions-item label="客户">{{ created.company || created.name }}</el-descriptions-item>
+        <el-descriptions-item label="登录入口"><span class="mono">{{ portalUrl }}</span></el-descriptions-item>
+        <el-descriptions-item label="登录账号"><span class="mono">{{ created.phone }}</span></el-descriptions-item>
+        <el-descriptions-item label="登录密码">
+          <span class="mono">{{ created.password }}</span>
+          <span class="muted" style="margin-left:8px">（请让客户首次登录后尽快修改）</span>
+        </el-descriptions-item>
+      </el-descriptions>
+      <el-alert type="info" :closable="false" show-icon style="margin-top:12px"
+                title="客户账号与内部员工账号是两套体系：客户请勿在主站 /login 登录，那边会提示去客户报修中心。" />
+      <template #footer>
+        <el-button @click="created.visible = false">关闭</el-button>
+        <el-button type="primary" @click="copyCustomerLogin">复制登录信息</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -185,6 +216,23 @@ const form = reactive({
 const bind = reactive({
   visible: false, customerId: null, customerName: '', deviceIds: [], loading: false, saving: false,
 })
+// 客户门户地址：客户账号只在 /c/login 登录
+const portalUrl = `${window.location.origin}/c/login`
+const created = reactive({ visible: false, name: '', company: '', phone: '', password: '' })
+
+const copyCustomerLogin = async () => {
+  const text = [
+    `客户报修中心：${portalUrl}`,
+    `登录账号：${created.phone}`,
+    `登录密码：${created.password}`,
+  ].join('\n')
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制，可直接发给客户')
+  } catch {
+    ElMessage.warning(`请手动复制：${text.replace(/\n/g, '；')}`)
+  }
+}
 
 const levelType = (lv) => ({ VIP: 'danger', KEY: 'warning', NORMAL: 'info' }[lv] || 'info')
 const fmt = (t) => t ? t.replace('T', ' ').slice(0, 16) : '—'
@@ -267,11 +315,19 @@ const saveCustomer = async () => {
       remark: form.remark || null, is_active: form.is_active,
     }
     if (form.password) payload.password = form.password
+    const isCreate = !form.id
     if (form.id) await request.put(`/customers/${form.id}`, payload)
     else await request.post('/customers/', payload)
     ElMessage.success('保存成功')
     form.visible = false
     load()
+    // 新建客户后立刻把登录入口/账号/密码摆给管理员，避免「创建完不知道客户怎么登」
+    if (isCreate) {
+      Object.assign(created, {
+        visible: true, name: form.name, company: form.company || '',
+        phone: form.phone, password: form.password || '123456',
+      })
+    }
   } catch (e) {
     ElMessage.error(e?.response?.data?.detail || '保存失败')
   } finally { form.saving = false }
@@ -327,13 +383,41 @@ onMounted(() => { load(); loadUsers() })
 .filter-select { width: 130px; }
 .filter-card { margin-bottom: 14px; }
 .cust-table :deep(tbody tr) { cursor: pointer; }
-.cust-name { font-weight: 600; color: #1D2129; }
-.cust-company { font-size: 12px; color: #86909C; margin-top: 2px; }
+.cust-name { font-weight: 600; color: var(--color-text-primary); }
+.cust-company { font-size: 12px; color: var(--color-text-tertiary); margin-top: 2px; }
 .tag-gap { margin-left: 4px; }
 .muted { color: #C9CDD4; }
-.order-count { font-weight: 600; }
-.open-count { display: block; font-size: 11px; color: #FF7D00; }
+/* 工单列：单行排版，数字 + 单位 + 状态同基线，列宽固定不抖 */
+.order-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  width: 100%;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.order-total {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.order-unit { font-size: 11px; color: #86909C; }
+.order-divider {
+  align-self: center;
+  width: 1px;
+  height: 10px;
+  background: #E5E6EB;
+  margin: 0 2px;
+}
+.order-open { font-size: 12px; color: var(--color-warning-text, #FF7D00); }
+.order-done { font-size: 12px; color: #00B42A; }
+.order-cell.is-zero .order-total,
+.order-cell.is-zero .order-unit { color: #C9CDD4; }
 .score { color: #FF7D00; font-weight: 600; }
 .cust-op { display: flex; align-items: center; gap: 4px; }
 .bind-hint { margin: 10px 0 0; font-size: 12px; color: #86909C; }
+.pwd-hint { margin: -4px 0 14px; font-size: 12px; line-height: 1.6; color: #86909C; }
+.pwd-hint b { color: #0FC6C2; font-weight: 600; }
+.mono { font-family: ui-monospace, Consolas, monospace; }
 </style>

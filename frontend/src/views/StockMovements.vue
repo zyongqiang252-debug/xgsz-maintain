@@ -10,54 +10,74 @@
 
     <el-card shadow="never">
       <div class="toolbar">
-        <el-input v-model="keyword" placeholder="搜索备件编码/名称" clearable style="width: 220px" @keyup.enter="load" />
-        <el-select v-model="type" placeholder="类型" clearable style="width: 130px">
+        <el-input
+          v-model="keyword" placeholder="搜索备件编码/名称/SN/操作人" clearable style="width: 260px"
+          @clear="handleSearch" @keyup.enter="handleSearch"
+        />
+        <el-select v-model="type" placeholder="类型" clearable style="width: 140px" @change="handleSearch">
           <el-option label="入库" value="IN" />
           <el-option label="出库（领用）" value="OUT" />
           <el-option label="退库入库" value="RETURN" />
           <el-option label="盘点调整" value="ADJUST" />
         </el-select>
-        <el-button type="primary" @click="load">查询</el-button>
+        <el-button type="primary" @click="handleSearch">查询</el-button>
         <el-button @click="reset">重置</el-button>
       </div>
 
       <el-table :data="rows" v-loading="loading" stripe size="small" class="mv-table" @row-click="openDetail">
-        <el-table-column label="时间" width="150">
-          <template #default="{ row }">{{ (row.created_at || '').replace('T', ' ').slice(0, 16) }}</template>
+        <el-table-column label="时间" width="145">
+          <template #default="{ row }">{{ fmt(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="类型" width="100">
+        <el-table-column label="类型" width="96">
           <template #default="{ row }">
             <el-tag size="small" :type="mvTag(row.movement_type)">{{ mvLabel(row.movement_type) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="part_code" label="备件编码" width="130" show-overflow-tooltip />
-        <el-table-column prop="part_name" label="备件名称" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="serial_no" label="序列号 SN" width="160" show-overflow-tooltip />
-        <el-table-column label="照片" width="76" align="center">
+        <el-table-column label="备件" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-image
-              v-if="row.attachments && row.attachments.length"
-              :src="row.attachments[0]" :preview-src-list="row.attachments"
-              fit="cover" preview-teleported style="width:34px;height:34px;border-radius:4px"
-            />
-            <span v-else>—</span>
+            <div class="part-cell">
+              <span class="part-name">{{ row.part_name || '—' }}</span>
+              <span class="part-sub">
+                <span class="mono">{{ row.part_code }}</span>
+                <span v-if="row.attachments && row.attachments.length" class="att-chip">
+                  {{ row.attachments.length }} 张照片
+                </span>
+              </span>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column prop="quantity" label="数量" width="80" align="right" />
-        <el-table-column label="库存变化" width="120" align="center">
-          <template #default="{ row }">{{ row.before_qty }} → {{ row.after_qty }}</template>
+        <el-table-column label="增减" width="90" align="right">
+          <template #default="{ row }">
+            <span class="qty" :class="deltaOf(row) >= 0 ? 'plus' : 'minus'">{{ deltaText(row) }}</span>
+          </template>
         </el-table-column>
-        <el-table-column prop="amount" label="金额" width="90" align="right" />
+        <el-table-column label="库存变化" width="130" align="center">
+          <template #default="{ row }">{{ row.before_qty ?? '—' }} → {{ row.after_qty ?? '—' }}</template>
+        </el-table-column>
+        <el-table-column label="金额" width="130" align="right">
+          <template #default="{ row }">
+            <span :class="{ 'amount-loss': amountOf(row) < 0 }">{{ money(amountOf(row)) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="关联工单" width="100">
           <template #default="{ row }">
-            <el-link v-if="row.work_order_id" type="primary" @click="$router.push(`/work-orders/${row.work_order_id}`)">
+            <el-link v-if="row.work_order_id" type="primary" @click.stop="$router.push(`/work-orders/${row.work_order_id}`)">
               #{{ row.work_order_id }}
             </el-link>
-            <span v-else>—</span>
+            <span v-else class="muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column prop="operator_name" label="操作人" width="100" />
-        <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="operator_name" label="操作人" width="100">
+          <template #default="{ row }">{{ row.operator_name || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="76" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click.stop="openDetail(row)">详情</el-button>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <EmptyState icon="search" title="没有符合条件的出入库记录" hint="试试调整类型或关键词后重新查询" />
+        </template>
       </el-table>
 
       <div class="pagination-wrap">
@@ -66,36 +86,55 @@
       </div>
     </el-card>
 
-    <el-drawer v-model="detail.visible" title="出入库详情" size="440px">
+    <!-- 单条流水详情：SN / 照片 / 备注等都收在这里，列表只做记录索引 -->
+    <el-drawer v-model="detail.visible" title="出入库详情" size="520px">
       <template v-if="detail.row">
+        <div class="detail-head">
+          <el-tag size="small" :type="mvTag(detail.row.movement_type)">{{ mvLabel(detail.row.movement_type) }}</el-tag>
+          <span class="detail-time">{{ fmt(detail.row.created_at) }}</span>
+        </div>
+
         <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="类型">
-            <el-tag size="small" :type="mvTag(detail.row.movement_type)">{{ mvLabel(detail.row.movement_type) }}</el-tag>
+          <el-descriptions-item label="备件">
+            {{ detail.row.part_name || '—' }}
+            <span class="mono muted">（{{ detail.row.part_code }}）</span>
           </el-descriptions-item>
-          <el-descriptions-item label="备件">{{ detail.row.part_name }}（{{ detail.row.part_code }}）</el-descriptions-item>
-          <el-descriptions-item label="数量">{{ detail.row.quantity }}</el-descriptions-item>
-          <el-descriptions-item label="库存变化">{{ detail.row.before_qty }} → {{ detail.row.after_qty }}</el-descriptions-item>
-          <el-descriptions-item label="序列号 SN">{{ detail.row.serial_no || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="金额">{{ detail.row.amount }}</el-descriptions-item>
+          <el-descriptions-item label="增减">
+            <span class="qty" :class="deltaOf(detail.row) >= 0 ? 'plus' : 'minus'">{{ deltaText(detail.row) }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="库存变化">{{ detail.row.before_qty ?? '—' }} → {{ detail.row.after_qty ?? '—' }}</el-descriptions-item>
+          <el-descriptions-item label="单价">{{ money(detail.row.unit_price) }}</el-descriptions-item>
+          <el-descriptions-item :label="amountLabel(detail.row)">{{ money(amountOf(detail.row)) }}</el-descriptions-item>
           <el-descriptions-item label="关联工单">
             <el-link v-if="detail.row.work_order_id" type="primary" @click="$router.push(`/work-orders/${detail.row.work_order_id}`)">
               #{{ detail.row.work_order_id }}
             </el-link>
-            <span v-else>—</span>
+            <span v-else class="muted">—</span>
           </el-descriptions-item>
           <el-descriptions-item label="操作人">{{ detail.row.operator_name || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="时间">{{ (detail.row.created_at || '').replace('T', ' ').slice(0, 16) }}</el-descriptions-item>
           <el-descriptions-item label="备注">{{ detail.row.remark || '—' }}</el-descriptions-item>
         </el-descriptions>
-        <div v-if="detail.row.attachments && detail.row.attachments.length" class="detail-photos">
-          <div class="detail-label">照片附件</div>
-          <div class="photo-grid">
+
+        <div class="detail-block">
+          <div class="detail-label">序列号 SN</div>
+          <div v-if="detail.row.serial_no" class="sn-box">
+            <el-tag v-for="sn in splitSerials(detail.row.serial_no)" :key="sn" size="small" type="info" effect="plain" class="sn-tag">
+              {{ sn }}
+            </el-tag>
+          </div>
+          <div v-else class="muted">本次流水未填 SN</div>
+        </div>
+
+        <div class="detail-block">
+          <div class="detail-label">照片附件<span v-if="detail.row.attachments && detail.row.attachments.length" class="detail-count">{{ detail.row.attachments.length }} 张</span></div>
+          <div v-if="detail.row.attachments && detail.row.attachments.length" class="photo-grid">
             <el-image
               v-for="(u, i) in detail.row.attachments" :key="u + i"
               :src="u" :preview-src-list="detail.row.attachments" :initial-index="i"
               fit="cover" preview-teleported class="photo-img"
             />
           </div>
+          <div v-else class="muted">无照片附件</div>
         </div>
       </template>
     </el-drawer>
@@ -107,6 +146,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import request from '../api'
 import { downloadFile } from '../utils/download'
+import EmptyState from '../components/EmptyState.vue'
 
 const rows = ref([])
 // 流水四种类型：入库 / 出库 / 退库 / 盘点调整（以前非 OUT 全显示成"入库"，账容易看错）
@@ -123,6 +163,47 @@ const openDetail = (row) => {
   detail.row = row
   detail.visible = true
 }
+const fmt = (t) => (t ? String(t).replace('T', ' ').slice(0, 16) : '—')
+const splitSerials = (raw) => String(raw || '')
+  .replace(/[，、；;]/g, ',')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+
+// 统一按「库存变化」算增减：老数据里出入库的 quantity 符号不统一，直接用 after-before 最稳
+const deltaOf = (row) => {
+  const b = Number(row?.before_qty)
+  const a = Number(row?.after_qty)
+  if (Number.isFinite(b) && Number.isFinite(a)) return Number((a - b).toFixed(2))
+  const q = Number(row?.quantity || 0)
+  return row?.movement_type === 'OUT' ? -q : q
+}
+const deltaText = (row) => {
+  const d = deltaOf(row)
+  return `${d > 0 ? '+' : ''}${d}`
+}
+// 金额统一口径：入库/出库/退库按「|数量| × 单价」算正金额（出库是领用成本，不是负收入）；
+// 盘点调整按差异方向算，盘亏为负。历史流水 amount 符号不统一，这里直接由数量和单价重算。
+const amountOf = (row) => {
+  const price = Number(row?.unit_price ?? 0)
+  const qty = Number(row?.quantity || 0)
+  if (row?.movement_type === 'ADJUST') {
+    const v = price ? deltaOf(row) * price : Number(row?.amount || 0)
+    return Number(v.toFixed(2))
+  }
+  const v = price ? Math.abs(qty) * price : Math.abs(Number(row?.amount || 0))
+  return Number(v.toFixed(2))
+}
+const amountLabel = (row) => ({
+  IN: '入库金额', OUT: '出库金额（领用成本）', RETURN: '退库金额', ADJUST: '调整金额',
+}[row?.movement_type] || '金额')
+const money = (v) => {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return '—'
+  const s = Math.abs(n).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return (n < 0 ? '-¥' : '¥') + s
+}
+
 const loading = ref(false)
 const exporting = ref(false)
 const keyword = ref('')
@@ -134,21 +215,20 @@ const total = ref(0)
 const load = async () => {
   loading.value = true
   try {
-    const res = await request.get('/spare-parts/movements', { params: { page: page.value, page_size: pageSize.value } })
-    let items = res.items || []
-    if (type.value) items = items.filter((x) => x.movement_type === type.value)
-    if (keyword.value) {
-      const k = keyword.value.trim().toLowerCase()
-      items = items.filter((x) => `${x.part_code} ${x.part_name}`.toLowerCase().includes(k))
-    }
-    rows.value = items
-    total.value = res.total || items.length
+    const params = { page: page.value, page_size: pageSize.value }
+    if (type.value) params.movement_type = type.value
+    if (keyword.value.trim()) params.keyword = keyword.value.trim()
+    const res = await request.get('/spare-parts/movements', { params })
+    rows.value = res.items || []
+    total.value = res.total || 0
   } catch (e) {
     ElMessage.error('加载流水失败')
   } finally {
     loading.value = false
   }
 }
+
+const handleSearch = () => { page.value = 1; load() }
 
 const reset = () => {
   keyword.value = ''
@@ -176,8 +256,25 @@ onMounted(load)
 .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
 .mv-table :deep(tbody tr) { cursor: pointer; }
-.detail-photos { margin-top: 16px; }
+.mono { font-family: ui-monospace, Consolas, monospace; }
+.muted { color: #86909C; }
+
+.part-cell { display: flex; flex-direction: column; line-height: 1.35; }
+.part-name { color: #1D2129; font-size: 13px; }
+.part-sub { display: flex; align-items: center; gap: 8px; color: #86909C; font-size: 11px; }
+.att-chip { color: #0FC6C2; }
+.qty { font-variant-numeric: tabular-nums; }
+.qty.plus { color: #00B42A; }
+.qty.minus { color: #F53F3F; }
+.amount-loss { color: #F53F3F; }
+
+.detail-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.detail-time { font-size: 12px; color: #86909C; }
+.detail-block { margin-top: 16px; }
 .detail-label { font-size: 13px; color: #4E5969; margin-bottom: 8px; }
+.detail-count { margin-left: 6px; font-size: 12px; color: #86909C; }
+.sn-box { display: flex; flex-wrap: wrap; gap: 6px; }
+.sn-tag { max-width: 100%; }
 .photo-grid { display: flex; flex-wrap: wrap; gap: 8px; }
-.photo-img { width: 96px; height: 96px; border-radius: 6px; }
+.photo-img { width: 112px; height: 112px; border-radius: 6px; }
 </style>

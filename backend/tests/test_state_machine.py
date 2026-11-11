@@ -9,8 +9,9 @@ import pytest
 
 from conftest import notification_count, progress_log_count
 
+# COMPLETED 是历史状态：/complete 现在置 ARCHIVING，接口已无法把工单打到 COMPLETED
 STATES = ["DRAFT", "SUBMITTED", "ASSIGNED", "ACCEPTED", "ARRIVED", "INSPECTING",
-          "IN_PROGRESS", "ARCHIVING", "ARCHIVED", "REJECTED", "COMPLETED"]
+          "IN_PROGRESS", "ARCHIVING", "ARCHIVED", "REJECTED"]
 
 # 规格表：每个状态允许的目标状态（不含「同状态改派」，那条单独测）
 LEGAL = {
@@ -24,13 +25,12 @@ LEGAL = {
     "ARCHIVING": ["ARCHIVED"],
     "ARCHIVED": [],
     "REJECTED": [],
-    "COMPLETED": [],
 }
 REASSIGNABLE = ["ASSIGNED", "ACCEPTED", "ARRIVED", "INSPECTING"]
 
 ILLEGAL_PAIRS = [
     (f, t) for f in STATES for t in STATES
-    if t not in LEGAL[f] and f not in ("ARCHIVED", "REJECTED", "COMPLETED")
+    if t not in LEGAL[f] and f not in ("ARCHIVED", "REJECTED")
 ]
 
 
@@ -127,7 +127,7 @@ def test_hold_blocks_reassign(builder):
     assert st == 400, f"挂起中改派应被拒，实际 {st}，负责人已变成 {builder.get(wo['id'])['technician_id']}"
 
 
-@pytest.mark.parametrize("terminal", ["ARCHIVED", "REJECTED", "COMPLETED"])
+@pytest.mark.parametrize("terminal", ["ARCHIVED", "REJECTED"])
 def test_terminal_states_reject_everything(builder, terminal):
     """终态不可逆：任何目标都 400，且状态不变"""
     wo = builder.to(terminal, case=f"terminal-{terminal}")

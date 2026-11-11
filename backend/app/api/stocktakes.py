@@ -239,6 +239,18 @@ def submit_stocktake(take_id: int, db: Session = Depends(get_db),
     db.commit()
     db.refresh(t)
     logger.info(f"[Stocktake] {t.take_no} 提交，差异 {t.diff_count} 项 / {t.diff_amount:g} 元")
+
+    try:
+        from app.api.notifications import notify_roles
+        notify_roles(
+            db, ["ADMIN", "SUPERVISOR"], type="STOCKTAKE", title="盘点单待审批",
+            content=f"{current_user.real_name} 提交了盘点单 {t.take_no}（仓库 {t.warehouse_name or '-'}），"
+                    f"差异 {t.diff_count} 项、金额 {t.diff_amount:g} 元，请及时审批",
+            level="P2", exclude_user_id=current_user.id,
+        )
+        db.commit()
+    except Exception as e:
+        logger.warning(f"[Stocktake] 提交通知失败（忽略）: {e}")
     return _take_dict(t)
 
 
@@ -287,6 +299,18 @@ def approve_stocktake(take_id: int, data: ApproveIn, db: Session = Depends(get_d
     db.commit()
     db.refresh(t)
     logger.info(f"[Stocktake] {t.take_no} 审批通过，调整 {changed} 项，金额 {t.diff_amount:g}")
+
+    try:
+        from app.api.notifications import notify_user
+        notify_user(
+            db, t.created_by, type="STOCKTAKE", title="盘点结果已确认",
+            content=f"盘点单 {t.take_no} 已审批通过：调整 {changed} 项、差异金额 {t.diff_amount:g} 元"
+                    f"（审批人：{current_user.real_name}）",
+            level="P2", exclude_user_id=current_user.id,
+        )
+        db.commit()
+    except Exception as e:
+        logger.warning(f"[Stocktake] 审批通知失败（忽略）: {e}")
     return {**_take_dict(t), "adjusted_items": changed}
 
 
@@ -300,4 +324,14 @@ def cancel_stocktake(take_id: int, db: Session = Depends(get_db),
         raise HTTPException(status_code=400, detail="已审批的单子不能作废（库存已调整，需走反向单据）")
     t.status = StocktakeStatus.CANCELLED
     db.commit()
+    try:
+        from app.api.notifications import notify_user
+        notify_user(
+            db, t.created_by, type="STOCKTAKE", title="盘点单已作废",
+            content=f"盘点单 {t.take_no} 已被 {current_user.real_name} 作废，无需继续盘点",
+            level="P3", exclude_user_id=current_user.id,
+        )
+        db.commit()
+    except Exception as e:
+        logger.warning(f"[Stocktake] 作废通知失败（忽略）: {e}")
     return _take_dict(t)

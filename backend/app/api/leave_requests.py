@@ -673,4 +673,14 @@ def cancel_leave_request(
     db.commit()
     db.refresh(lr)
     logger.info(f"[Leave] 撤销成功 lr_id={lr.id} 申请人={current_user.id}")
+    try:
+        from app.api.notifications import notify_roles
+        notify_roles(
+            db, ["ADMIN", "SUPERVISOR"], type="LEAVE", title="请假申请已撤销",
+            content=f"{lr.requester_name} 撤销了请假申请（{lr.leave_type}），无需再处理",
+            level="P3", exclude_user_id=current_user.id,
+        )
+        db.commit()
+    except Exception as e:
+        logger.warning(f"[Leave] 撤销通知失败（忽略）: {e}")
     return _build_response(lr, db)

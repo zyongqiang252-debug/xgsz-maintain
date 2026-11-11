@@ -4,6 +4,7 @@
       <h2 class="page-title">{{ pageTitle }}</h2>
       <div style="display:flex;gap:8px">
         <el-button :loading="exporting" @click="handleExport">导出 Excel</el-button>
+        <el-button @click="$router.push('/orders?tab=import')">历史导入</el-button>
         <el-button type="primary" @click="$router.push('/work-orders/new')">新建工单</el-button>
       </div>
     </div>
@@ -11,6 +12,17 @@
     <el-card class="filter-card" shadow="never">
       <div class="filter-bar" :class="{ 'filter-bar-wrap': isSupervisor }">
         <el-input v-model="keyword" placeholder="搜索工单编号/故障描述" clearable class="filter-input" @clear="handleSearch" @keyup.enter="handleSearch" />
+        <el-select
+          v-if="isMineView"
+          v-model="relationFilter"
+          placeholder="工单归属"
+          clearable
+          class="filter-select"
+          @change="handleSearch"
+        >
+          <el-option label="我发起的" value="created" />
+          <el-option label="我接受的" value="assigned" />
+        </el-select>
         <el-select
           v-if="isSupervisor"
           v-model="userFilter"
@@ -50,7 +62,7 @@
       </div>
 
       <!-- 状态快捷筛选（独立一行，无「我的」分组） -->
-      <div v-if="!isPoolView" class="quick-bar">
+      <div v-if="!isPoolView && !isDraftView" class="quick-bar">
         <span class="qb-label">状态</span>
         <div class="qb-group">
           <span class="chip" :class="{ active: !statusFilter }" @click="pickStatus('')">全部</span>
@@ -67,6 +79,10 @@
             <span class="status-tag" :class="'status-' + opt.value">{{ opt.label }}</span>
             <span class="status-help-desc">{{ opt.desc }}</span>
           </div>
+          <div class="status-help-note">
+            · 待接单 = 已派工、还没接受；已接单 = 已接受、还没开始处理；维修中 = 已开始处理<br />
+            · 状态前的橙色小圆点 = 工单挂起中（SLA 暂停）
+          </div>
         </el-popover>
       </div>
     </el-card>
@@ -78,42 +94,51 @@
 
     <el-card class="table-card" shadow="never">
       <el-table :data="list" stripe class="wo-table" :row-class-name="rowClassName" @row-click="onRowClick">
-        <el-table-column label="工单编号" width="168" show-overflow-tooltip>
+        <el-table-column label="工单编号" width="165" show-overflow-tooltip>
           <template #default="{ row }">
-            <span class="wo-no">{{ row.work_order_no }}</span>
-            <el-tag v-if="row.customer_name" size="small" type="success" effect="plain"
-                    :title="`客户报修：${row.customer_name}${row.customer_company ? ' · ' + row.customer_company : ''}${row.customer_phone ? ' · ' + row.customer_phone : ''}`"
-                    style="margin-left:4px">客户·{{ row.customer_name }}</el-tag>
-            <el-tag v-if="row.order_type && row.order_type !== 'REPAIR'" size="small" effect="plain" style="margin-left:4px">
-              {{ orderTypeLabel(row.order_type) }}
-            </el-tag>
+            <div class="wo-no-cell">
+              <span class="wo-no">{{ row.work_order_no }}</span>
+              <el-tag v-if="row.order_type && row.order_type !== 'REPAIR'" size="small" effect="plain" class="wo-type">
+                {{ orderTypeLabel(row.order_type) }}
+              </el-tag>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column label="设备 / 故障" min-width="260">
+        <el-table-column label="故障 / 设备" min-width="240">
           <template #default="{ row }">
             <div class="fault-cell" :title="row.fault_description || ''">
-              <div class="fault-device">{{ row.device_code || row.device_name || '未指定设备' }}</div>
               <div class="fault-desc">{{ row.fault_description || '-' }}</div>
-              <div v-if="row.customer_id" class="fault-cust">
-                {{ row.customer_company || row.customer_name }}
-                <span v-if="row.customer_site_name"> · {{ row.customer_site_name }}</span>
-                <span v-else-if="row.customer_address"> · {{ row.customer_address }}</span>
+              <div class="fault-device">
+                {{ row.device_code || row.device_name || (row.fault_object ? '涉及：' + row.fault_object : '未指定设备') }}
               </div>
             </div>
           </template>
         </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
-            <span class="status-tag" :class="'status-' + (row.status_group || row.status)">{{ row.status_group_label || statusLabel(row.status) }}</span>
-            <el-tag v-if="row.is_on_hold" size="small" type="warning" effect="dark" class="hold-chip">挂起</el-tag>
-            <el-tag v-else-if="row.status === 'ARCHIVING' && row.customer_id && row.customer_accept_status !== 'ACCEPTED'"
-                    size="small" type="info" effect="plain" class="hold-chip">待客户确认</el-tag>
+            <span class="status-tag" :class="displayStatus(row).cls">
+              <i v-if="row.is_on_hold" class="hold-dot" title="挂起中（SLA 已暂停）"></i>{{ displayStatus(row).label }}
+            </span>
           </template>
         </el-table-column>
-        <el-table-column label="负责人" width="124" show-overflow-tooltip>
+        <el-table-column v-if="!isDraftView" label="报修人" width="120" show-overflow-tooltip>
           <template #default="{ row }">
-            <span v-if="row.technician_name">{{ row.technician_name }}</span>
-            <span v-else class="muted">未指派</span>
+            <span v-if="reporterOf(row)" class="reporter-name">{{ reporterOf(row).name }}</span>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="!isMineView && !isDraftView" label="负责人" width="132" show-overflow-tooltip>
+          <template #default="{ row }">
+            <div class="assignee-cell">
+              <span v-if="row.technician_name">{{ row.technician_name }}</span>
+              <span v-else class="muted">未指派</span>
+              <div class="assignee-tags">
+                <el-tag
+                  v-if="row.status === 'ASSIGNED' && !row.first_response_at"
+                  size="small" type="warning" effect="plain"
+                >待接单</el-tag>
+              </div>
+            </div>
             <el-tag
               v-if="row.transfer_from_name"
               size="small" type="warning" effect="plain"
@@ -125,10 +150,10 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="120">
-          <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+        <el-table-column prop="created_at" label="创建时间" width="128">
+          <template #default="{ row }"><span class="wo-time">{{ formatTimeShort(row.created_at) }}</span></template>
         </el-table-column>
-        <el-table-column label="操作" width="220" header-align="left">
+        <el-table-column label="操作" width="190" header-align="left">
           <template #default="{ row }">
             <div class="op-cell">
               <div class="op-actions">
@@ -170,7 +195,12 @@
                     :loading="claiming === row.id" @click="claimTask(row)"
                   >领取</el-button>
                   <el-button
-                    v-if="row.status === 'DRAFT'"
+                    v-if="isDraftView && row.status === 'DRAFT'"
+                    size="small" type="primary"
+                    @click="onRowCommand('edit', row)"
+                  >继续编辑</el-button>
+                  <el-button
+                    v-if="row.status === 'DRAFT' && !isDraftView"
                     size="small" type="primary"
                     :disabled="!isCreatedByMe(row) && !isAdmin"
                     :loading="transitionLoading[`${row.id}_SUBMITTED`]"
@@ -199,13 +229,12 @@
                   <el-button
                     v-if="row.status === 'IN_PROGRESS'"
                     size="small" type="success"
-                    :loading="transitionLoading[`${row.id}_ARCHIVING`]"
                     @click="handleFinishRepair(row)"
                   >完成维修</el-button>
                   <el-button
-                    v-if="row.status === 'ARCHIVING'"
+                    v-if="['ARCHIVING', 'COMPLETED'].includes(row.status)"
                     size="small" type="primary"
-                    @click="$router.push(`/work-orders/${row.id}?edit=1`)"
+                    @click="$router.push(`/work-orders/${row.id}`)"
                   >去归档</el-button>
                 </template>
               </div>
@@ -213,7 +242,11 @@
           </template>
         </el-table-column>
         <template #empty>
-          <EmptyState icon="search" title="没有找到符合条件的记录" hint="试试调整筛选条件，或清空搜索后重新查询" />
+          <EmptyState
+            v-if="isDraftView" icon="doc" title="草稿箱是空的"
+            hint="新建工单时点「保存草稿」，之后可以在这里继续编辑"
+          />
+          <EmptyState v-else icon="search" title="没有找到符合条件的记录" hint="试试调整筛选条件，或清空搜索后重新查询" />
         </template>
       </el-table>
       <div class="pagination-wrap">
@@ -264,6 +297,15 @@
         <el-button type="primary" :loading="dispatch.submitting" @click="submitDispatch">{{ dispatchConfirmText }}</el-button>
       </template>
     </el-dialog>
+
+    <ServiceModeDialog
+      v-model="serviceDialog.visible"
+      :title="serviceDialog.action === 'claim' ? '领取任务' : '确认接单'"
+      :confirm-text="serviceDialog.action === 'claim' ? '确认领取' : '确认接单'"
+      :work-order-no="serviceDialog.row?.work_order_no || ''"
+      :loading="serviceDialog.loading"
+      @confirm="onServiceConfirm"
+    />
   </div>
 </template>
 
@@ -271,6 +313,7 @@
 const props = defineProps({
   defaultMine: { type: String, default: '' },
   poolMode: { type: [String, Boolean], default: '' },
+  draftMode: { type: [String, Boolean], default: '' },
 })
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
@@ -284,6 +327,7 @@ import dayjs from 'dayjs'
 import EmptyState from '../components/EmptyState.vue'
 import TableSkeleton from '../components/TableSkeleton.vue'
 import IconAction from '../components/IconAction.vue'
+import ServiceModeDialog from '../components/ServiceModeDialog.vue'
 const router = useRouter()
 
 // 当前登录用户（用于权限判断：仅创建者或管理员可编辑）
@@ -306,6 +350,15 @@ const isAssignedTech = (row) => {
   const tid = row.technician_id || row.assigned_technician_id
   if (!tid) return false
   return tid === currentUser.id
+}
+// 报修人：优先取上报人（移动端提交）→ 建单人 → 客户报修时取客户联系人/客户名
+const reporterOf = (row) => {
+  if (row.reporter_name) return { name: row.reporter_name, dept: '' }
+  if (row.created_by_name) return { name: row.created_by_name, dept: row.created_by_department || '' }
+  if (row.customer_id) {
+    return { name: row.customer_contact_name || row.customer_name || '客户', customer: true }
+  }
+  return null
 }
 const canOperateProgress = (row) =>
   isAssignedTech(row) || row.status === 'DRAFT' ||
@@ -337,34 +390,31 @@ const dispatchConfirmText = computed(() => {
   return dispatch.row?.status === 'SUBMITTED' ? '确认派工' : '确认改派'
 })
 const editDenyReason = (row) => {
-  if (row.status === 'COMPLETED') return '已完成工单不可编辑'
-  if (row.status === 'ARCHIVED') return '已归档工单仅管理员可修改'
-  return '仅创建者、被指派人或管理员可编辑'
+  if (row.status === 'ARCHIVED') return '已归档工单仅管理员/主管可修改'
+  return '技术员只能编辑自己创建的工单'
 }
 
+// 删除口径与后端一致：只有草稿能删，且只有建单人本人或管理员能删。
+// 提交报修之后已经产生进度日志/SLA/备件，业务事实不可抹，要终止请走「退回」。
+const canDeleteRow = (row) =>
+  row.status === 'DRAFT' && (isCreatedByMe(row) || isAdmin)
+
 const deleteDenyReason = (row) => {
-  if (['COMPLETED', 'ARCHIVED'].includes(row.status)) return '已归档/已完成，不可删除'
-  return '仅创建者或管理员可删除'
+  if (row.status !== 'DRAFT') {
+    const label = (DISPLAY_STATUS[row.status] || [row.status])[0]
+    return `「${label}」的工单不能删除，如需终止请用「退回」`
+  }
+  return '仅建单人或管理员可删除草稿'
 }
 
 const canEditRow = (row) => {
-  if (row.status === 'COMPLETED') return false
-  // 已归档：仅管理员可改（改动会写入修改记录）
-  if (row.status === 'ARCHIVED') return isAdmin
-  return isCreatedByMe(row) || isAdmin || isAssignedTech(row)
+  // 已归档：管理员/主管可改（会写修改记录）；其他状态：创建者本人或管理员/主管
+  if (row.status === 'ARCHIVED') return isSupervisor
+  return isSupervisor || isCreatedByMe(row)
 }
 
-const canDeleteRow = (row) =>
-  !['COMPLETED', 'ARCHIVED'].includes(row.status) &&
-  (isCreatedByMe(row) || isAdmin)
-
 // 处理中各行按当前节点显示下一步动作，避免已接单/已到场还写“开始处理”
-const startActionLabel = (row) => ({
-  ASSIGNED: '开始处理',
-  ACCEPTED: '到场',
-  ARRIVED: '开始检查',
-  INSPECTING: '开始维修',
-}[row.status] || '开始处理')
+const startActionLabel = (row) => '开始处理'
 
 // 一行里可能存在的「非主操作」动作文案：派工/改派/领取/转派
 const rowActionText = (row) => {
@@ -399,17 +449,37 @@ const onRowCommand = (cmd, row) => {
   }
 }
 
-// 接受派工：ASSIGNED → ACCEPTED
-const acceptAssignment = async (row) => {
+// 服务方式由技术员在接单/领取时确认
+const serviceDialog = reactive({ visible: false, action: '', row: null, loading: false })
+const acceptAssignment = (row) => {
+  serviceDialog.action = 'accept'
+  serviceDialog.row = row
+  serviceDialog.visible = true
+}
+const onServiceConfirm = async ({ service_mode, remark }) => {
+  serviceDialog.loading = true
+  try {
+    const row = serviceDialog.row
+    const ok = serviceDialog.action === 'claim'
+      ? await doClaim(row, service_mode, remark)
+      : await doAccept(row, service_mode, remark)
+    if (ok) serviceDialog.visible = false
+  } finally {
+    serviceDialog.loading = false
+  }
+}
+const doAccept = async (row, service_mode, remark) => {
   startingId.value = row.id
   try {
     await request.post(`/work-orders/${row.id}/transition`, {
-      to_status: 'ACCEPTED', source: 'TECH_ACCEPT',
+      to_status: 'ACCEPTED', service_mode, remark, source: 'TECH_ACCEPT',
     })
     ElMessage.success('已接单')
     fetchData()
+    return true
   } catch (e) {
     ElMessage.error(e?.response?.data?.detail || '接单失败')
+    return false
   } finally {
     startingId.value = null
   }
@@ -457,24 +527,39 @@ const handleStart = async (row) => {
 }
 
 const claiming = ref(null)
-// 维修员主动领取（抢单）
-const claimTask = async (row) => {
-  try {
-    await ElMessageBox.confirm(
-      `确认领取工单 ${row.work_order_no}？领取后由你负责。`, '领取任务',
-      { type: 'info', confirmButtonText: '确认领取' })
-  } catch { return }
+// 维修员主动领取（抢单）：领取即自动接单，直接进入「处理中」，不再让本人点一次「接受」
+const claimTask = (row) => {
+  serviceDialog.action = 'claim'
+  serviceDialog.row = row
+  serviceDialog.visible = true
+}
+const doClaim = async (row, service_mode, remark) => {
   claiming.value = row.id
   try {
     await request.post(`/work-orders/${row.id}/transition`, {
       to_status: 'ASSIGNED',
       technician_id: currentUser.id,
+      service_mode,
       source: 'TECH_CLAIM',
     })
-    ElMessage.success('领取成功，工单已归你负责')
+    let autoAccepted = true
+    try {
+      await request.post(`/work-orders/${row.id}/transition`, {
+        to_status: 'ACCEPTED',
+        service_mode,
+        remark,
+        source: 'TECH_ACCEPT',
+      })
+    } catch {
+      autoAccepted = false
+    }
+    if (autoAccepted) ElMessage.success('领取成功，已自动接单（处理中）')
+    else ElMessage.warning('已领取，但自动接单失败，请在工单详情点「接受」')
     fetchData()
+    return autoAccepted
   } catch (e) {
     ElMessage.error(e?.response?.data?.detail || '领取失败')
+    return false
   } finally {
     claiming.value = null
   }
@@ -540,8 +625,8 @@ const handleTransition = async (row, toStatus, source = 'TECH_PROGRESS') => {
   }
 }
 
-const handleFinishRepair = async (row) => {
-  await handleTransition(row, 'ARCHIVING')
+const handleFinishRepair = (row) => {
+  // 先进入详情填写完成信息；只有点「提交完成」才真正置为待归档，避免点开又退出就变成待归档
   router.push(`/work-orders/${row.id}?edit=1`)
 }
 
@@ -550,8 +635,10 @@ const loading = ref(false)
 const keyword = ref('')
 const isMineView = !!props.defaultMine
 const isPoolView = !!props.poolMode
-const pageTitle = computed(() => isPoolView ? '工单池' : (isMineView ? '我的工单' : '全部工单'))
+const isDraftView = !!props.draftMode
+const pageTitle = computed(() => isDraftView ? '草稿箱' : (isPoolView ? '工单池' : (isMineView ? '我的工单' : '全部工单')))
 const statusFilter = ref('')
+const relationFilter = ref('')
 const orderTypeFilter = ref('')
 const ORDER_TYPE_LABEL = { REPAIR: '报修', MAINTENANCE: '保养', INSPECTION: '点检', IMPORT: '导入', DELIVERY: '交付' }
 const orderTypeLabel = (t) => ORDER_TYPE_LABEL[(t || 'REPAIR').toUpperCase()] || t
@@ -576,39 +663,60 @@ const loadUserOptions = async () => {
 }
 
 const statusOptions = [
-  { value: 'DRAFT', label: '草稿', desc: '已建单未提交，可修改或删除' },
+  // 草稿只在「草稿箱」里看，不混进全部工单的状态筛选
+
   { value: 'SUBMITTED', label: '待派工', desc: '已提交报修，等待派单或维修员领取' },
-  { value: 'PROCESSING', label: '处理中', desc: '已派单、已接单、已到场、检查中、维修中，统一视为处理中' },
+  { value: 'PROCESSING', label: '处理中', desc: '含已派单待接单、已接单、已到场、检查中、维修中' },
   { value: 'ARCHIVING', label: '待归档', desc: '维修完成，补齐 6 项归档字段后归档' },
   { value: 'ARCHIVED', label: '已归档', desc: '已结案，只读，可打印 PDF' },
   { value: 'REJECTED', label: '已退回', desc: '派单被退回或工单作废' },
 ]
 
 
-const statusMap = {
-  DRAFT: '草稿',
-  SUBMITTED: '待派工',
-  ASSIGNED: '已派单',
-  ACCEPTED: '已接单',
-  ARRIVED: '已到达',
-  INSPECTING: '检查中',
-  IN_PROGRESS: '维修中',
-  ARCHIVING: '待归档',
-  ARCHIVED: '已归档',
-  COMPLETED: '已完成',
-  REJECTED: '已退回',
+// 列表展示状态：库里 11 个原始状态 → 界面每行只显示一个
+// 草稿 / 待派工 / 待接单 / 处理中 / 待归档 / 待客户确认 / 已归档 / 已退回
+const DISPLAY_STATUS = {
+  DRAFT: ['草稿', 'status-DRAFT'],
+  SUBMITTED: ['待派工', 'status-SUBMITTED'],
+  ASSIGNED: ['待接单', 'status-ASSIGNED'],
+  ACCEPTED: ['已接单', 'status-PROCESSING'],
+  ARRIVED: ['已到场', 'status-PROCESSING'],
+  INSPECTING: ['检查中', 'status-PROCESSING'],
+  IN_PROGRESS: ['维修中', 'status-PROCESSING'],
+  ARCHIVING: ['待归档', 'status-ARCHIVING'],
+  COMPLETED: ['待归档', 'status-ARCHIVING'],
+  ARCHIVED: ['已归档', 'status-ARCHIVED'],
+  REJECTED: ['已退回', 'status-REJECTED'],
 }
-
-const GROUP_LABEL = {
-  DRAFT: '草稿',
-  SUBMITTED: '待派工',
-  ASSIGNED: '处理中', ACCEPTED: '处理中', ARRIVED: '处理中',
-  INSPECTING: '处理中', IN_PROGRESS: '处理中',
-  ARCHIVING: '待归档', COMPLETED: '待归档',
-  ARCHIVED: '已归档', REJECTED: '已退回',
+const displayStatus = (row) => {
+  const [baseLabel, baseCls] = DISPLAY_STATUS[row.status] || ['—', 'status-DRAFT']
+  let label = baseLabel
+  let cls = baseCls
+  // 已派单但还没接单（自派工自己接的情况除外）
+  if (row.status === 'ASSIGNED') {
+    if (claimedAt(row)) { label = '处理中'; cls = 'status-PROCESSING' } else { label = '待接单'; cls = 'status-ASSIGNED' }
+  }
+  // 客户工单：修完还在等客户确认，状态直接显示「待客户确认」
+  if (['ARCHIVING', 'COMPLETED'].includes(row.status) && row.customer_id && row.customer_accept_status !== 'ACCEPTED') {
+    label = '待客户确认'
+    cls = 'status-WAITCUST'
+  }
+  return { label, cls }
 }
-const statusLabel = (s) => statusMap[s] || GROUP_LABEL[s] || s
 const formatTime = (t) => t ? dayjs(t).format('YYYY-MM-DD HH:mm') : '-'
+const formatTimeShort = (t) => t ? dayjs(t).format('MM-DD HH:mm') : '-'
+// 领取时间：优先首次接单时间；改派后状态回到 ASSIGNED 且派单时间晚于旧接单时间 → 显示待接受
+const claimedAt = (row) => {
+  if (row.first_response_at) {
+    if (row.status === 'ASSIGNED' && row.dispatched_at
+        && new Date(row.dispatched_at) > new Date(row.first_response_at)) return ''
+    return row.first_response_at
+  }
+  if (row.status === 'ASSIGNED' && row.dispatcher_id && row.dispatcher_id === row.technician_id) {
+    return row.dispatched_at
+  }
+  return ''
+}
 
 // ===== SLA 展示 =====
 const slaLabel = (row) => {
@@ -648,8 +756,10 @@ const fetchData = async () => {
   try {
     const params = { page: page.value, page_size: pageSize.value }
     if (keyword.value) params.keyword = keyword.value
-    if (isPoolView) params.mine = 'pool'            // 工单池：我的 + 待领的
+    if (isDraftView) params.mine = 'drafts'         // 草稿箱：只看自己的草稿
+    else if (isPoolView) params.mine = 'pool'       // 工单池：我的 + 待领的
     else if (isMineView) params.mine = 'all'        // 我的工单：只看自己
+    if (isMineView && relationFilter.value) params.relation = relationFilter.value
     if (statusFilter.value) params.status_group = statusFilter.value
     if (orderTypeFilter.value) params.order_type = orderTypeFilter.value
     if (userFilter.value) params.user_id = userFilter.value
@@ -671,6 +781,7 @@ const saveFilter = () => {
   const data = {}
   if (keyword.value) data.keyword = keyword.value
   if (statusFilter.value) data.status = statusFilter.value
+  if (relationFilter.value) data.relation = relationFilter.value
   if (orderTypeFilter.value) data.order_type = orderTypeFilter.value
   if (userFilter.value) data.user_id = userFilter.value
   if (dateRange.value) {
@@ -713,6 +824,7 @@ const onRowClick = (row, column, event) => {
 const handleReset = () => {
   keyword.value = ''
   statusFilter.value = ''
+  relationFilter.value = ''
   orderTypeFilter.value = ''
   userFilter.value = null
   dateRange.value = null
@@ -737,7 +849,8 @@ onMounted(() => {
     try {
       const data = JSON.parse(raw)
       if (data.keyword) keyword.value = data.keyword
-      if (data.status) statusFilter.value = data.status
+      if (data.status && data.status !== 'DRAFT' && !isDraftView) statusFilter.value = data.status
+      if (data.relation) relationFilter.value = data.relation
       if (data.order_type) orderTypeFilter.value = data.order_type
       if (data.user_id) userFilter.value = data.user_id
       if (data.date_from && data.date_to) {
@@ -786,12 +899,19 @@ const handleExport = async () => {
 .secondary-btn { background: #fff; border-color: #d9d9d9; color: #333; }
 .table-card { min-height: 300px; overflow: hidden; }
 .muted { color: #C9CDD4; }
+.assignee-cell { display: flex; flex-direction: column; gap: 2px; line-height: 1.3; min-width: 0; }
+.assignee-tags { display: flex; flex-wrap: wrap; gap: 3px; }
+.reporter-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; line-height: 1.3; }
+.reporter-name { color: var(--color-text-primary); font-size: 13px; white-space: nowrap; }
 .collab-line { font-size: 11px; color: #86909C; line-height: 1.4; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hold-chip { margin-top: 3px; }
-.fault-cust { font-size: 11px; color: #0FC6C2; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fault-cell { display: flex; flex-direction: column; gap: 2px; line-height: 1.4; }
-.fault-device { font-size: 12px; color: #86909C; }
-.fault-desc { font-size: 13px; color: #1D2129; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hold-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #FF7D00; margin-right: 5px; vertical-align: 1px; }
+.fault-cell { display: flex; flex-direction: column; gap: 2px; line-height: 1.4; min-width: 0; }
+.fault-desc { font-size: 13px; color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fault-device { font-size: 12px; color: var(--color-text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wo-no { white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.wo-no-cell { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; line-height: 1.2; }
+.wo-type { transform: scale(.92); transform-origin: left center; }
+.wo-time { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .prio-cell { display: flex; align-items: center; gap: 6px; }
 .wo-table :deep(.el-table__row.row-urgent) > td { background: #FFF6F6 !important; }
 /* 表格统一行高，避免按钮把行撑高 */
@@ -805,12 +925,15 @@ const handleExport = async () => {
 .op-primary:empty { display: none; }
 .op-actions { display: flex; align-items: center; gap: 4px; margin-right: 12px; }
 
-.status-tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+.status-tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; white-space: nowrap; }
 .status-DRAFT { background: #F2F3F5; color: #4E5969; }
-.status-IN_PROGRESS { background: #FFF3E8; color: #FF7D00; }
+.status-SUBMITTED { background: #FFF3E8; color: #FF7D00; }
+.status-ASSIGNED { background: #F3E8FF; color: #722ED1; }
+.status-PROCESSING { background: #E8F3FF; color: #2478D9; }
+.status-WAITCUST { background: #EEF0FF; color: #4E5EE4; }
 .status-ARCHIVING { background: #FFF7E8; color: #FF8800; }
 .status-ARCHIVED { background: #E8F8EE; color: #00B42A; }
-.status-COMPLETED { background: #E8F8EE; color: #00B42A; }
+.status-REJECTED { background: #FFECEC; color: #F53F3F; }
 
 .ellipsis-1 { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
@@ -825,6 +948,7 @@ const handleExport = async () => {
 .status-help-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #1D2129; }
 .status-help-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .status-help-desc { font-size: 12px; color: #4E5969; line-height: 1.5; }
+.status-help-note { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #E8E9ED; font-size: 12px; color: #86909C; line-height: 1.7; }
 
 
 /* 状态快捷筛选（独立一行，嵌在查询卡片内） */

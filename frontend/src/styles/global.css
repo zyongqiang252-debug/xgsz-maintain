@@ -28,6 +28,8 @@
   --color-primary-mid: rgba(15,198,194,0.15);
   --color-success: #00B42A;
   --color-warning: #FF7D00;
+  --color-warning-text: #FF7D00;
+  --color-warning-bg: #FFF3E6;
   --color-danger: #F53F3F;
   --color-info: #3491FA;
 

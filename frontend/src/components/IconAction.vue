@@ -1,6 +1,6 @@
 <template>
   <el-tooltip :content="title" placement="top" :show-after="300" :disabled="!title">
-    <span class="icon-action" @click="onClick">
+    <span class="icon-action" :class="{ 'icon-action--disabled': disabled }" @click="onClick">
       <el-button
         text
         circle
@@ -28,6 +28,10 @@ const onClick = () => {
 
 <style scoped>
 .icon-action { display: inline-flex; }
+.icon-action--disabled { cursor: not-allowed; opacity: .45; }
+.icon-action--disabled :deep(.el-button.is-disabled) {
+  color: #C0C4CC !important;
+}
 .icon-action :deep(.el-button) {
   width: 26px;
   height: 26px;

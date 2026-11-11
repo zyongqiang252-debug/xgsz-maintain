@@ -4,7 +4,7 @@
       <h2 class="page-title">仓库与库位</h2>
       <div class="header-actions">
         <el-button @click="router.push('/stock?tab=parts')">备件台账</el-button>
-        <el-button type="primary" @click="openWarehouseDialog()">新建仓库</el-button>
+        <el-button v-if="isSupervisor" type="primary" @click="openWarehouseDialog()">新建仓库</el-button>
       </div>
     </div>
 
@@ -39,7 +39,7 @@
               <el-tag size="small" :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? '启用' : '停用' }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="110">
+          <el-table-column v-if="isSupervisor" label="操作" width="110">
             <template #default="{ row }">
               <div class="row-actions" @click.stop>
                 <el-button link type="primary" @click="openWarehouseDialog(row)">编辑</el-button>
@@ -54,7 +54,7 @@
         <template #header>
           <div class="card-head">
             <span>库位{{ current ? ' · ' + current.name : '' }}</span>
-            <el-button size="small" type="primary" :disabled="!current" @click="openLocationDialog()">新建库位</el-button>
+            <el-button v-if="isSupervisor" size="small" type="primary" :disabled="!current" @click="openLocationDialog()">新建库位</el-button>
           </div>
         </template>
         <el-empty v-if="!current" description="先选择左侧仓库" :image-size="80" />
@@ -72,7 +72,7 @@
             </template>
           </el-table-column>
           <el-table-column prop="remark" label="备注" min-width="100" show-overflow-tooltip />
-          <el-table-column label="操作" width="96">
+          <el-table-column v-if="isSupervisor" label="操作" width="96">
             <template #default="{ row }">
               <div class="row-actions">
                 <el-button link type="primary" @click="openLocationDialog(row)">编辑</el-button>
@@ -125,6 +125,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api'
 
 const router = useRouter()
+
+// 仓库与库位属于库存主数据：只有管理员/主管可维护，技术员只读（能查库位，不能增删改）
+const isSupervisor = (() => {
+  try {
+    const role = JSON.parse(localStorage.getItem('current_user') || '{}').role
+    return role === 'ADMIN' || role === 'SUPERVISOR'
+  } catch { return false }
+})()
 
 const warehouses = ref([])
 const loading = ref(false)

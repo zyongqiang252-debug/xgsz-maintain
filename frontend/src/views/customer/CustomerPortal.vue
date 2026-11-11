@@ -18,7 +18,10 @@
       <section class="cp-section">
         <div class="cp-section-head">
           <h2>我的服务器</h2>
-          <span class="cp-count">共 {{ devices.length }} 台</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <el-button size="small" plain @click="openReport(null)">集群 / 网络 / 其他报修</el-button>
+            <span class="cp-count">共 {{ devices.length }} 台</span>
+          </div>
         </div>
         <div v-if="!devices.length" class="cp-empty">暂无绑定设备，请联系管理员分配</div>
         <div v-else class="cp-devices">
@@ -30,9 +33,9 @@
               </el-tag>
             </div>
             <div class="cp-device-meta">
-              <span>SN/编号：{{ d.device_code || '-' }}</span>
+              <span>SN：{{ d.serial_no || d.device_code || '-' }}</span>
               <span>型号：{{ d.model || '-' }}</span>
-              <span>位置：{{ d.location || '-' }}</span>
+              <span>位置：{{ deviceLocation(d) || '-' }}</span>
             </div>
             <el-button type="primary" size="small" @click="openReport(d)">报修</el-button>
           </div>
@@ -46,7 +49,9 @@
         </div>
         <el-table :data="reports" v-loading="loadingReports" size="small" stripe>
           <el-table-column prop="work_order_no" label="报修单号" width="170" />
-          <el-table-column prop="device_code" label="设备" width="140" show-overflow-tooltip />
+          <el-table-column prop="device_code" label="设备 / 对象" width="150" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.device_code || row.fault_object || '集群 / 网络 / 其他' }}</template>
+          </el-table-column>
           <el-table-column prop="fault_description" label="故障描述" min-width="220" show-overflow-tooltip />
           <el-table-column label="状态" width="100">
             <template #default="{ row }">
@@ -81,7 +86,30 @@
     <el-dialog v-model="dlg.visible" title="提交报修" width="520px" :close-on-click-modal="false">
       <el-form label-width="90px">
         <el-form-item label="设备">
-          <span>{{ dlg.device?.device_name }}（{{ dlg.device?.device_code }}）</span>
+          <div v-if="dlg.device" class="cp-picked-device">
+            <div>
+              <b>{{ dlg.device.device_name || dlg.device.device_code }}</b>
+              <span class="cp-muted">（{{ dlg.device.device_code }}）</span>
+              <el-button link type="primary" size="small" @click="dlg.device = null">更换</el-button>
+            </div>
+            <div class="cp-device-detail">
+              位置：{{ deviceLocation(dlg.device) || '-' }} · 型号：{{ dlg.device.model || '-' }} · SN：{{ dlg.device.serial_no || '-' }}
+            </div>
+          </div>
+          <div v-else style="width:100%">
+            <div style="display:flex;gap:8px">
+              <el-input v-model="dlg.deviceCode" placeholder="扫码 / 输入设备编码或 SN" clearable
+                        @keyup.enter="lookupDevice" />
+              <el-button @click="lookupDevice">查询</el-button>
+            </div>
+            <div class="cp-muted" style="margin-top:4px">
+              选填：绑定设备后自动带出机柜位置、型号、SN；不填则按「集群 / 网络 / 其他」报修
+            </div>
+            <div v-if="dlg.deviceLookupMsg" class="cp-lookup-msg">{{ dlg.deviceLookupMsg }}</div>
+          </div>
+        </el-form-item>
+        <el-form-item v-if="!dlg.device" label="涉及对象">
+          <el-input v-model="dlg.faultObject" maxlength="200" placeholder="如：集群 A / 核心交换机 SW-01 / IB 交换机 / 光模块链路" />
         </el-form-item>
         <el-form-item label="机房 / 站点">
           <el-select v-model="dlg.siteId" clearable placeholder="选择报修机房" style="width:100%">
@@ -90,12 +118,14 @@
           </el-select>
         </el-form-item>
         <el-form-item label="故障描述" required>
-          <el-input v-model="dlg.faultDescription" type="textarea" :rows="4" maxlength="500"
-                    show-word-limit placeholder="请描述现象，例如：开机后 GPU 风扇全速、BMC 报 ECC 错误" />
+          <el-input v-model="dlg.faultDescription" type="textarea" :rows="5" maxlength="500"
+                    show-word-limit placeholder="请描述现象，例如：GPU3 训练任务报错掉卡 / 集群调度卡住 / 核心交换机端口 down / 硬盘掉盘" />
         </el-form-item>
-        <el-form-item label="故障现象">
-          <el-input v-model="dlg.faultPhenomenon" type="textarea" :rows="2" maxlength="500"
-                    placeholder="选填：报错信息、指示灯状态、发生时间等" />
+        <el-form-item label="影响程度">
+          <el-select v-model="dlg.impactLevel" style="width:100%">
+            <el-option v-for="o in IMPACT_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
+          </el-select>
+          <div class="impact-hint">默认「一般」；业务中断/严重降级会缩短响应和修复时限</div>
         </el-form-item>
         <el-form-item label="联系人">
           <el-input v-model="dlg.contactName" maxlength="50" />
@@ -131,6 +161,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import customerRequest from '../../api/customer'
+import { IMPACT_OPTIONS } from '../../config/impact'
 
 const router = useRouter()
 const customer = (() => {
@@ -142,10 +173,38 @@ const reports = ref([])
 const loadingReports = ref(false)
 
 const dlg = reactive({
-  visible: false, device: null, siteId: null, faultDescription: '', faultPhenomenon: '',
+  visible: false, device: null, deviceCode: '', deviceLookupMsg: '', siteId: null,
+  faultObject: '', faultDescription: '', impactLevel: 'MEDIUM',
   contactName: customer.name || '', contactPhone: customer.phone || '',
   submitting: false,
 })
+
+// 设备位置：优先机柜级（机房 / 机柜），没有就退回 location
+const deviceLocation = (d) => {
+  if (!d) return ''
+  if (d.location) return d.location
+  return [d.room, d.rack_no].filter(Boolean).join(' / ')
+}
+
+// 扫码/输入设备编码：只在当前客户已绑定设备里匹配，避免越权查别家设备
+const lookupDevice = () => {
+  const code = (dlg.deviceCode || '').trim().toLowerCase()
+  if (!code) return
+  const hit = devices.value.find((d) =>
+    String(d.device_code || '').toLowerCase() === code ||
+    String(d.serial_no || '').toLowerCase() === code)
+  if (hit) {
+    dlg.device = hit
+    dlg.deviceLookupMsg = ''
+    dlg.faultObject = ''
+    // 设备匹配后顺带选机房：优先地址能对上位置，其次默认机房
+    const site = sites.value.find((s) => s.address && hit.location && s.address.includes(hit.location))
+      || sites.value.find((s) => s.is_default) || sites.value[0]
+    dlg.siteId = site ? site.id : null
+  } else {
+    dlg.deviceLookupMsg = '该编码/SN 不在你名下绑定的设备里，请核对或按「集群 / 网络 / 其他」报修'
+  }
+}
 const rate = reactive({ visible: false, row: null, score: 5, comment: '', saving: false })
 
 const runStatusLabel = (s) => ({
@@ -188,14 +247,18 @@ const loadReports = async () => {
 
 const openReport = (device) => {
   dlg.device = device
+  dlg.deviceCode = ''
+  dlg.deviceLookupMsg = ''
+
   dlg.siteId = null
+  dlg.faultObject = ''
   // 默认选与设备位置匹配的机房，否则选默认机房
-  const hit = sites.value.find((s) => s.address && device.location && s.address.includes(device.location))
+  const hit = (device && sites.value.find((s) => s.address && device.location && s.address.includes(device.location)))
     || sites.value.find((s) => s.is_default)
     || sites.value[0]
   dlg.siteId = hit ? hit.id : null
   dlg.faultDescription = ''
-  dlg.faultPhenomenon = ''
+  dlg.impactLevel = 'MEDIUM'
   dlg.contactName = customer.name || ''
   dlg.contactPhone = customer.phone || ''
   dlg.visible = true
@@ -209,10 +272,11 @@ const submitReport = async () => {
   dlg.submitting = true
   try {
     const res = await customerRequest.post('/customer/reports', {
-      device_id: dlg.device.id,
+      device_id: dlg.device ? dlg.device.id : null,
+      fault_object: dlg.device ? null : (dlg.faultObject.trim() || null),
       site_id: dlg.siteId || null,
+      impact_level: dlg.impactLevel || null,
       fault_description: dlg.faultDescription.trim(),
-      fault_phenomenon: dlg.faultPhenomenon.trim() || null,
       contact_name: dlg.contactName.trim() || null,
       contact_phone: dlg.contactPhone.trim() || null,
     })
@@ -305,6 +369,8 @@ onMounted(() => {
 .cp-section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .cp-section-head h2 { margin: 0; font-size: 17px; color: #1D2129; }
 .cp-count { color: #86909C; font-size: 13px; }
+.cp-muted { color: #86909C; }
+.impact-hint { font-size: 12px; color: #86909C; line-height: 1.5; margin-top: 2px; }
 .cp-empty { color: #86909C; padding: 24px 0; text-align: center; }
 .cp-devices { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
 .cp-device { border: 1px solid #EDEFF3; border-radius: 10px; padding: 14px; background: #FAFBFC; }

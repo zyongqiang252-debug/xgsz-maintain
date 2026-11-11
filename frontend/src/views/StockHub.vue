@@ -10,10 +10,10 @@
       <el-tab-pane label="领用审批" name="requisitions" lazy>
         <component :is="Requisitions" :key="'rq-' + rev.requisitions" />
       </el-tab-pane>
-      <el-tab-pane v-if="isSupervisor" label="盘点" name="stocktakes" lazy>
+      <el-tab-pane label="盘点" name="stocktakes" lazy>
         <component :is="Stocktakes" :key="'st-' + rev.stocktakes" />
       </el-tab-pane>
-      <el-tab-pane v-if="isSupervisor" label="仓库与库位" name="warehouses" lazy>
+      <el-tab-pane label="仓库与库位" name="warehouses" lazy>
         <component :is="Warehouses" :key="'wh-' + rev.warehouses" />
       </el-tab-pane>
     </el-tabs>
@@ -33,16 +33,8 @@ const Requisitions = defineAsyncComponent(() => import('./RequisitionCenter.vue'
 const Stocktakes = defineAsyncComponent(() => import('./StocktakeCenter.vue'))
 const Warehouses = defineAsyncComponent(() => import('./WarehouseCenter.vue'))
 
-const currentUser = (() => {
-  try { return JSON.parse(localStorage.getItem('current_user') || '{}') } catch { return {} }
-})()
-const isSupervisor = currentUser.role === 'ADMIN' || currentUser.role === 'SUPERVISOR'
-
-const TABS = computed(() =>
-  isSupervisor
-    ? ['parts', 'movements', 'requisitions', 'stocktakes', 'warehouses']
-    : ['parts', 'movements', 'requisitions'],
-)
+// 五个 tab 对所有角色开放；其中「仓库与库位」对技术员是只读，「盘点」里技术员可录入实盘但不能建单/审批
+const TABS = computed(() => ['parts', 'movements', 'requisitions', 'stocktakes', 'warehouses'])
 const initial = String(route.query.tab || '')
 const tab = ref(TABS.value.includes(initial) ? initial : 'parts')
 

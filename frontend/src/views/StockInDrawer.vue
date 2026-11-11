@@ -38,7 +38,7 @@
         <PhotoUpload v-model="form.attachments" />
       </el-form-item>
 
-      <el-form-item label="本次单价（元）">
+      <el-form-item v-if="canSetPrice" label="本次单价（元）">
         <el-input-number v-model="form.unitPrice" :min="0" :precision="2" :step="10" style="width: 100%" />
         <div class="field-tip">不填则沿用备件台账上的单价</div>
       </el-form-item>
@@ -70,6 +70,14 @@ const props = defineProps({
   partId: { type: Number, default: null },
 })
 const emit = defineEmits(['update:modelValue', 'done'])
+
+// 单价属于成本口径：技术员入库不能改价，沿用台账单价
+const canSetPrice = (() => {
+  try {
+    const role = JSON.parse(localStorage.getItem('current_user') || '{}').role
+    return role === 'ADMIN' || role === 'SUPERVISOR'
+  } catch { return false }
+})()
 
 const partOptions = ref([])
 const partLoading = ref(false)

@@ -7,64 +7,87 @@
         <el-tag :type="slaTagType" size="small" effect="light">{{ slaText }}</el-tag>
         <span class="sla-item" v-if="form.response_due_at">响应截止 {{ fmt(form.response_due_at) }}</span>
         <span class="sla-item" v-if="form.resolve_due_at">修复截止 {{ fmt(form.resolve_due_at) }}</span>
-        <el-divider direction="vertical" />
-        <span class="sla-item">人工 <b>{{ money(form.labor_cost) }}</b></span>
-        <span class="sla-item">备件 <b>{{ money(form.parts_cost) }}</b></span>
-        <span class="sla-item">合计 <b class="sla-total">{{ money(form.total_cost) }}</b></span>
+        <el-tooltip placement="bottom" effect="dark" raw-content>
+          <template #content>
+            响应/修复截止 = 创建时间 + 优先级时限<br />
+            紧急 2/8h、高 4/24h、中 8/48h、低 24/72h<br />
+            客户合同时限优先；挂起时长在恢复时自动顺延截止时间
+          </template>
+          <el-icon class="sla-help"><QuestionFilled /></el-icon>
+        </el-tooltip>
+        <template v-if="canSeeCost && hasCost">
+          <el-divider direction="vertical" />
+          <span class="sla-item">人工 <b>{{ money(form.labor_cost) }}</b></span>
+          <span class="sla-item">备件 <b>{{ money(form.parts_cost) }}</b></span>
+          <span class="sla-item">合计 <b class="sla-total">{{ money(form.total_cost) }}</b></span>
+        </template>
         <template v-if="form.satisfaction_score">
           <el-divider direction="vertical" />
           <span class="sla-item">满意度 <b>{{ form.satisfaction_score }} 分</b>
             <span v-if="form.satisfaction_comment" class="sla-comment">「{{ form.satisfaction_comment }}」</span>
           </span>
         </template>
-        <el-button
-          v-else-if="['COMPLETED', 'ARCHIVED'].includes(form.status)"
-          size="small" type="primary" plain class="sla-rate-btn" @click="openFeedback"
-        >报修人评价</el-button>
       </div>
       <el-card shadow="never" class="detail-card">
         <div class="detail-header">
-          <h3>{{ form.work_order_no }}</h3>
-          <div class="head-right">
-            <el-button
-              v-if="['SUBMITTED', 'ASSIGNED', 'ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(form.status) && canDispatch"
-              type="primary" plain size="small" @click="openDispatch"
-            >{{ form.status === 'SUBMITTED' ? '派工' : '改派' }}</el-button>
-            <el-button
-              v-if="form.status === 'SUBMITTED' && canClaim"
-              type="primary" size="small" :loading="claiming" @click="claimTask"
-            >领取任务</el-button>
-            <el-button
-              v-if="form.status === 'ASSIGNED' && isMyTask && !canDispatch"
-              type="primary" plain size="small" @click="openDispatch"
-            >转派</el-button>
-            <el-button
-              v-if="form.status === 'ASSIGNED' && isMyTask && !canDispatch"
-              type="primary" size="small" :loading="accepting" @click="acceptAssignment"
-            >接受</el-button>
-            <el-button
-              v-if="form.status === 'ASSIGNED' && isMyTask && !canDispatch"
-              type="danger" plain size="small" @click="rejectAssignment"
-            >拒收</el-button>
-            <el-button
-              v-if="['ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(form.status)"
-              type="primary" size="small" :loading="starting" @click="startProcessing"
-            >{{ startActionLabel }}</el-button>
-            <el-button
-              v-if="canHold"
-              size="small" :type="form.is_on_hold ? 'success' : 'warning'" plain
-              :loading="holdSaving" @click="onHoldAction"
-            >{{ form.is_on_hold ? '恢复处理' : '挂起' }}</el-button>
-            <el-button v-if="canRma" size="small" plain @click="openRma">RMA</el-button>
-            <el-tag v-if="form.is_on_hold" type="warning" effect="dark" size="small">挂起 · {{ holdLabel }}</el-tag>
-            <el-button size="small" :loading="printing" @click="printPdf">打印 / PDF</el-button>
+          <div class="head-left">
+            <h3>{{ form.work_order_no }}</h3>
+            <el-tag :type="statusTagType" size="small" effect="light" class="status-pill">{{ statusGroupLabel }}</el-tag>
+            <el-tag v-if="form.is_on_hold" type="warning" effect="light" size="small">挂起 · {{ holdLabel }}</el-tag>
             <el-tag v-if="form.transfer_from_name" type="warning" effect="plain" size="small">转派自 {{ form.transfer_from_name }}</el-tag>
-            <el-tag :type="statusTagType" size="large">{{ statusGroupLabel }}</el-tag>
+          </div>
+          <div class="head-right">
+            <div class="wo-actions">
+              <el-button
+                v-if="['SUBMITTED', 'ASSIGNED', 'ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(form.status) && canDispatch"
+                type="primary" plain size="small" @click="openDispatch"
+              >{{ form.status === 'SUBMITTED' ? '派工' : '改派' }}</el-button>
+              <el-button
+                v-if="form.status === 'SUBMITTED' && canClaim"
+                type="primary" size="small" :loading="claiming" @click="claimTask"
+              >领取任务</el-button>
+              <el-button
+                v-if="['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(form.status) && isMyTask && !canDispatch"
+                plain size="small" @click="openDispatch"
+              >转派</el-button>
+              <el-button
+                v-if="form.status === 'ASSIGNED' && isMyTask && !canDispatch"
+                type="primary" size="small" :loading="accepting" @click="acceptAssignment"
+              >接受</el-button>
+              <el-button
+                v-if="form.status === 'ASSIGNED' && isMyTask && !canDispatch"
+                type="danger" plain size="small" @click="rejectAssignment"
+              >拒收</el-button>
+              <el-button
+                v-if="['ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(form.status) && (isMyTask || canDispatch)"
+                type="primary" size="small" :loading="starting" @click="startProcessing"
+              >{{ startActionLabel }}</el-button>
+              <el-button
+                v-if="['ARCHIVING', 'COMPLETED'].includes(form.status) && (isMyTask || isAdminUser)"
+                type="primary" size="small" :loading="archiving" @click="openArchiveDialog"
+              >归档</el-button>
+              <el-button
+                v-if="canHold"
+                size="small" :type="form.is_on_hold ? 'success' : 'warning'" plain
+                :loading="holdSaving" @click="onHoldAction"
+              >{{ form.is_on_hold ? '恢复处理' : '挂起' }}</el-button>
+              <el-button v-if="canRma" plain size="small" @click="openRma">RMA</el-button>
+              <el-button
+                v-if="canCompleteRepair"
+                type="primary" size="small" @click="goEdit"
+              >填写结果并完成</el-button>
+              <el-button
+                v-if="canEditWorkOrder && form.status !== 'IN_PROGRESS'"
+                plain size="small" @click="goEdit"
+              >编辑</el-button>
+              <span class="wo-actions-sep"></span>
+              <el-button plain size="small" :loading="printing" @click="printPdf">打印 / PDF</el-button>
+            </div>
           </div>
         </div>
         <el-descriptions :column="2" border>
           <el-descriptions-item label="故障描述" :span="2">{{ form.fault_description || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="故障码">{{ displayFaultCodes || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="displayFaultCodes" label="故障码">{{ displayFaultCodes }}</el-descriptions-item>
           <el-descriptions-item v-if="form.customer_name" label="客户">
             {{ form.customer_name }}<span v-if="form.customer_company">（{{ form.customer_company }}）</span>
           </el-descriptions-item>
@@ -91,13 +114,15 @@
               </div>
             </el-descriptions-item>
           </template>
-          <el-descriptions-item label="服务器类型">{{ form.device_type || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="机房位置">{{ form.location || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="故障分类">{{ form.fault_phenomenon_type || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="故障 GPU">{{ form.gpu_index || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="故障件 SN">{{ form.fault_device_sn || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="form.device_type" label="服务器类型">{{ form.device_type }}</el-descriptions-item>
+          <el-descriptions-item v-if="form.location" label="机房位置">{{ form.location }}</el-descriptions-item>
+          <el-descriptions-item v-if="form.fault_object" label="涉及对象">{{ form.fault_object }}</el-descriptions-item>
+          <el-descriptions-item v-if="form.fault_category" label="故障类别">{{ form.fault_category }}</el-descriptions-item>
+          <el-descriptions-item v-if="form.fault_phenomenon_type" label="故障现象分类">{{ form.fault_phenomenon_type }}</el-descriptions-item>
+          <el-descriptions-item v-if="form.gpu_index" label="故障 GPU">{{ form.gpu_index }}</el-descriptions-item>
+          <el-descriptions-item v-if="form.fault_device_sn" label="故障件 SN">{{ form.fault_device_sn }}</el-descriptions-item>
           <el-descriptions-item label="服务方式">
-            {{ { REMOTE: '远程处理', SITE: '现场处理', RMA: '返厂维修', VENDOR: '第三方现场' }[form.service_mode] || '-' }}
+            {{ { REMOTE: '远程处理', SITE: '现场处理', RMA: '返厂维修', VENDOR: '第三方现场' }[form.service_mode] || '待确认' }}
             <el-tag v-if="form.need_rma" size="small" type="warning" style="margin-left:6px">需返厂</el-tag>
           </el-descriptions-item>
           <el-descriptions-item v-if="form.customer_id" label="客户验收">
@@ -116,50 +141,145 @@
           <el-descriptions-item v-if="form.rma_vendor || form.rma_no" label="RMA">
             {{ form.rma_vendor || '-' }} / {{ form.rma_no || '-' }} / {{ rmaStatusLabel(form.rma_status) }}
           </el-descriptions-item>
-          <el-descriptions-item label="技术员">{{ technicianName || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="故障现象" :span="2">
-            <pre class="detail-pre">{{ form.fault_phenomenon || '-' }}</pre>
+          <el-descriptions-item v-if="form.reporter_name || form.created_by_name || form.customer_id" label="报修人">
+            <template v-if="form.reporter_name || form.created_by_name">
+            {{ form.reporter_name || form.created_by_name }}
+            <span v-if="!form.reporter_name && form.created_by_department" class="hint"> · {{ form.created_by_department }}</span>
+            </template>
+            <span v-else>{{ form.customer_contact_name || form.customer_name }}<span class="hint"> · 客户</span></span>
+            <el-tag v-if="form.reporter_name && form.created_by_name && form.reporter_name !== form.created_by_name"
+                    size="small" type="info" effect="plain" style="margin-left:6px">
+              代报：{{ form.created_by_name }}
+            </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="附件" :span="2">
-            <div v-if="!attachments.length">-</div>
-            <div v-if="attachments.length" class="attach-gallery">
-              <div v-for="(f, i) in attachments" :key="i" class="attach-item">
-                <img v-if="f.type === 'image'" :src="f.url" class="attach-thumb attach-clickable"
-                     title="点击查看大图" @click="openPreview(f.url)" />
-                <video v-if="f.type !== 'image'" :src="f.url" class="attach-thumb" controls />
-                <span class="attach-name">{{ f.name }}</span>
-              </div>
-            </div>
+          <el-descriptions-item v-if="claimTime" label="领取时间">{{ fmt(claimTime) }}</el-descriptions-item>
+          <el-descriptions-item v-if="technicianName && technicianName !== '-'" label="技术员">{{ technicianName }}</el-descriptions-item>
+          <el-descriptions-item v-if="form.fault_phenomenon" label="故障现象" :span="2">
+            <pre class="detail-pre">{{ form.fault_phenomenon }}</pre>
           </el-descriptions-item>
-          <el-descriptions-item label="根本原因分类">{{ form.root_cause_type || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="维修结果">
-            <div v-if="form.repair_result">
-              <el-tag :type="repairResultTagType" size="small">{{ repairResultLabel }}</el-tag>
-            </div>
-            <div v-if="!form.repair_result">-</div>
+          <el-descriptions-item v-if="form.root_cause_type" label="根本原因分类">{{ form.root_cause_type }}</el-descriptions-item>
+          <el-descriptions-item v-if="form.repair_result" label="维修结果">
+            <el-tag :type="repairResultTagType" size="small">{{ repairResultLabel }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="原因分析" :span="2">
-            <pre class="detail-pre">{{ form.root_cause || '-' }}</pre>
+          <el-descriptions-item v-if="form.root_cause" label="原因分析" :span="2">
+            <pre class="detail-pre">{{ form.root_cause }}</pre>
           </el-descriptions-item>
-          <el-descriptions-item label="处理步骤" :span="2">
-            <pre class="detail-pre">{{ form.solution_steps || '-' }}</pre>
+          <el-descriptions-item v-if="form.solution_steps" label="处理步骤" :span="2">
+            <pre class="detail-pre">{{ form.solution_steps }}</pre>
           </el-descriptions-item>
           <template v-if="form.repair_result === 'TEMPORARY_FIX'">
             <el-descriptions-item label="后续计划" :span="2">
               <pre class="detail-pre">{{ form.follow_up_plan || '-' }}</pre>
             </el-descriptions-item>
           </template>
-          <el-descriptions-item label="工时（小时）">{{ form.work_hours != null ? form.work_hours.toFixed(1) : '-' }}</el-descriptions-item>
-          <el-descriptions-item label="维修时间">
-            {{ form.start_time ? dayjs(form.start_time).format('YYYY-MM-DD HH:mm') : '-' }}
-            ~ {{ form.end_time ? dayjs(form.end_time).format('YYYY-MM-DD HH:mm') : '-' }}
+          <el-descriptions-item v-if="form.work_hours != null" label="工时（小时）">{{ form.work_hours.toFixed(1) }}</el-descriptions-item>
+          <el-descriptions-item v-if="form.collaborators && form.collaborators.length" label="协作人" :span="2">
+            {{ form.collaborators.map(c => c.name).join('、') }}
           </el-descriptions-item>
-          <el-descriptions-item label="协作人" :span="2">
-            {{ (form.collaborators && form.collaborators.length) ? form.collaborators.map(c => c.name).join('、') : '-' }}
+        </el-descriptions>
+
+        <!-- 处理进度：左列时间轴 + 状态胶囊，当前节点单独标记 -->
+        <div v-if="progressRows.length" class="wo-block">
+          <div class="wo-block-title">
+            处理进度
+            <span class="wo-block-count">{{ progressRows.length }}</span>
+          </div>
+          <div class="wo-timeline">
+            <!-- 记录多时默认只显示最近 8 条，避免把下面的附件区挤到很远 -->
+            <div v-if="progressRows.length > TL_MAX" class="wo-tl-fold">
+              <el-button link type="primary" size="small" @click="tlExpanded = !tlExpanded">
+                {{ tlExpanded ? '收起，只看最近 ' + TL_MAX + ' 条' : '更早的 ' + (progressRows.length - TL_MAX) + ' 条已折叠，展开' }}
+              </el-button>
+            </div>
+            <template v-for="lg in tlRows" :key="lg.id">
+              <div v-if="lg._date" class="wo-tl-date"><span>{{ lg._date }}</span></div>
+              <div class="wo-tl-item" :class="{ 'is-last': lg._isLast }">
+                <div class="wo-tl-time" :title="fmtFull(lg.created_at)">{{ lg._time }}</div>
+                <div class="wo-tl-axis">
+                  <span
+                    class="wo-tl-dot"
+                    :class="['tl-' + tlTone(lg.to_status), { 'is-now': lg._isLast, 'is-same': lg._noChange }]"
+                  ></span>
+                </div>
+                <div class="wo-tl-body">
+                  <div class="wo-tl-line">
+                    <span
+                      class="wo-tl-pill"
+                      :class="['tl-pill-' + tlTone(lg.to_status), { 'is-same': lg._noChange }]"
+                    >
+                      {{ statusMap[lg.to_status] || lg.to_status }}
+                    </span>
+                    <span v-if="lg._isLast" class="wo-tl-now">当前</span>
+                    <span class="wo-tl-who">
+                      <span class="wo-tl-actor">{{ lg.operator_name || '系统' }}</span>
+                      <span class="wo-tl-sep">·</span>
+                      <span>{{ sourceLabel(lg.source) }}</span>
+                    </span>
+                    <span v-if="lg._delta" class="wo-tl-delta" title="距上一步">{{ lg._delta }}</span>
+                  </div>
+                  <div v-if="lg.remark" class="wo-tl-remark">{{ lg.remark }}</div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- 现场照片 / 附件：汇总报修附件、处理附件、各节点上传的附件（始终可见，无附件给空态） -->
+        <div class="wo-block">
+          <div class="wo-block-title">
+            现场照片 / 附件
+            <span v-if="allAttachments.length" class="wo-block-count">{{ allAttachments.length }}</span>
+            <el-button
+              v-if="canEditWorkOrder" link type="primary" class="wo-block-action"
+              @click="openUploadDialog"
+            >上传附件</el-button>
+          </div>
+          <div v-if="!allAttachments.length" class="wo-attach-empty">
+            暂无附件。点右上角「上传附件」直接传照片/视频（单文件 ≤ 50MB），也可以点「编辑」在表单里批量补。
+          </div>
+          <div v-else class="wo-attach-grid">
+            <div v-for="(f, i) in allAttachments" :key="i" class="wo-attach-item">
+              <img
+                v-if="isImageFile(f)" :src="f.url" class="wo-attach-thumb wo-attach-clickable"
+                title="点击查看大图" @click="openPreview(f.url)"
+              />
+              <video v-else :src="f.url" class="wo-attach-thumb" controls preload="metadata" />
+              <div class="wo-attach-meta">
+                <span class="wo-attach-name" :title="f.name">{{ f.name }}</span>
+                <span v-if="f.stage" class="wo-attach-stage">{{ f.stage }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 领用备件（有才显示） -->
+        <div v-if="usedParts.length" class="wo-block">
+          <div class="wo-block-title">领用备件</div>
+          <div class="wo-parts">
+            <div v-for="(p, i) in usedParts" :key="i" class="wo-part-item">
+              <span class="wo-part-name">{{ p.name }}</span>
+              <span v-if="p.code" class="wo-part-code">{{ p.code }}</span>
+              <span class="wo-part-count">× {{ p.count }}</span>
+              <span v-if="canSeeCost && p.unit_price != null" class="wo-part-price">单价 {{ money(p.unit_price) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 关键时间：创建 / 派单 / 领取 / 开始 / 完成（截止时间见顶部 SLA 条，不重复） -->
+        <el-descriptions :column="timeColCount" border size="small" class="time-desc">
+          <el-descriptions-item label="创建时间">{{ fmtFull(form.created_at) }}</el-descriptions-item>
+          <el-descriptions-item v-if="form.dispatched_at" label="派单时间">{{ fmtFull(form.dispatched_at) }}</el-descriptions-item>
+          <el-descriptions-item v-if="claimTime || form.status === 'ASSIGNED'" label="领取/接单">
+            {{ claimTime ? fmtFull(claimTime) : '待接受' }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="form.start_time" label="开始维修">{{ fmtFull(form.start_time) }}</el-descriptions-item>
+          <el-descriptions-item v-if="form.resolved_at" label="完成时间">{{ fmtFull(form.resolved_at) }}</el-descriptions-item>
+          <el-descriptions-item v-if="form.hold_total_minutes" label="挂起累计">
+            {{ form.hold_total_minutes }} 分钟
           </el-descriptions-item>
         </el-descriptions>
         <div class="detail-footer">
-          <el-button type="primary" @click="$router.push('/work-orders')">返回列表</el-button>
+          <el-button plain @click="goBackToList">{{ backLabel }}</el-button>
         </div>
       </el-card>
 
@@ -237,6 +357,32 @@
       </template>
     </el-dialog>
 
+    <!-- 查看页直接上传附件：独立小弹窗，不必进整页编辑态（原「去上传」只是跳编辑页，等于没做的事） -->
+    <el-dialog v-model="uploadDialog.visible" title="上传现场附件" width="560px" append-to-body destroy-on-close>
+      <div class="up-dialog">
+        <el-upload
+          drag
+          multiple
+          :show-file-list="false"
+          :http-request="uploadOne"
+          :before-upload="beforeUpload"
+          accept=".jpg,.jpeg,.png,.gif,.mp4,.mov,.avi,.webm"
+        >
+          <el-icon class="up-icon"><UploadFilled /></el-icon>
+          <div class="up-text">把照片拖到这里，或<em>点击选择</em></div>
+          <div class="up-sub">JPG / PNG / GIF / MP4，单文件 ≤ 50MB，可多选</div>
+        </el-upload>
+        <div class="up-note">
+          选完即上传并挂到本工单，<b>不需要再点保存</b>。
+          <span v-if="uploadDialog.count" class="up-done">本次已上传 {{ uploadDialog.count }} 个</span>
+          <span v-if="uploadDialog.busy" class="up-busy">上传中 {{ uploadDialog.busy }} 个…</span>
+        </div>
+      </div>
+      <template #footer>
+        <el-button type="primary" @click="uploadDialog.visible = false">完成</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 编辑模式 -->
     <template v-if="!isViewMode">
       <div class="work-order-form-head">
@@ -253,25 +399,30 @@
           </span>
         </div>
         <div class="work-order-form-actions">
-          <el-button
-            v-if="['SUBMITTED','ASSIGNED','ACCEPTED','ARRIVED','INSPECTING'].includes(form.status) && canDispatch"
-            type="primary" plain size="small" @click="openDispatch"
-          >{{ form.status === 'SUBMITTED' ? '派工' : '改派' }}</el-button>
-          <el-button v-if="form.status === 'SUBMITTED' && canClaim" type="primary" size="small"
-                     :loading="claiming" @click="claimTask">领取任务</el-button>
-          <template v-if="form.status === 'ASSIGNED' && isMyTask && !canDispatch">
-            <el-button type="primary" size="small" :loading="accepting" @click="acceptAssignment">接受</el-button>
-            <el-button type="danger" plain size="small" @click="rejectAssignment">拒收</el-button>
-          </template>
-          <el-button v-if="['ACCEPTED','ARRIVED','INSPECTING'].includes(form.status)"
-                     type="primary" size="small" :loading="starting" @click="startProcessing">
-            {{ startActionLabel }}
-          </el-button>
-          <el-button v-if="canHold" size="small" :type="form.is_on_hold ? 'success' : 'warning'" plain
-                     :loading="holdSaving" @click="onHoldAction">{{ form.is_on_hold ? '恢复处理' : '挂起' }}</el-button>
-          <el-button v-if="canRma" size="small" plain @click="openRma">RMA</el-button>
-          <el-button v-if="isNew" @click="viewDrafts">查看历史草稿</el-button>
-          <el-button type="primary" @click="router.push('/work-orders')">返回列表</el-button>
+          <div class="wo-actions">
+            <el-button
+              v-if="['SUBMITTED','ASSIGNED','ACCEPTED','ARRIVED','INSPECTING'].includes(form.status) && canDispatch"
+              type="primary" plain size="small" @click="openDispatch"
+            >{{ form.status === 'SUBMITTED' ? '派工' : '改派' }}</el-button>
+            <el-button v-if="form.status === 'SUBMITTED' && canClaim" type="primary" size="small"
+                       :loading="claiming" @click="claimTask">领取任务</el-button>
+            <el-button v-if="['ASSIGNED','ACCEPTED','ARRIVED','INSPECTING'].includes(form.status) && isMyTask && !canDispatch"
+                       plain size="small" @click="openDispatch">转派</el-button>
+            <template v-if="form.status === 'ASSIGNED' && isMyTask && !canDispatch">
+              <el-button type="primary" size="small" :loading="accepting" @click="acceptAssignment">接受</el-button>
+              <el-button type="danger" plain size="small" @click="rejectAssignment">拒收</el-button>
+            </template>
+            <el-button v-if="['ACCEPTED','ARRIVED','INSPECTING'].includes(form.status) && (isMyTask || canDispatch)"
+                       type="primary" size="small" :loading="starting" @click="startProcessing">
+              {{ startActionLabel }}
+            </el-button>
+            <el-button v-if="canHold" size="small" :type="form.is_on_hold ? 'success' : 'warning'" plain
+                       :loading="holdSaving" @click="onHoldAction">{{ form.is_on_hold ? '恢复处理' : '挂起' }}</el-button>
+            <el-button v-if="canRma" size="small" plain @click="openRma">RMA</el-button>
+            <el-button v-if="isNew" plain size="small" @click="viewDrafts">历史草稿</el-button>
+            <span class="wo-actions-sep"></span>
+            <el-button plain size="small" @click="goBackToList">{{ backLabel }}</el-button>
+          </div>
         </div>
       </div>
 
@@ -287,20 +438,18 @@
         <el-tag :type="slaTagType" size="small" effect="light">{{ slaText }}</el-tag>
         <span class="sla-item" v-if="form.response_due_at">响应截止 {{ fmt(form.response_due_at) }}</span>
         <span class="sla-item" v-if="form.resolve_due_at">修复截止 {{ fmt(form.resolve_due_at) }}</span>
-        <el-divider direction="vertical" />
-        <span class="sla-item">人工 <b>{{ money(form.labor_cost) }}</b></span>
-        <span class="sla-item">备件 <b>{{ money(form.parts_cost) }}</b></span>
-        <span class="sla-item">合计 <b class="sla-total">{{ money(form.total_cost) }}</b></span>
+        <template v-if="canSeeCost && hasCost">
+          <el-divider direction="vertical" />
+          <span class="sla-item">人工 <b>{{ money(form.labor_cost) }}</b></span>
+          <span class="sla-item">备件 <b>{{ money(form.parts_cost) }}</b></span>
+          <span class="sla-item">合计 <b class="sla-total">{{ money(form.total_cost) }}</b></span>
+        </template>
         <template v-if="form.satisfaction_score">
           <el-divider direction="vertical" />
           <span class="sla-item">满意度 <b>{{ form.satisfaction_score }} 分</b>
             <span v-if="form.satisfaction_comment" class="sla-comment">「{{ form.satisfaction_comment }}」</span>
           </span>
         </template>
-        <el-button
-          v-else-if="['COMPLETED', 'ARCHIVED'].includes(form.status)"
-          size="small" type="primary" plain class="sla-rate-btn" @click="openFeedback"
-        >报修人评价</el-button>
       </div>
       <div class="form-body">
         <!-- 录入模式切换：仅新建时显示 -->
@@ -466,21 +615,23 @@
           </el-alert>
         </template>
 
+        <el-alert
+          v-if="isNew || form.status === 'DRAFT'"
+          title="只填故障描述即可提交；知道是哪台服务器就选，集群/网络问题可不选服务器，填「涉及对象」即可"
+          type="info" :closable="false" show-icon style="margin-bottom:12px"
+        />
         <el-card shadow="never" class="form-card">
-          <el-form :model="form" label-width="110px" class="form-grid">
+          <el-form :model="form" label-width="118px" label-position="left" class="form-grid">
             <div class="form-section">
               <div class="section-header">基本信息</div>
-              <el-form-item label="工单编号">
-                <el-input v-model="form.work_order_no" disabled placeholder="系统自动生成" />
-              </el-form-item>
-              <el-form-item label="关联服务器" required>
+              <el-form-item label="关联服务器">
                 <el-select
                   v-model="form.device_id"
                   clearable
                   filterable
                   remote
                   :remote-method="searchDevices"
-                  placeholder="输入服务器名称 / SN 检索（会显示实时状态）"
+                  placeholder="选填：知道是哪台就搜；集群/网络问题可留空"
                   style="width:100%"
                   @change="onDeviceChange"
                 >
@@ -501,50 +652,63 @@
                     </div>
                   </el-option>
                 </el-select>
+                <div class="device-picker-hint">
+                  共 <b>{{ deviceTotal }}</b> 台设备
+                  <el-link type="primary" :underline="false" @click="$router.push('/devices')">查看设备台账</el-link>
+                </div>
               </el-form-item>
-              <el-form-item label="服务器类型">
+              <el-form-item label="涉及对象">
+                <el-input v-model="form.fault_object" maxlength="200" placeholder="选填：集群 A / 核心交换机 / IB 交换机 / 光模块链路 / 其他" />
+              </el-form-item>
+              <el-form-item v-if="form.device_id" label="服务器类型">
                 <el-input v-model="form.device_type" disabled placeholder="选择服务器后自动填充" />
               </el-form-item>
-              <el-form-item label="机房位置">
+              <el-form-item v-if="form.device_id" label="机房位置">
                 <el-input v-model="form.location" disabled placeholder="选择服务器后自动填充" />
-              </el-form-item>
-              <el-form-item label="技术员" required>
-                <el-input :model-value="technicianDisplay" disabled placeholder="当前登录账号" />
               </el-form-item>
             </div>
 
             <div class="form-section">
               <div class="section-header">
                 故障信息
-                <el-button size="small" type="warning" style="float:right" @click="askAI('fault')">AI 分析故障</el-button>
+                <el-button size="small" type="primary" plain style="float:right" @click="askAI('fault')">AI 分析故障</el-button>
               </div>
-              <el-form-item label="故障描述" required>
-                <el-input v-model="form.fault_description" type="textarea" :rows="3" placeholder="如：训练任务报 CUDA error，nvidia-smi 中 GPU3 消失，dmesg 出现 Xid 79" />
+              <el-form-item v-if="isNew || form.status === 'DRAFT'" label="影响程度">
+                <el-radio-group v-model="form.priority">
+                  <el-radio-button v-for="o in IMPACT_OPTIONS" :key="o.value" :value="o.value">
+                    {{ o.label }}
+                  </el-radio-button>
+                </el-radio-group>
+                <div class="cascader-hint">选填，默认「一般」；影响告警级别和 SLA 响应/修复时限</div>
               </el-form-item>
-
-              <el-form-item label="故障 GPU">
-                <el-select v-model="form.gpu_index" clearable filterable allow-create placeholder="选择或输入，如 GPU3 / 0-7" style="width: 100%">
-                  <el-option v-for="i in 8" :key="i" :label="`GPU${i - 1}`" :value="`GPU${i - 1}`" />
-                  <el-option label="整机 / 非单卡故障" value="整机" />
+              <el-form-item label="故障现象">
+                <el-select
+                  v-model="form.fault_phenomenon_type" clearable filterable allow-create
+                  placeholder="选填：选一个常见现象，也可不填" style="width:100%"
+                  @change="onFaultPhenomenonSelect"
+                >
+                  <el-option v-for="p in FAULT_PHENOMENA" :key="p.value" :label="p.label" :value="p.value" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="故障件 SN">
-                <el-input v-model="form.fault_device_sn" placeholder="出故障的 GPU 卡 / 内存条 / 电源模块序列号" />
+              <el-form-item label="故障描述" required>
+                <el-input v-model="form.fault_description" type="textarea" :rows="4" :placeholder="faultDescPlaceholder" />
+                <div class="cascader-hint">写清楚现象即可，系统会自动识别是 GPU、集群、网络、存储还是供电问题；不用先选分类</div>
               </el-form-item>
-              <el-form-item label="工单类型">
-                <el-select v-model="form.order_type" :disabled="!isNew" style="width:100%">
+              <el-form-item v-if="isNew" label="工单类型">
+                <el-select v-model="form.order_type" style="width:100%">
                   <el-option label="报修工单" value="REPAIR" />
                   <el-option label="保养工单" value="MAINTENANCE" />
                   <el-option label="点检工单" value="INSPECTION" />
                   <el-option label="交付 / 验收单" value="DELIVERY" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="服务方式">
+              <el-form-item v-if="!isNew" label="服务方式">
                 <el-radio-group v-model="form.service_mode">
                   <el-radio label="REMOTE">远程处理</el-radio>
                   <el-radio label="SITE">现场处理</el-radio>
                   <el-radio label="RMA">返厂维修</el-radio>
                 </el-radio-group>
+                <span v-if="!form.service_mode" class="hint" style="margin-left:8px">待确认（技术员接单时选择）</span>
               </el-form-item>
               <template v-if="form.order_type === 'DELIVERY'">
                 <el-form-item label="项目名称">
@@ -558,57 +722,72 @@
                   <el-date-picker v-model="form.power_on_at" type="datetime" style="width:100%" />
                 </el-form-item>
               </template>
-              <el-form-item label="需要返厂">
+              <el-form-item v-if="form.service_mode === 'RMA' || form.need_rma" label="需要返厂">
                 <el-switch v-model="form.need_rma" />
                 <span class="hint" style="margin-left:8px">勾选后会标记为需 RMA 的工单</span>
               </el-form-item>
             </div>
 
-            <div class="form-section">
+            <div v-if="showRepairFields" class="form-section">
               <div class="section-header">
                 诊断与维修
               </div>
               <el-form-item label="处理步骤" required>
-                <div class="solution-area">
-                  <el-input v-model="form.solution_steps" type="textarea" :rows="4" placeholder="1. 停机断电&#10;2. 拆除端盖检查轴承&#10;3. 更换同型号轴承并加注润滑脂" />
-                  <el-button size="small" type="primary" plain style="margin-top:8px" @click="openKnowledgeRef">
-                    从知识库引用
-                  </el-button>
-                </div>
-              </el-form-item>
-              <el-form-item label="维修时间" required>
-                <el-date-picker
-                  v-model="timeRange"
-                  type="datetimerange"
-                  start-placeholder="开始"
-                  end-placeholder="结束"
-                  style="width:100%"
-                  :disabled-date="disabledDate"
-                  @change="calcWorkHours"
-                />
-              </el-form-item>
-              <el-form-item label="工时（小时）">
-                <el-input :model-value="form.work_hours != null ? form.work_hours.toFixed(1) : ''" disabled placeholder="自动计算">
-                  <template #append>小时</template>
-                </el-input>
-              </el-form-item>
-              <el-form-item label="维修结果" required>
-                <el-radio-group v-model="form.repair_result" @change="onRepairResultChange">
-                  <el-radio value="PERMANENT_FIX">彻底修复</el-radio>
-                  <el-radio value="TEMPORARY_FIX">临时措施</el-radio>
-                  <el-radio value="UNABLE_FIX">未能修复</el-radio>
-                </el-radio-group>
-              </el-form-item>
-              <template v-if="form.repair_result === 'TEMPORARY_FIX'">
-                <el-form-item label="后续计划" required>
-                  <el-input v-model="form.follow_up_plan" type="textarea" :rows="2" placeholder="请填写后续处理计划，如：已订购配件，预计 3 天后到货更换" />
+                  <div class="solution-area">
+                    <el-input v-model="form.solution_steps" type="textarea" :rows="4" placeholder="1. 隔离节点并停机&#10;2. 更换故障 GPU / 清理散热风道&#10;3. 压测 30 分钟确认无 Xid" />
+                    <el-button size="small" type="primary" plain style="margin-top:8px" @click="openKnowledgeRef">
+                      从知识库引用
+                    </el-button>
+                  </div>
                 </el-form-item>
-              </template>
-              <template v-if="form.repair_result === 'UNABLE_FIX'">
-                <el-form-item label="未修复原因" required>
-                  <el-input v-model="form.follow_up_plan" type="textarea" :rows="2" placeholder="请说明未能修复的原因" />
+                <el-form-item label="维修时间" required>
+                  <el-date-picker
+                    v-model="timeRange"
+                    type="datetimerange"
+                    start-placeholder="开始"
+                    end-placeholder="结束"
+                    style="width:100%"
+                    :disabled-date="disabledDate"
+                    @change="calcWorkHours"
+                  />
                 </el-form-item>
-              </template>
+                <el-form-item label="工时（小时）">
+                  <el-input :model-value="form.work_hours != null ? form.work_hours.toFixed(1) : ''" disabled placeholder="自动计算">
+                    <template #append>小时</template>
+                  </el-input>
+                </el-form-item>
+                <el-form-item label="维修结果" required>
+                  <el-radio-group v-model="form.repair_result" @change="onRepairResultChange">
+                    <el-radio value="PERMANENT_FIX">彻底修复</el-radio>
+                    <el-radio value="TEMPORARY_FIX">临时措施</el-radio>
+                    <el-radio value="UNABLE_FIX">未能修复</el-radio>
+                  </el-radio-group>
+                </el-form-item>
+                <el-row :gutter="12">
+                  <el-col v-if="isGpuDevice" :span="12">
+                    <el-form-item v-if="isGpuFault" label="故障 GPU">
+                      <el-select v-model="form.gpu_index" clearable filterable allow-create placeholder="选填：如 GPU3 / 0-7 / 整机" style="width:100%">
+                        <el-option v-for="i in 8" :key="i" :label="`GPU${i - 1}`" :value="`GPU${i - 1}`" />
+                        <el-option label="整机 / 非单卡故障" value="整机" />
+                      </el-select>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="isGpuDevice ? 12 : 24">
+                    <el-form-item label="故障件 SN">
+                      <el-input v-model="form.fault_device_sn" placeholder="选填：故障部件 SN（内存 / 电源 / 硬盘 / 板卡等）" />
+                    </el-form-item>
+                  </el-col>
+                </el-row>
+                <template v-if="form.repair_result === 'TEMPORARY_FIX'">
+                  <el-form-item label="后续计划" required>
+                    <el-input v-model="form.follow_up_plan" type="textarea" :rows="2" placeholder="请填写后续处理计划，如：已订购配件，预计 3 天后到货更换" />
+                  </el-form-item>
+                </template>
+                <template v-if="form.repair_result === 'UNABLE_FIX'">
+                  <el-form-item label="未修复原因" required>
+                    <el-input v-model="form.follow_up_plan" type="textarea" :rows="2" placeholder="请说明未能修复的原因" />
+                  </el-form-item>
+                </template>
               <!-- 故障码：日志录入模式下复用顶部解析出的识别报警码，与日志区联动；标准录入使用故障码下拉 -->
               <el-form-item v-if="entryMode === 'error_code'" label="报警码（可选）">
                 <div class="ec-codes-row">
@@ -657,11 +836,70 @@
                       </span>
                     </el-option>
                   </el-select>
-                  <el-button size="small" type="warning" plain @click="faultCodeDialog.visible = true">
+                  <el-button size="small" type="primary" plain @click="faultCodeDialog.visible = true">
                     + 新增
                   </el-button>
                 </div>
                 <div class="cascader-hint">有就选，没有可留空；不确定故障码不用勉强编一个，故障描述写清楚即可</div>
+              </el-form-item>
+            </div>
+
+            <!-- 报修人提交的照片/语音：只读展示，不混进维修人员的现场附件 -->
+            <div v-if="reporterMedia.length" class="form-section">
+              <div class="section-header">报修人提交的照片 / 语音（只读）</div>
+              <div class="wo-attach-grid">
+                <div v-for="(f, i) in reporterMedia" :key="'rm-' + i" class="wo-attach-item">
+                  <img v-if="isImageFile(f)" :src="f.url" class="wo-attach-thumb wo-attach-clickable"
+                       @click="openPreview(f.url)" />
+                  <video v-else :src="f.url" class="wo-attach-thumb" controls preload="metadata" />
+                  <div class="wo-attach-meta"><span class="wo-attach-name">{{ f.name || '报修附件' }}</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 随单/历史附件（没有维修人标记的旧数据）：只读，避免被当成维修人员现场照片 -->
+            <div v-if="legacyAttachments.length" class="form-section">
+              <div class="section-header">随单附件（报修/历史提交，只读）</div>
+              <div class="wo-attach-grid">
+                <div v-for="(f, i) in legacyAttachments" :key="'lg-' + i" class="wo-attach-item">
+                  <img v-if="isImageFile(f)" :src="f.url" class="wo-attach-thumb wo-attach-clickable"
+                       @click="openPreview(f.url)" />
+                  <video v-else :src="f.url" class="wo-attach-thumb" controls preload="metadata" />
+                  <div class="wo-attach-meta"><span class="wo-attach-name">{{ f.name }}</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 现场附件：独立成节、始终可见。只放维修人员本次拍的照片/视频 -->
+            <div id="wo-upload-section" class="form-section attach-section">
+              <div class="section-header">
+                现场附件（维修人员填写）
+                <span v-if="attachments.length" class="attach-count">{{ attachments.length }}</span>
+                <span v-if="attachDirty" class="attach-dirty">未保存</span>
+              </div>
+              <el-form-item label="照片 / 视频">
+                <div class="attach-upload-wrap">
+                  <el-upload
+                    :http-request="uploadFile"
+                    :file-list="uploadFileList"
+                    list-type="picture-card"
+                    :on-remove="removeAttachment"
+                    :before-upload="beforeUpload"
+                    accept=".jpg,.jpeg,.png,.gif,.mp4,.mov,.avi,.webm"
+                    multiple
+                  >
+                    <el-icon><Plus /></el-icon>
+                  </el-upload>
+                  <div class="upload-hint">
+                    点方块选图，支持 JPG/PNG/GIF/MP4，单文件 ≤ 50MB，可多选。
+                    <template v-if="isNew">保存工单时一并写入。</template>
+                    <template v-else>上传只是把文件传上去，还要点「保存附件到工单」才会挂到本工单。</template>
+                  </div>
+                  <el-button
+                    v-if="attachDirty && !isNew" type="primary" size="small" plain
+                    :loading="saving" class="attach-save-btn" @click="handleSaveDraft"
+                  >保存附件到工单</el-button>
+                </div>
               </el-form-item>
             </div>
 
@@ -694,22 +932,8 @@
                         v-model="form.root_cause"
                         type="textarea"
                         :rows="3"
-                        :placeholder="rootCauseCascader.length ? '选填：根本原因的补充说明' : '请描述根本原因，如：电机轴承磨损导致径向间隙增大，长期缺油运行加速老化'"
+                        :placeholder="rootCauseCascader.length ? '选填：根本原因的补充说明' : '请描述根本原因，如：GPU 卡故障触发 Xid 79；散热风道堵塞导致降频'"
                       />
-                    </el-form-item>
-                    <el-form-item label="现场附件">
-                      <el-upload
-                        :http-request="uploadFile"
-                        :file-list="uploadFileList"
-                        list-type="picture-card"
-                        :on-remove="removeAttachment"
-                        :before-upload="beforeUpload"
-                        accept=".jpg,.jpeg,.png,.gif,.mp4,.mov,.avi,.webm"
-                        multiple
-                      >
-                        <el-icon><Plus /></el-icon>
-                      </el-upload>
-                      <div class="upload-hint">支持 JPG/PNG/GIF/MP4，单文件 ≤ 50MB</div>
                     </el-form-item>
                     <div class="supplement-sub">
                       <div class="section-header">备件记录</div>
@@ -731,39 +955,27 @@
         </el-card>
 
         <div class="form-footer">
-          <el-button type="info" @click="$router.back()">取消</el-button>
+          <el-button plain @click="$router.back()">取消</el-button>
           <el-button type="primary" plain :loading="saving" @click="handleSaveDraft">
             {{ saving ? '保存中...' : (isNew ? '保存草稿' : '保存修改') }}
           </el-button>
-          <template v-if="form.status === 'ARCHIVING'">
-            <el-button type="primary" :loading="archiving" @click="handleArchiveCheck">
-              {{ archiving ? '校验中...' : '工单归档' }}
-            </el-button>
-            <el-button type="success" :loading="archiving" @click="handleArchiveComplete" :disabled="!canArchiveComplete">
-              {{ archiving ? '归档中...' : '归档完成' }}
-            </el-button>
-          </template>
-          <template v-else>
-            <el-button type="warning" :loading="analyzing" @click="handleAnalyze">
+          <template v-if="!['ARCHIVING', 'COMPLETED'].includes(form.status)">
+            <el-button plain :loading="analyzing" @click="handleAnalyze">
               {{ analyzing ? 'AI 校验中...' : 'AI 校验' }}
             </el-button>
             <el-button v-if="isNew || form.status === 'DRAFT'" type="primary" :loading="submitting" @click="handleSubmitReport">
               {{ submitting ? '提交中...' : '提交报修' }}
             </el-button>
-            <el-button v-else-if="form.status === 'IN_PROGRESS'" type="success" :loading="submitting" @click="handleSubmit" :disabled="!canSubmit">
+            <el-button v-else-if="form.status === 'IN_PROGRESS' && (isMyTask || canDispatch)" type="primary" :loading="submitting" @click="handleSubmit" :disabled="!canSubmit">
               {{ submitting ? '提交中...' : '提交完成' }}
             </el-button>
           </template>
         </div>
-        <p v-if="!isNew && form.status === 'ARCHIVING' && form.customer_id && form.customer_accept_status !== 'ACCEPTED'" class="submit-hint warn">
+        <p v-if="!isNew && ['ARCHIVING', 'COMPLETED'].includes(form.status) && form.customer_id && form.customer_accept_status !== 'ACCEPTED'" class="submit-hint warn">
           客户尚未在门户确认解决，客户确认后才能完成归档
         </p>
-        <p v-else-if="!isNew && form.status === 'ARCHIVING'" class="submit-hint">
-          {{ archiveCheckResult
-              ? (archiveCheckResult.passed
-                  ? `归档校验通过（完成度 ${Math.round(archiveCheckResult.completeness * 100)}%），可点击「归档完成」`
-                  : `归档完成度不足（${Math.round(archiveCheckResult.completeness * 100)}%），缺失：${(archiveCheckResult.missing_fields || []).join('、')}`)
-              : '请先点击「工单归档」完成校验，再点击「归档完成」' }}
+        <p v-else-if="!isNew && ['ARCHIVING', 'COMPLETED'].includes(form.status)" class="submit-hint">
+          保存修改后返回详情，在右上角点「归档」：先校验完成度，通过后在弹窗里确认归档
         </p>
         <p v-else-if="['SUBMITTED','ASSIGNED','ACCEPTED','ARRIVED','INSPECTING'].includes(form.status) && !isNew" class="submit-hint">
           当前工单等待推进：主管先「派工」，维修员点右上角「开始处理」即可进入处理中（接单/到场/检查自动记录），完成后点「提交完成」
@@ -930,6 +1142,58 @@
         <el-button type="primary" :loading="rmaDlg.saving" @click="saveRma">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="submitChoice.visible" title="提交报修" width="480px" append-to-body :close-on-click-modal="false">
+      <div class="submit-choice-title">这张工单提交后由谁处理？</div>
+      <div class="submit-choice-desc">
+        选择「我自己处理」会直接接单，进入「我的工单」；选择「放入工单池」则不占负责人，等待主管派工或其他技术员领取。
+      </div>
+      <template #footer>
+        <el-button plain @click="submitChoice.visible = false">取消</el-button>
+        <el-button plain type="primary" :loading="submitting" @click="doSubmitReport(true)">放入工单池</el-button>
+        <el-button type="primary" :loading="submitting" @click="doSubmitReport(false)">我自己处理</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="archiveDialog.visible" title="工单归档" width="560px" append-to-body>
+      <template v-if="archiveDialog.result">
+        <el-result
+          :icon="archiveDialog.result.passed ? 'success' : 'warning'"
+          :title="archiveDialog.result.passed ? '归档校验通过' : '归档完成度不足'"
+        >
+          <template #sub-title>
+            <div>当前完成度：{{ Math.round((archiveDialog.result.completeness || 0) * 100) }}%</div>
+            <div v-if="archiveDialog.result.missing_fields && archiveDialog.result.missing_fields.length" style="margin-top:6px">
+              缺失项：{{ archiveDialog.result.missing_fields.map(f => fieldLabelMap[f] || f).join('、') }}
+            </div>
+          </template>
+        </el-result>
+        <el-alert
+          v-if="form.customer_id && form.customer_accept_status !== 'ACCEPTED'"
+          type="warning" :closable="false" show-icon
+          title="客户尚未在门户确认解决，客户确认后才能完成归档"
+        />
+      </template>
+      <template #footer>
+        <el-button plain @click="archiveDialog.visible = false">取消</el-button>
+        <el-button
+          v-if="archiveDialog.result && !archiveDialog.result.passed && canEditWorkOrder"
+          plain type="primary" @click="goEditFromArchive"
+        >去补充</el-button>
+        <el-button type="primary" :loading="archiving" :disabled="!canArchiveComplete" @click="handleArchiveComplete">
+          {{ archiving ? '归档中...' : '确认归档' }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <ServiceModeDialog
+      v-model="serviceDialog.visible"
+      :title="serviceDialog.action === 'claim' ? '领取任务' : '确认接单'"
+      :confirm-text="serviceDialog.action === 'claim' ? '确认领取' : '确认接单'"
+      :work-order-no="form.work_order_no || ''"
+      :loading="serviceDialog.loading"
+      @confirm="onServiceConfirm"
+    />
   </div>
 </template>
 
@@ -938,9 +1202,12 @@ import { downloadFile } from '../utils/download'
 import { ref, computed, reactive, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, QuestionFilled, UploadFilled } from '@element-plus/icons-vue'
 import request from '../api'
 import dayjs from 'dayjs'
+import ServiceModeDialog from '../components/ServiceModeDialog.vue'
+import { IMPACT_OPTIONS } from '../config/impact'
+import { FAULT_PHENOMENA } from '../config/faultPhenomena'
 
 const route = useRoute()
 const router = useRouter()
@@ -953,6 +1220,7 @@ const feedbackComment = ref('')
 const feedbackSaving = ref(false)
 
 const fmt = (t) => (t ? dayjs(t).format('MM-DD HH:mm') : '-')
+const fmtFull = (t) => (t ? dayjs(t).format('YYYY-MM-DD HH:mm') : '—')
 const money = (v) => (v || v === 0 ? `${Number(v).toFixed(0)} 元` : '—')
 
 
@@ -974,10 +1242,39 @@ const slaTagType = computed(() => {
 })
 
 const currentUserId = (() => { try { return JSON.parse(localStorage.getItem('current_user') || '{}').id } catch { return null } })()
+const currentUserRole = (() => { try { return JSON.parse(localStorage.getItem('current_user') || '{}').role || '' } catch { return '' } })()
+// 返回列表时回到进入详情前所在的工单 tab（工单池进来的回工单池，我的工单进来的回我的工单）
+const backLabel = computed(() => route.query.from === 'customers' ? '返回客户' : '返回列表')
+const goBackToList = () => {
+  if (route.query.from === 'customers') {
+    const cid = route.query.customer_id
+    // 从客户详情的「工单记录」点进来：关掉详情回到那个客户的工单页，不落到客户列表/工单中心
+    router.push(cid ? `/customers/${cid}` : '/customers')
+    return
+  }
+  const supervise = ['ADMIN', 'SUPERVISOR'].includes(currentUserRole)
+  const valid = supervise ? ['list', 'progress', 'import'] : ['mine', 'pool', 'import']
+  const fallback = supervise ? 'list' : 'mine'
+  let tab = ''
+  try { tab = sessionStorage.getItem('wo_last_tab') || '' } catch { /* ignore */ }
+  router.push(`/orders?tab=${valid.includes(tab) ? tab : fallback}`)
+}
+// 成本只对管理员/主管展示，且没有实际成本时不占位置（避免“人工 0 / 备件 0 / 合计 0”的噪声）
+const canSeeCost = computed(() => ['ADMIN', 'SUPERVISOR'].includes(currentUserRole))
+const hasCost = computed(() => {
+  return Number(form.labor_cost || 0) > 0
+    || Number(form.parts_cost || 0) > 0
+    || Number(form.total_cost || 0) > 0
+})
 const canDispatch = computed(() => {
   try {
     const u = JSON.parse(localStorage.getItem('current_user') || '{}')
     return ['ADMIN', 'SUPERVISOR'].includes(u.role)
+  } catch { return false }
+})
+const isAdminUser = computed(() => {
+  try {
+    return JSON.parse(localStorage.getItem('current_user') || '{}').role === 'ADMIN'
   } catch { return false }
 })
 
@@ -993,42 +1290,76 @@ const isMyTask = computed(() => {
     return !!u.id && (form.technician_id === u.id || form.assignee_id === u.id)
   } catch { return false }
 })
+// 改派后新负责人尚未接单：旧接单时间不再展示，改为「待接受」
+const claimTime = computed(() => {
+  if (!form.first_response_at) return ''
+  if (form.status === 'ASSIGNED' && form.dispatched_at
+      && new Date(form.dispatched_at) > new Date(form.first_response_at)) return ''
+  return form.first_response_at
+})
 
 const claiming = ref(false)
-const claimTask = async () => {
+const accepting = ref(false)
+const serviceDialog = reactive({ visible: false, action: '', loading: false })
+// 服务方式由技术员在接单/领取时确认，创建阶段不再出现
+const claimTask = () => {
+  serviceDialog.action = 'claim'
+  serviceDialog.visible = true
+}
+const acceptAssignment = () => {
+  serviceDialog.action = 'accept'
+  serviceDialog.visible = true
+}
+const onServiceConfirm = async ({ service_mode, remark }) => {
+  serviceDialog.loading = true
   try {
-    await ElMessageBox.confirm(`确认领取工单 ${form.work_order_no}？领取后由你负责。`, '领取任务',
-      { type: 'info', confirmButtonText: '确认领取' })
-  } catch { return }
+    const ok = serviceDialog.action === 'claim'
+      ? await doClaim(service_mode, remark)
+      : await doAccept(service_mode, remark)
+    if (ok) serviceDialog.visible = false
+  } finally {
+    serviceDialog.loading = false
+  }
+}
+const doClaim = async (service_mode, remark) => {
   claiming.value = true
   try {
     const u = JSON.parse(localStorage.getItem('current_user') || '{}')
     await request.post(`/work-orders/${form.id}/transition`, {
-      to_status: 'ASSIGNED', technician_id: u.id, source: 'TECH_CLAIM',
+      to_status: 'ASSIGNED', technician_id: u.id, service_mode, source: 'TECH_CLAIM',
     })
-    ElMessage.success('领取成功')
+    let autoAccepted = true
+    try {
+      await request.post(`/work-orders/${form.id}/transition`, {
+        to_status: 'ACCEPTED', service_mode, remark, source: 'TECH_ACCEPT',
+      })
+    } catch {
+      autoAccepted = false
+    }
+    ElMessage.success(autoAccepted ? '领取成功，已自动接单（处理中）' : '已领取，请点「接受」完成接单')
     const res = await request.get(`/work-orders/${form.id}`)
     Object.assign(form, res)
+    return autoAccepted
   } catch (e) {
     ElMessage.error(e?.response?.data?.detail || '领取失败')
+    return false
   } finally {
     claiming.value = false
   }
 }
-
-const accepting = ref(false)
-// 接受派工：ASSIGNED → ACCEPTED
-const acceptAssignment = async () => {
+const doAccept = async (service_mode, remark) => {
   accepting.value = true
   try {
     await request.post(`/work-orders/${form.id}/transition`, {
-      to_status: 'ACCEPTED', source: 'TECH_ACCEPT',
+      to_status: 'ACCEPTED', service_mode, remark, source: 'TECH_ACCEPT',
     })
     ElMessage.success('已接单')
     const res = await request.get(`/work-orders/${form.id}`)
     Object.assign(form, res)
+    return true
   } catch (e) {
     ElMessage.error(e?.response?.data?.detail || '接单失败')
+    return false
   } finally {
     accepting.value = false
   }
@@ -1062,12 +1393,7 @@ const rejectAssignment = async () => {
 }
 
 const dispatchTitle = computed(() => (!canDispatch.value && form.status === 'ASSIGNED') ? '转派工单' : (form.status === 'SUBMITTED' ? '工单派工' : '工单改派'))
-const startActionLabel = computed(() => ({
-  ASSIGNED: '开始处理',
-  ACCEPTED: form.service_mode === 'SITE' ? '到场' : (form.service_mode === 'RMA' ? '开始返厂处理' : '开始远程处理'),
-  ARRIVED: '开始检查',
-  INSPECTING: '开始维修',
-}[form.status] || '开始处理'))
+const startActionLabel = computed(() => '开始处理')
 const dispatchNeedsReason = computed(() => ['ACCEPTED', 'ARRIVED', 'INSPECTING'].includes(form.status))
 const dispatchDlg = reactive({ visible: false, technicianId: null, collaboratorIds: [], remark: '', technicians: [], saving: false })
 const openDispatch = async () => {
@@ -1137,7 +1463,7 @@ const isViewMode = computed(() => !isNew.value && !route.query.edit)
 // 查看历史草稿：前往维修报表并预选「草稿」筛选（联动 WorkOrders.vue 的 workorders_filter 恢复逻辑）
 const viewDrafts = () => {
   sessionStorage.setItem('workorders_filter', JSON.stringify({ status: 'DRAFT' }))
-  router.push('/work-orders')
+  router.push('/orders?tab=list')
 }
 
 const DEFAULT_DEVICE_TYPES = [
@@ -1177,10 +1503,15 @@ const form = reactive({
   work_order_no: '',
   id: null,
   device_id: null,
+  fault_object: '',
   device_type: '',
   location: '',
   technician_id: null,
   technician_name: '',
+  created_by_name: '',
+  created_by_department: '',
+  reporter_name: '',
+  priority: 'MEDIUM',
   fault_description: '',
   fault_category: '',
   fault_phenomenon_type: '',
@@ -1189,7 +1520,7 @@ const form = reactive({
   gpu_index: '',
   fault_device_sn: '',
   order_type: 'REPAIR',
-  service_mode: 'REMOTE',
+  service_mode: null,
   need_rma: false,
   fault_code: [],
   device_error_code: '',
@@ -1212,6 +1543,8 @@ const faultPhenomenaOptions = ref([])
 const rootCauseCascader = ref([])
 const rootCauseOptions = ref([])
 const attachments = ref([])
+const legacyAttachments = ref([])   // 随单/历史附件（只读）
+const reporterMedia = ref([])        // 报修人提交的照片/语音（只读）
 const previewVisible = ref(false)
 const previewUrl = ref('')
 
@@ -1223,7 +1556,9 @@ function openInNewTab(url) {
   window.open(url, '_blank')
 }
 const uploadFileList = ref([])
+const attachDirty = ref(false)   // 有未落库的附件变更
 const devices = ref([])
+const deviceTotal = ref(0)
 const deviceFiltered = ref([])
 const users = ref([])
 const timeRange = ref(null)
@@ -1249,6 +1584,23 @@ const canSubmit = computed(() => {
   return !!(form.fault_description)
 })
 
+// 只有维修中/待归档阶段才展示“诊断与维修”必填项；新建/草稿阶段只收报修信息
+const showRepairFields = computed(() =>
+  ['IN_PROGRESS', 'ARCHIVING', 'COMPLETED', 'ARCHIVED'].includes(form.status))
+// 只有系统识别为 GPU/显卡，或已有 GPU 序号时，维修阶段才显示 GPU 专项字段
+const isGpuFault = computed(() => {
+  const c = String(form.fault_category || '').toUpperCase()
+  return c.includes('GPU') || c.includes('显卡') || !!form.gpu_index
+})
+// 报修阶段只收描述；GPU/SN 等维修信息在进入维修中后展示
+const faultDescPlaceholder = '描述现象即可，例如：GPU3 掉卡 / 集群训练任务卡住 / 核心交换机端口 down / 硬盘掉盘 / 电源告警'
+
+// 故障 GPU 只在故障本身涉及 GPU 时才出现（不能只看设备类型：GPU 服务器也会报网络/供电/存储故障）
+const isGpuDevice = computed(() => {
+  const desc = `${form.fault_description || ''} ${form.fault_phenomenon || ''} ${form.fault_object || ''}`
+  return /GPU|Xid|显存|掉卡|CUDA|NVLink|显卡|加速卡/i.test(desc)
+})
+
 const sevTagType = (s) => ({ EX: 'danger', OH: 'warning', INFO: 'info' }[s] || 'info')
 const sevLabel = (s) => ({ EX: 'EX 急停', OH: 'OH 停机', INFO: 'INFO 提示' }[s] || s)
 
@@ -1256,7 +1608,7 @@ const sevLabel = (s) => ({ EX: 'EX 急停', OH: 'OH 停机', INFO: 'INFO 提示'
 const supplementFilledCount = computed(() => {
   let n = 0
   if (rootCauseCascader.value.length || form.root_cause) n++
-  if (attachments.value.length) n++
+  // 附件已独立成节，不再计入「补充信息」徽标
   if (usedParts.value.length) n++
   return n
 })
@@ -1271,8 +1623,10 @@ const isFormDirty = () => {
 // 清空工单表单（保留工单编号/状态/技术员等系统字段）
 const resetFormFields = () => {
   form.device_id = null
+  form.fault_object = ''
   form.device_type = ''
   form.location = ''
+  form.priority = 'MEDIUM'
   form.fault_description = ''
   form.fault_category = ''
   form.fault_phenomenon_type = ''
@@ -1428,6 +1782,7 @@ const applyCaseItem = (c) => {
 }
 const archiving = ref(false)
 const archiveCheckResult = ref(null)
+const archiveDialog = reactive({ visible: false, result: null })
 const canArchiveComplete = computed(() => !!archiveCheckResult.value?.passed && (!form.customer_id || form.customer_accept_status === 'ACCEPTED'))
 const deviceMaintenance = ref(null)
 const deviceTypeOptions = ref([...DEFAULT_DEVICE_TYPES])
@@ -1519,6 +1874,151 @@ const repairResultTagType = computed(() => {
   return map[form.repair_result] || 'info'
 })
 
+// 时间块列数跟随实际有值的时间点，避免草稿态只有一个格子却占半行空白
+const timeColCount = computed(() => {
+  let n = 1 // 创建时间始终有
+  if (form.dispatched_at) n += 1
+  if (claimTime.value || form.status === 'ASSIGNED') n += 1
+  if (form.start_time) n += 1
+  if (form.resolved_at) n += 1
+  if (form.hold_total_minutes) n += 1
+  return Math.min(Math.max(n, 1), 3)
+})
+
+// ===== 处理进度时间线 =====
+// 后端 GET /work-orders/{id} 已返回 progress_logs，按时间正序展示
+// 注意：一次「开始处理」会连写多条日志，created_at 可能落在同一毫秒，
+// 用日期排序会乱序，这里以自增 id 为准（id 与写入顺序一致）
+const progressLogs = computed(() => {
+  const rows = Array.isArray(form.progress_logs) ? form.progress_logs : []
+  return [...rows].sort((a, b) => {
+    const ia = Number(a.id) || 0
+    const ib = Number(b.id) || 0
+    if (ia && ib && ia !== ib) return ia - ib
+    return new Date(a.created_at || 0) - new Date(b.created_at || 0)
+  })
+})
+
+const SOURCE_LABEL = {
+  WEB: '网页端', DINGTALK: '钉钉', MOBILE: '移动端',
+  CUSTOMER: '客户门户', IMPORT: '历史导入', SYSTEM: '系统',
+  TECH_CLAIM: '技术员抢单', TECH_ACCEPT: '技术员接单', TECH_REJECT: '技术员拒收',
+  TECH_START: '技术员开始处理', TECH_COMPLETE: '技术员提交完成',
+  SUPERVISOR_DISPATCH: '主管派工', AUTO_DISPATCH: '自动派工',
+}
+const sourceLabel = (s) => SOURCE_LABEL[s] || s || '网页端'
+
+// 时间线圆点配色：与状态标签同一套语义
+const tlTone = (st) => {
+  const map = {
+    DRAFT: 'info', SUBMITTED: 'info',
+    ASSIGNED: 'primary', ACCEPTED: 'primary', ARRIVED: 'primary',
+    INSPECTING: 'warning', IN_PROGRESS: 'warning', ARCHIVING: 'warning',
+    ARCHIVED: 'success', COMPLETED: 'success', REJECTED: 'danger',
+  }
+  return map[st] || 'info'
+}
+
+// 时间线渲染行：把完整时间拆成「左列 HH:mm + 跨天日期分隔」，
+// 同一天不再每行重复日期，横向空间留给状态和操作人
+const pad2 = (n) => String(n).padStart(2, '0')
+const dayKeyOf = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+const dayLabelOf = (d) => {
+  const wd = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()]
+  const today = new Date()
+  const yest = new Date(today.getTime() - 86400000)
+  if (dayKeyOf(d) === dayKeyOf(today)) return `今天 · ${wd}`
+  if (dayKeyOf(d) === dayKeyOf(yest)) return `昨天 · ${wd}`
+  return `${dayKeyOf(d)} · ${wd}`
+}
+// 相邻两步的间隔：看时间都花在哪一步（卡住的环节一眼可见）
+const fmtDelta = (ms) => {
+  if (ms == null || ms < 0) return ''
+  // 不足 1 分钟不显示：一次操作连写的几条日志本来就同时发生，标出来只是噪声
+  if (ms < 60000) return ''
+  const m = Math.round(ms / 60000)
+  if (m < 60) return `${m} 分`
+  const h = Math.floor(m / 60)
+  const r = m % 60
+  return r ? `${h} 时 ${r} 分` : `${h} 时`
+}
+const progressRows = computed(() => {
+  const list = progressLogs.value
+  let lastKey = ''
+  let prevDate = null
+  return list.map((lg, i) => {
+    const d = lg.created_at ? new Date(lg.created_at) : null
+    const ok = d && !isNaN(d)
+    const key = ok ? dayKeyOf(d) : ''
+    const showDate = !!key && key !== lastKey
+    if (key) lastKey = key
+    const row = {
+      ...lg,
+      _time: ok ? `${pad2(d.getHours())}:${pad2(d.getMinutes())}` : '--:--',
+      _date: showDate ? dayLabelOf(d) : '',
+      _delta: ok && prevDate ? fmtDelta(d - prevDate) : '',
+      _isLast: i === list.length - 1,
+      // from == to：不是状态变化，只是挂起 / 备注 / 改派一类的过程记录
+      _noChange: !!lg.from_status && lg.from_status === lg.to_status,
+    }
+    if (ok) prevDate = d
+    return row
+  })
+})
+
+// 折叠：超过 TL_MAX 条时只显示最近的，避免时间线过长把附件区挤到屏幕外
+const TL_MAX = 8
+const tlExpanded = ref(false)
+const tlRows = computed(() => {
+  const all = progressRows.value
+  if (tlExpanded.value || all.length <= TL_MAX) return all
+  const tail = all.slice(-TL_MAX)
+  // 截断后第一行可能丢了所属日期分隔，补一个
+  if (tail.length && !tail[0]._date) {
+    const d = tail[0].created_at ? new Date(tail[0].created_at) : null
+    if (d && !isNaN(d)) {
+      tail[0] = { ...tail[0], _date: dayLabelOf(d) }
+    }
+  }
+  return tail
+})
+
+// ===== 现场照片 / 附件汇总 =====
+// 三个来源：工单 fault_media（移动端上报）、工单 attachments（处理附件）、进度日志 attachments（各节点上传）
+const _IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|heic)$/i
+const isImageFile = (f) => {
+  if (!f) return false
+  if (f.type === 'image') return true
+  if (f.type === 'video') return false
+  return _IMAGE_EXT.test(f.url || '')
+}
+
+const allAttachments = computed(() => {
+  const out = []
+  const seen = new Set()
+  const push = (raw, stage) => {
+    const f = typeof raw === 'string' ? { url: raw } : (raw || {})
+    const url = f.url || f.path || f.src
+    if (!url || seen.has(url)) return
+    seen.add(url)
+    const image = isImageFile({ url, type: f.type })
+    out.push({
+      url,
+      name: f.name || (image ? '现场照片' : '现场视频'),
+      type: f.type,
+      stage,
+    })
+  }
+  if (Array.isArray(form.fault_media)) form.fault_media.forEach((x) => push(x, '报修'))
+  if (Array.isArray(form.attachments)) form.attachments.forEach((x) => push(x, '维修'))
+  progressLogs.value.forEach((lg) => {
+    if (Array.isArray(lg.attachments)) {
+      lg.attachments.forEach((x) => push(x, statusMap[lg.to_status] || lg.to_status))
+    }
+  })
+  return out
+})
+
 const loadDeviceTypes = async () => {
   try {
     const res = await request.get('/categories/', { params: { category_type: 'DEVICE_TYPE', page_size: 1000 } })
@@ -1567,6 +2067,15 @@ const fetchRootCauses = async () => {
     const res = await request.get('/categories/data/root-causes')
     rootCauseOptions.value = res.data || []
   } catch { rootCauseOptions.value = [] }
+}
+
+const onFaultPhenomenonSelect = (val) => {
+  if (!val) {
+    form.fault_phenomenon = ''
+    return
+  }
+  const hit = FAULT_PHENOMENA.find((p) => p.value === val)
+  form.fault_phenomenon = hit ? hit.label : String(val)
 }
 
 const onDeviceChange = async (deviceId) => {
@@ -1637,7 +2146,8 @@ const uploadFile = async (option) => {
     const res = await request.post('/upload/work-order-image', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
-    attachments.value.push({ url: res.url, name: res.name, type: res.type })
+    attachments.value.push({ url: res.url, name: res.name, type: res.type, source: 'REPAIR' })
+    attachDirty.value = true
     option.onSuccess(res)
   } catch (e) {
     option.onError(e)
@@ -1656,7 +2166,7 @@ const beforeUpload = (file) => {
 
 const removeAttachment = (uploadFile) => {
   const idx = attachments.value.findIndex(f => f.name === uploadFile.name)
-  if (idx >= 0) attachments.value.splice(idx, 1)
+  if (idx >= 0) { attachments.value.splice(idx, 1); attachDirty.value = true }
 }
 
 const openKnowledgeRef = () => {
@@ -1720,8 +2230,9 @@ const disabledDate = (time) => time.getTime() > Date.now()
 const saveForm = async () => {
   try {
     const validFields = [
-      'device_id','device_type','fault_code','fault_description','fault_phenomenon',
-      'fault_category','fault_phenomenon_type',
+      'device_id','device_type','fault_object','fault_code','fault_description','fault_phenomenon',
+      'fault_category','fault_phenomenon_type','priority',
+      'order_type','service_mode','need_rma','gpu_index','fault_device_sn',
       'root_cause','root_cause_category','root_cause_type',
       'solution_steps','solution_ref_knowledge_id',
       'repair_result','follow_up_plan','work_hours',
@@ -1745,15 +2256,19 @@ const saveForm = async () => {
       data.start_time = timeRange.value[0]?.toISOString()
       data.end_time = timeRange.value[1]?.toISOString()
     }
-    if (attachments.value.length) data.attachments = attachments.value
+    // 附件：有变更时按当前列表整体覆盖（可清空为空数组），无变更且非空时也带上
+    if (attachDirty.value || attachments.value.length) data.attachments = [...legacyAttachments.value, ...attachments.value]
 
     if (isNew.value) {
       const res = await request.post('/work-orders/', data)
       form.id = res.id
+      attachDirty.value = false
       router.replace(`/work-orders/${res.id}?edit=1`)
       return res
     } else {
-      return await request.put(`/work-orders/${route.params.id}`, data)
+      const res = await request.put(`/work-orders/${route.params.id}`, data)
+      attachDirty.value = false
+      return res
     }
   } catch (e) {
     ElMessage.error('保存失败')
@@ -1761,13 +2276,15 @@ const saveForm = async () => {
   }
 }
 
-const handleArchiveCheck = async () => {
+// 归档：先校验，再在弹窗里确认；按钮只保留详情页右上角一个
+const openArchiveDialog = async () => {
   archiving.value = true
   try {
     const id = route.params.id || form.id
-    await saveForm()
     const res = await request.post(`/work-orders/${id}/archive-check`)
     archiveCheckResult.value = res
+    archiveDialog.result = res
+    archiveDialog.visible = true
     if (res.passed) {
       ElMessage.success(`归档校验通过（完成度 ${Math.round(res.completeness * 100)}%）`)
     } else {
@@ -1777,15 +2294,20 @@ const handleArchiveCheck = async () => {
   finally { archiving.value = false }
 }
 
+const goEditFromArchive = () => {
+  archiveDialog.visible = false
+  if (canEditWorkOrder.value) goEdit()
+}
+
 const handleArchiveComplete = async () => {
   if (!canArchiveComplete.value) return
   archiving.value = true
   try {
     const id = route.params.id || form.id
-    await saveForm()
-    const res = await request.post(`/work-orders/${id}/archive-complete`, null, { timeout: 120000 })
+    await request.post(`/work-orders/${id}/archive-complete`, null, { timeout: 120000 })
+    archiveDialog.visible = false
     ElMessage.success('工单归档完成，知识已收录')
-    router.push('/work-orders')
+    goBackToList()
   } catch { /* 错误提示由请求拦截器统一处理 */ }
   finally { archiving.value = false }
 }
@@ -1856,12 +2378,9 @@ const handleSubmit = async () => {
     const id = route.params.id || form.id
     await saveForm()
     const res = await request.post(`/work-orders/${id}/complete`, null, { timeout: 120000 })
-    if (res.knowledge_synced) {
-      ElMessage.success('工单已提交完成，知识已自动收录')
-    } else {
-      ElMessage.info('工单已提交完成（检测到相似知识，未重复收录到知识库）')
-    }
-    router.push('/work-orders')
+    ElMessage.success(res.message || '工单已提交完成，进入待归档；AI 分析与知识收录在后台进行')
+    // 提交完成就离开当前页：从客户页进来的回客户，其余回工单列表
+    goBackToList()
   } catch (e) {
     const msg = (e && e.response && e.response.data && (e.response.data.detail || e.response.data.message))
       || (e && e.message) || '未知错误'
@@ -1886,19 +2405,43 @@ const handleSaveDraft = async () => {
 }
 
 // 提交报修：保存后把 DRAFT → SUBMITTED（不再依赖后端"保存即改状态"的隐式行为）
-const handleSubmitReport = async () => {
+const submitChoice = reactive({ visible: false })
+const isSelfCreatedTech = computed(() =>
+  currentUserRole === 'TECHNICIAN' && (isNew.value || Number(form.created_by) === currentUserId))
+
+const handleSubmitReport = () => {
+  if (isSelfCreatedTech.value) {
+    submitChoice.visible = true
+    return
+  }
+  doSubmitReport(false)
+}
+
+const doSubmitReport = async (toPool) => {
+  submitChoice.visible = false
   submitting.value = true
   try {
     const res = await saveForm()
     const id = (res && res.id) || route.params.id || form.id
-    await request.post(`/work-orders/${id}/transition`, {
+    const tr = await request.post(`/work-orders/${id}/transition`, {
       to_status: 'SUBMITTED',
-      remark: '提交报修',
+      remark: toPool ? '提交报修并放入工单池' : '提交报修',
+      to_pool: toPool || undefined,
       source: 'WEB',
     })
+    if (tr && tr.status === 'ACCEPTED') {
+      ElMessage.success('已提交并自动接单，可在「我的工单」直接开始处理')
+      router.push('/orders?tab=mine')
+      return
+    }
+    if (toPool) {
+      ElMessage.success('已提交报修并放入工单池，等待接单/派工')
+      router.push('/orders?tab=pool')
+      return
+    }
     ElMessage.success('已提交报修，等待主管派工')
     form.status = 'SUBMITTED'
-    router.push('/work-orders')
+    router.push(['ADMIN', 'SUPERVISOR'].includes(currentUserRole) ? '/orders?tab=list' : '/orders?tab=mine')
   } catch (e) {
     const msg = (e && e.response && e.response.data && (e.response.data.detail || e.response.data.message))
       || (e && e.message) || '未知错误'
@@ -2084,8 +2627,59 @@ const HOLD_LABELS = { VENDOR: '等厂商', SPARE: '等备件', CUSTOMER: '等客
 const holdLabel = computed(() => HOLD_LABELS[form.hold_reason] || '其他')
 const canHold = computed(() => ['ACCEPTED', 'ARRIVED', 'INSPECTING', 'IN_PROGRESS'].includes(form.status)
   && (isMyTask.value || canDispatch.value))
-const canRma = computed(() => ['ACCEPTED', 'ARRIVED', 'INSPECTING', 'IN_PROGRESS'].includes(form.status)
-  && (form.need_rma || form.service_mode === 'RMA' || canDispatch.value))
+
+// 编辑权限：技术员只能编辑自己创建的工单；管理员/主管可编辑所有工单。
+// 被指派的技术员虽然不能改基本信息，但维修中仍可通过「填写结果并完成」进入完成表单。
+const isCreator = computed(() =>
+  !!currentUserId && Number(form.created_by) === Number(currentUserId))
+const canEditWorkOrder = computed(() => {
+  const finished = ['ARCHIVED', 'REJECTED', 'COMPLETED'].includes(form.status)
+  if (finished) return canDispatch.value
+  return canDispatch.value || isCreator.value
+})
+const canCompleteRepair = computed(() =>
+  form.status === 'IN_PROGRESS' && (isMyTask.value || canDispatch.value || isCreator.value))
+// 查看页「上传附件」弹窗：每选一张就 上传文件 → 挂工单，两步都在服务端完成，
+// 不经过 saveForm，所以不会因为别的必填项没填而传不上去
+const uploadDialog = reactive({ visible: false, count: 0, busy: 0 })
+const openUploadDialog = () => {
+  uploadDialog.count = 0
+  uploadDialog.busy = 0
+  uploadDialog.visible = true
+}
+const uploadOne = async (option) => {
+  uploadDialog.busy++
+  try {
+    const fd = new FormData()
+    fd.append('file', option.file)
+    const up = await request.post('/upload/work-order-image', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    const res = await request.post(`/work-orders/${form.id}/attachments`, {
+      url: up.url, name: up.name, type: up.type,
+    })
+    form.attachments = res.attachments || []
+    uploadDialog.count++
+    ElMessage.success(`${up.name} 已上传`)
+    option.onSuccess(up)
+  } catch (e) {
+    option.onError(e)
+    ElMessage.error('上传失败，请重试')
+  } finally {
+    uploadDialog.busy--
+  }
+}
+
+const goEdit = () => router.push(`/work-orders/${form.id}?edit=1`)
+
+const canRma = computed(() => {
+  if (!['ACCEPTED', 'ARRIVED', 'INSPECTING', 'IN_PROGRESS'].includes(form.status)) return false
+  // 已标记需返厂 / 服务方式本身是返厂 → 显示
+  if (form.need_rma || form.service_mode === 'RMA') return true
+  // 远程处理默认不出现 RMA（远程不可能返厂；确需返厂先改服务方式）
+  if (form.service_mode === 'REMOTE') return false
+  return canDispatch.value
+})
 const holdDlg = reactive({ visible: false, reason: 'VENDOR', remark: '' })
 const holdSaving = ref(false)
 const RMA_STATUS_OPTIONS = [
@@ -2182,6 +2776,7 @@ onMounted(async () => {
     ])
     devices.value = dRes.items || []
     deviceFiltered.value = dRes.items || []
+    deviceTotal.value = dRes.total ?? (dRes.items || []).length
     users.value = uRes.items || []
     // 维修员由后端强制设为当前登录用户（号主），前端无需设置 technician_id
   } catch { /* ignore */ }
@@ -2230,9 +2825,15 @@ onMounted(async () => {
       usedParts.value = Array.isArray(res.used_parts) ? res.used_parts : []
 
       if (res.attachments && Array.isArray(res.attachments)) {
-        attachments.value = res.attachments
-        uploadFileList.value = res.attachments.map((f, i) => ({ uid: i, name: f.name, url: f.url, status: 'success' }))
+        // 只有 source=REPAIR 的才是维修人员自己上传的；报修人/历史附件只读单列
+        reporterMedia.value = (Array.isArray(res.fault_media) ? res.fault_media : []).map((x) => (
+          typeof x === 'string' ? { url: x, name: '报修附件' } : x
+        ))
+        legacyAttachments.value = res.attachments.filter((f) => f.source !== 'REPAIR')
+        attachments.value = res.attachments.filter((f) => f.source === 'REPAIR')
+        uploadFileList.value = attachments.value.map((f, i) => ({ uid: i, name: f.name, url: f.url, status: 'success' }))
       }
+      attachDirty.value = false
 
       if (res.fault_phenomenon_type) {
         faultPhenomenonCascader.value = res.fault_phenomenon_type.split(' > ')
@@ -2288,18 +2889,47 @@ onMounted(async () => {
 .sla-item b { color: #1F2329; }
 .sla-total { color: #0FC6C2; }
 .sla-comment { color: #86909C; margin-left: 4px; }
-.sla-rate-btn { margin-left: auto; }
+.sla-rate-btn { margin-left: auto; border-radius: 8px; height: 30px; }
 .form-body { max-width: 860px; margin: 0 auto; }
 .form-card { padding: 16px; }
 .form-section { margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid #E5E6EB; }
 .form-section:last-of-type { border-bottom: none; }
 .section-header { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 16px; }
-.form-grid { max-width: 720px; }
+
+/* 现场附件独立区：始终可见 */
+.attach-section { border-radius: 8px; }
+.attach-count {
+  display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 6px;
+  font-size: 12px; font-weight: 500; line-height: 18px; text-align: center;
+  color: #0FC6C2; background: #E8FFFE; border: 1px solid #B5F1EF; border-radius: 9px;
+}
+.attach-dirty {
+  margin-left: 8px; padding: 0 6px; font-size: 12px; font-weight: 400;
+  color: #FF7D00; background: #FFF7E8; border: 1px solid #FFE4BA; border-radius: 4px;
+}
+.attach-upload-wrap { display: flex; flex-direction: column; gap: 6px; }
+.attach-save-btn { align-self: flex-start; margin-top: 4px; border-radius: 6px; }
+
+/* 查看页「上传附件」弹窗 */
+.up-dialog :deep(.el-upload-dragger) { padding: 26px 16px; border-radius: 8px; }
+.up-icon { font-size: 34px; color: #0FC6C2; margin-bottom: 6px; }
+.up-text { font-size: 14px; color: #4E5969; }
+.up-text em { font-style: normal; color: #0FC6C2; font-weight: 600; }
+.up-sub { font-size: 12px; color: #86909C; margin-top: 4px; }
+.up-note { margin-top: 10px; font-size: 12px; color: #86909C; line-height: 1.6; }
+.up-note b { color: #FF7D00; }
+.up-done { margin-left: 8px; color: #00B42A; }
+.up-busy { margin-left: 8px; color: #0FC6C2; }
+.form-grid { max-width: 760px; }
+/* 标签左对齐后，统一标签的字重和颜色，避免左侧一列发灰发虚 */
+.form-grid :deep(.el-form-item__label) { color: #4E5969; font-weight: 500; }
+.form-grid :deep(.el-form-item) { margin-bottom: 18px; }
 .analysis-card { margin-bottom: 16px; border: 1px solid #FFD666; background: #FFFBE6; }
 .analysis-card :deep(.el-card__header) { background: #FFF7D6; border-bottom: 1px solid #FFE58F; padding: 10px 16px; }
 .card-header-row { display: flex; justify-content: space-between; align-items: center; }
 .section-title { font-size: 14px; font-weight: 600; color: #D48806; }
 .form-footer { display: flex; gap: 12px; justify-content: center; margin-top: 16px; padding: 12px 16px; position: sticky; bottom: 0; z-index: 20; background: rgba(255,255,255,.97); border-top: 1px solid #E5E6EB; box-shadow: 0 -4px 14px rgba(0,0,0,.06); }
+.form-footer .el-button { margin-left: 0 !important; height: 34px; padding: 0 18px; border-radius: 8px; font-weight: 500; }
 .submit-hint { font-size: 12px; color: #FF7D00; text-align: center; margin-top: 8px; }
 .parts-list { display: flex; flex-direction: column; gap: 8px; }
 .part-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -2324,7 +2954,7 @@ onMounted(async () => {
 .spare-stock.stock-out { color: #F53F3F; }
 .spare-location { color: #86909C; }
 .solution-area { width: 100%; display: flex; flex-direction: column; }
-.upload-hint { font-size: 12px; color: #86909C; margin-top: 4px; }
+.upload-hint { font-size: 12px; color: #86909C; margin-top: 4px; line-height: 1.6; max-width: 760px; }
 .cascader-hint { font-size: 12px; color: #86909C; margin-top: 4px; line-height: 1.4; }
 .fault-code-row { display: flex; gap: 8px; align-items: flex-start; width: 100%; }
 .fc-option { display: flex; align-items: center; justify-content: space-between; width: 100%; }
@@ -2360,10 +2990,174 @@ onMounted(async () => {
 .kd-item-footer { display: flex; justify-content: space-between; align-items: center; }
 .kd-count { font-size: 12px; color: #86909C; }
 .detail-card { max-width: 900px; margin: 0 auto; padding: 16px; }
-.detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.detail-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
 .detail-header h3 { font-size: 18px; font-weight: 600; color: #1D2129; margin: 0; }
+.detail-header .head-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 32px; }
+.detail-header .head-right { display: flex; align-items: center; }
 .detail-pre { margin: 0; white-space: pre-wrap; font-family: inherit; font-size: 14px; line-height: 1.7; }
+.wo-actions {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 4px; background: #F7F8FA; border: 1px solid #F2F3F5; border-radius: 10px;
+}
+.wo-actions .el-button {
+  margin-left: 0 !important; height: 32px; padding: 0 14px;
+  border-radius: 8px; font-weight: 500;
+}
+.wo-actions .el-button.is-plain { background: #fff; }
+/* 悬停时保持浅色描边，不要被 Element 的“实心+白字”覆盖导致白底白字 */
+.wo-actions .el-button.is-plain:hover {
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary-light-7);
+  color: var(--el-color-primary);
+}
+.wo-actions .el-button--danger.is-plain:hover {
+  background: var(--el-color-danger-light-9);
+  border-color: var(--el-color-danger-light-7);
+  color: var(--el-color-danger);
+}
+.wo-actions .el-button--warning.is-plain:hover {
+  background: var(--el-color-warning-light-9);
+  border-color: var(--el-color-warning-light-7);
+  color: var(--el-color-warning);
+}
+.wo-actions .el-button--success.is-plain:hover {
+  background: var(--el-color-success-light-9);
+  border-color: var(--el-color-success-light-7);
+  color: var(--el-color-success);
+}
+.wo-actions .el-button--primary.is-plain { color: var(--el-color-primary); }
+.wo-actions-sep { width: 1px; height: 20px; background: #E5E6EB; margin: 0 2px; flex-shrink: 0; }
+.status-pill { font-weight: 500; border-radius: 6px; }
 .detail-footer { margin-top: 24px; display: flex; justify-content: center; }
+.time-desc { margin-top: 16px; }
+/* 时间块：标签列固定宽度，列数变化时不会出现超宽标签格 */
+.time-desc :deep(.el-descriptions__label) { width: 92px; min-width: 92px; white-space: nowrap; }
+.time-desc :deep(.el-descriptions__content) { white-space: nowrap; }
+/* ===== 处理进度时间线 ===== */
+.wo-block { margin-top: 18px; }
+.wo-block-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 600; color: #1D2129;
+  margin-bottom: 10px; padding-left: 8px; border-left: 3px solid #0FC6C2; line-height: 1;
+}
+.wo-block-count {
+  font-size: 11px; font-weight: 500; color: #0FC6C2;
+  background: rgba(15, 198, 194, 0.1); border-radius: 9px; padding: 1px 7px;
+}
+.wo-block-action { margin-left: auto; font-size: 12px; }
+/* ===== 现场照片 / 附件 ===== */
+.wo-attach-empty {
+  font-size: 12px; color: #86909C; background: #FAFBFC;
+  border: 1px dashed #E5E6EB; border-radius: 6px; padding: 14px; text-align: center;
+}
+.wo-attach-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+.wo-attach-item { width: 96px; }
+.wo-attach-thumb {
+  width: 96px; height: 96px; object-fit: cover; border-radius: 6px;
+  border: 1px solid #E5E6EB; background: #F7F8FA; display: block;
+}
+.wo-attach-clickable { cursor: zoom-in; }
+.wo-attach-clickable:hover { border-color: #0FC6C2; }
+.wo-attach-meta { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.wo-attach-name {
+  font-size: 11px; color: #4E5969;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wo-attach-stage { font-size: 10px; color: #86909C; }
+.wo-timeline { margin-top: 2px; }
+.wo-tl-fold { margin: -2px 0 8px 50px; }
+.wo-tl-fold :deep(.el-button) { font-size: 12px; padding: 0; height: 20px; }
+/* 日期分隔：同一天只在第一行出现一次 */
+.wo-tl-date {
+  display: flex; align-items: center; gap: 8px;
+  margin: 2px 0 8px; font-size: 11px; color: #86909C;
+}
+.wo-tl-date span {
+  padding: 1px 7px; line-height: 16px;
+  background: #F7F8FA; border-radius: 9px; white-space: nowrap;
+}
+.wo-tl-date::after { content: ''; flex: 1; height: 1px; background: #F2F3F5; }
+/* 每行：时间 44px | 轴 16px | 内容 */
+.wo-tl-item {
+  display: grid; grid-template-columns: 44px 16px minmax(0, 1fr);
+  column-gap: 6px; padding-bottom: 14px;
+}
+.wo-tl-item.is-last { padding-bottom: 0; }
+.wo-tl-time {
+  font-size: 12px; line-height: 20px; text-align: right; color: #86909C;
+  font-variant-numeric: tabular-nums;
+}
+.wo-tl-axis { position: relative; }
+/* 竖线穿过圆点圆心，最后一行不画 */
+.wo-tl-axis::before {
+  content: ''; position: absolute; left: 50%; top: 10px; bottom: -10px;
+  width: 1px; margin-left: -0.5px; background: #E5E6EB;
+}
+.wo-tl-item.is-last .wo-tl-axis::before { display: none; }
+.wo-tl-dot {
+  position: absolute; left: 50%; top: 6px; transform: translateX(-50%);
+  width: 8px; height: 8px; border-radius: 50%; background: #C9CDD4;
+}
+.wo-tl-dot.is-now {
+  width: 10px; height: 10px; top: 5px;
+  box-shadow: 0 0 0 4px rgba(15, 198, 194, 0.16);
+}
+.wo-tl-dot.tl-primary { background: #165DFF; }
+.wo-tl-dot.tl-warning { background: #FF7D00; }
+.wo-tl-dot.tl-success { background: #00B42A; }
+.wo-tl-dot.tl-danger { background: #F53F3F; }
+.wo-tl-dot.tl-info { background: #86909C; }
+/* 状态没变化的记录（挂起 / 改派 / 备注）：空心点 + 描边胶囊，避免和真正的流转混淆 */
+.wo-tl-dot.is-same { background: #FFFFFF; box-shadow: inset 0 0 0 2px #C9CDD4; }
+.wo-tl-pill.is-same {
+  background: transparent; border: 1px solid #E5E6EB; color: #86909C; font-weight: 400;
+}
+.wo-tl-body { min-width: 0; }
+.wo-tl-line { display: flex; align-items: center; gap: 8px; min-height: 20px; flex-wrap: wrap; }
+.wo-tl-pill {
+  font-size: 12px; font-weight: 500; line-height: 18px;
+  padding: 0 8px; border-radius: 4px; white-space: nowrap;
+}
+.wo-tl-pill.tl-pill-info { color: #4E5969; background: #F2F3F5; }
+.wo-tl-pill.tl-pill-primary { color: #165DFF; background: #E8F3FF; }
+.wo-tl-pill.tl-pill-warning { color: #D25F00; background: #FFF7E8; }
+.wo-tl-pill.tl-pill-success { color: #009A29; background: #E8FFEA; }
+.wo-tl-pill.tl-pill-danger { color: #CB2634; background: #FFECE8; }
+.wo-tl-now {
+  font-size: 11px; line-height: 16px; padding: 0 5px; border-radius: 3px;
+  color: #0FC6C2; background: #F0FBFB; border: 1px solid #B5F1EF;
+}
+.wo-tl-who { display: inline-flex; align-items: baseline; gap: 5px; font-size: 12px; color: #86909C; }
+.wo-tl-actor { color: #4E5969; }
+.wo-tl-sep { color: #C0C4CC; }
+.wo-tl-delta {
+  margin-left: auto; font-size: 11px; color: #86909C;
+  background: #FAFBFC; border: 1px solid #F2F3F5; border-radius: 3px;
+  padding: 0 6px; line-height: 16px; white-space: nowrap;
+}
+.wo-tl-remark {
+  margin-top: 5px; font-size: 12px; color: #4E5969; line-height: 1.5;
+  background: #F7F8FA; border-left: 2px solid #E5E6EB; border-radius: 0 4px 4px 0;
+  padding: 4px 8px;
+}
+/* ===== 领用备件 ===== */
+.wo-parts { display: flex; flex-wrap: wrap; gap: 8px; }
+.wo-part-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; background: #F7F8FA; border: 1px solid #E5E6EB; border-radius: 6px;
+  font-size: 12px; color: #4E5969;
+}
+.wo-part-name { color: #1D2129; font-weight: 500; }
+.wo-part-code { color: #86909C; font-family: ui-monospace, Menlo, monospace; }
+.wo-part-count { color: #0FC6C2; font-weight: 600; }
+.wo-part-price { color: #86909C; }
+.sla-help { color: #86909C; cursor: help; font-size: 14px; }
+.time-tip { margin-top: 8px; font-size: 12px; color: #86909C; line-height: 1.6; }
+.submit-choice-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 8px; }
+.submit-choice-desc { font-size: 13px; color: #4E5969; line-height: 1.7; }
+.device-picker-hint { margin-top: 4px; font-size: 12px; color: #86909C; display: flex; align-items: center; gap: 8px; }
+.device-picker-hint b { color: #1D2129; }
+.detail-footer .el-button { border-radius: 8px; height: 34px; padding: 0 18px; }
 .edit-log-card { margin-top: 16px; }
 .edit-log-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 12px; }
 .edit-log-item { padding: 10px 0; border-bottom: 1px dashed #EDEFF3; }

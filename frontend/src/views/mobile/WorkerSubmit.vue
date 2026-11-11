@@ -7,6 +7,13 @@
       <div class="scan-code" v-if="form.device_code">{{ form.device_code }}</div>
     </div>
 
+    <!-- 设备档案（扫码/输入编码后带出） -->
+    <div v-if="deviceInfo" class="device-card">
+      <div class="device-title">{{ deviceInfo.device_name }}（{{ deviceInfo.device_code }}）</div>
+      <div class="device-line">型号：{{ deviceInfo.model || '-' }}　SN：{{ deviceInfo.serial_no || '-' }}</div>
+      <div class="device-line">位置：{{ deviceInfo.location || [deviceInfo.room, deviceInfo.rack_no].filter(Boolean).join(' / ') || '-' }}</div>
+    </div>
+
     <!-- 故障描述 -->
     <div class="form-section">
       <label class="form-label">故障描述 *</label>
@@ -29,21 +36,20 @@
       >{{ opt }}</span>
     </div>
 
-    <!-- 拍照/录音 -->
+    <!-- 拍照/相册（真实上传） -->
     <div class="media-toolbar">
-      <div class="media-btn" @click="handleCamera">
+      <div class="media-btn" @click="pickPhoto" :class="{ disabled: uploading }">
         <span>📷</span>
         <span>拍照</span>
       </div>
-      <div class="media-btn" @click="handleVoice">
-        <span>🎤</span>
-        <span>语音</span>
-      </div>
-      <div class="media-btn" @click="handleGallery">
+      <div class="media-btn" @click="pickPhoto" :class="{ disabled: uploading }">
         <span>🖼</span>
         <span>相册</span>
       </div>
     </div>
+    <input ref="photoInput" type="file" accept="image/*" capture="environment" multiple
+           style="display:none" @change="onPhotoPicked" />
+    <div v-if="uploading" class="uploading-tip">照片上传中...</div>
 
     <!-- 媒体预览 -->
     <div class="media-preview" v-if="mediaList.length">
@@ -74,19 +80,27 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../../api'
 
 const route = useRoute()
 
 const form = reactive({
   device_code: '',
+  device_id: null,
+  fault_device_sn: '',
   fault_description: '',
   location: '',
   media: [],
 })
 
 const mediaList = ref([])
+const photoInput = ref(null)
+const uploading = ref(false)
 const submitting = ref(false)
+const currentUser = (() => {
+  try { return JSON.parse(localStorage.getItem('current_user') || '{}') } catch { return {} }
+})()
 const result = ref(null)
 
 const quickOptions = [
@@ -113,34 +127,75 @@ onMounted(async () => {
   } catch { /* 带不出信息不影响报修 */ }
 })
 
-const handleScan = () => {
-  // 模拟扫码（实际接入钉钉 JSAPI dd.biz.util.scan）
-  const codes = ['EQ-001', 'EQ-002', 'MTR-005', 'PUMP-003', 'CNC-001']
-  form.device_code = codes[Math.floor(Math.random() * codes.length)]
+// 扫码/输入设备编码 → 按编码或 SN 查设备档案，自动带出机房/机柜/型号/SN
+const deviceInfo = ref(null)
+
+const applyDevice = (d) => {
+  if (!d) return
+  deviceInfo.value = d
+  form.device_code = d.device_code || ''
+  if (d.id) form.device_id = d.id
+  if (d.serial_no) form.fault_device_sn = d.serial_no
+  const rack = [d.room, d.rack_no].filter(Boolean).join(' / ')
+  if (!form.location) form.location = d.location || rack || ''
 }
 
-const handleCamera = () => {
-  // 模拟拍照（实际接入钉钉 JSAPI dd.biz.util.uploadImage）
-  const url = `https://via.placeholder.com/200x150/1677FF/fff?text=Photo_${Date.now()}`
-  mediaList.value.push(url)
-  form.media.push(url)
+const handleScan = async () => {
+  let code = ''
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '输入或扫描设备编码 / SN（设备资产标签上的二维码/条码）',
+      '扫码识别服务器', { confirmButtonText: '查询', cancelButtonText: '取消', inputPlaceholder: '如 GPU-SRV-001' },
+    )
+    code = (value || '').trim()
+  } catch { return }
+  if (!code) return
+  try {
+    const d = await request.get(`/devices/by-code/${encodeURIComponent(code)}`)
+    applyDevice(d)
+    ElMessage.success(`已带出：${d.device_name || d.device_code}`)
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '未找到该设备，请核对编码/SN')
+  }
 }
 
-const handleVoice = () => {
-  // 模拟录音（实际接入钉钉 JSAPI dd.device.audio.startRecord）
-  const text = '语音已记录: ' + new Date().toLocaleTimeString()
-  mediaList.value.push(text)
-  form.media.push(text)
+const pickPhoto = () => {
+  if (!uploading.value) photoInput.value?.click()
 }
 
-const handleGallery = () => {
-  // 模拟选图（实际接入钉钉 JSAPI dd.biz.util.chooseImage）
-  handleCamera()
+// 真实拍照/选图：先传 /upload/work-order-image，再把 URL 随工单提交
+const onPhotoPicked = async (e) => {
+  const files = Array.from(e.target.files || [])
+  e.target.value = ''
+  if (!files.length) return
+  uploading.value = true
+  try {
+    for (const file of files) {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await request.post('/upload/work-order-image', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      mediaList.value.push(res.url)
+      form.media.push(res.url)
+    }
+  } catch {
+    ElMessage.error('照片上传失败，请重试')
+  } finally {
+    uploading.value = false
+  }
 }
 
-const getLocation = async () => {
-  // 模拟定位
-  form.location = '1号车间 A区 3号机位'
+const getLocation = () => {
+  if (!navigator.geolocation) return
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const { latitude, longitude } = pos.coords
+      form.location = `经纬度 ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
+    },
+    () => { /* 拒绝定位就留空，允许手填 */ },
+    { timeout: 5000 },
+  )
 }
 
 const handleSubmit = async () => {
@@ -148,19 +203,24 @@ const handleSubmit = async () => {
   try {
     const payload = {
       device_code: form.device_code,
+      device_id: form.device_id,
+      fault_device_sn: form.fault_device_sn,
       fault_description: form.fault_description,
       media: form.media,
       location: form.location,
-      reporter_id: 1, // 后续从登录态获取
+      reporter_id: currentUser.id || undefined,
     }
-    const res = await request.post('/dingtalk/report', payload)
+    const res = await request.post('/m/v1/report', payload)
     result.value = res
     // 重置表单
     form.device_code = ''
+    form.device_id = null
+    form.fault_device_sn = ''
     form.fault_description = ''
     form.location = ''
     form.media = []
     mediaList.value = []
+    deviceInfo.value = null
     // 3秒后隐藏结果
     setTimeout(() => { result.value = null }, 3000)
   } catch { /* handled */ }
@@ -185,6 +245,9 @@ const handleSubmit = async () => {
 .scan-code { margin-top: 8px; font-size: 18px; font-weight: 600; font-family: monospace; }
 
 .form-section { margin-bottom: 14px; }
+.device-card { background: #fff; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; border-left: 3px solid #0FC6C2; }
+.device-title { font-size: 14px; font-weight: 600; color: #1D2129; margin-bottom: 6px; }
+.device-line { font-size: 12.5px; color: #86909C; line-height: 1.6; }
 .form-label { display: block; font-size: 14px; font-weight: 500; color: #1D2129; margin-bottom: 6px; }
 .fault-input {
   width: 100%; min-height: 100px; padding: 12px;

@@ -149,6 +149,43 @@ def create_notification(db: Session, user_id: int, type: str, title: str, conten
     return notif
 
 
+def notify_user(db: Session, user_id: Optional[int], type: str, title: str, content: str,
+                work_order_id: int = None, level: str = None,
+                exclude_user_id: Optional[int] = None) -> bool:
+    """给单个用户发站内通知；收件人为空、或就是操作人本人时跳过（不给自己发）"""
+    if not user_id or (exclude_user_id and int(user_id) == int(exclude_user_id)):
+        return False
+    try:
+        create_notification(db, user_id=user_id, type=type, title=title,
+                            content=content, work_order_id=work_order_id, level=level)
+        return True
+    except Exception as e:
+        logger.warning(f"[Notification] 单发失败（忽略）: {e}")
+        return False
+
+
+def notify_roles(db: Session, roles, type: str, title: str, content: str,
+                 work_order_id: int = None, level: str = None,
+                 exclude_user_id: Optional[int] = None) -> int:
+    """给一组角色（ADMIN/SUPERVISOR…）批量发站内通知，返回实际发送人数。
+
+    约定：只发给 is_active 的账号；exclude_user_id 用来排除操作人自己。
+    """
+    try:
+        roles = list(roles)
+        q = db.query(User).filter(User.is_active == True, User.role.in_(roles))
+        if exclude_user_id:
+            q = q.filter(User.id != int(exclude_user_id))
+        users = q.all()
+        for u in users:
+            create_notification(db, user_id=u.id, type=type, title=title,
+                                content=content, work_order_id=work_order_id, level=level)
+        return len(users)
+    except Exception as e:
+        logger.warning(f"[Notification] 批量发送失败（忽略）: {e}")
+        return 0
+
+
 @router.websocket("/ws")
 async def notifications_websocket(websocket: WebSocket, token: str = Query(default="")):
     """站内通知 WebSocket：?token=<JWT>，收到新通知时实时下发"""

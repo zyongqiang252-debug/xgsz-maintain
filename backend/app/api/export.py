@@ -8,6 +8,7 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -17,7 +18,8 @@ from app.models.knowledge import KnowledgeItem
 from app.models.spare_part import SparePart
 from app.models.stock_movement import StockMovement
 from app.models.user import User
-from app.models.work_order import WorkOrder
+from app.models.work_order import WorkOrder, WorkOrderStatus
+from app.models.work_order_collaborator import WorkOrderCollaborator
 from app.core import status_group as SG
 from app.services import excel_style as X
 
@@ -50,8 +52,24 @@ def export_work_orders(
     date_from: date = Query(None),
     date_to: date = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     q = db.query(WorkOrder)
+    # 技术员只能导出自己相关 + 待派工池，与列表/详情口径一致
+    role = (getattr(current_user.role, "value", current_user.role) or "").upper()
+    if role == "TECHNICIAN":
+        me = current_user.id
+        collab_ids = (db.query(WorkOrderCollaborator.work_order_id)
+                      .filter(WorkOrderCollaborator.user_id == me))
+        q = q.filter(or_(
+            WorkOrder.created_by == me,
+            WorkOrder.reporter_id == me,
+            WorkOrder.technician_id == me,
+            WorkOrder.assignee_id == me,
+            WorkOrder.id.in_(collab_ids),
+            and_(WorkOrder.status == WorkOrderStatus.SUBMITTED.value,
+                 WorkOrder.technician_id.is_(None)),
+        ))
     if status:
         q = q.filter(WorkOrder.status == status)
     if date_from:
@@ -66,7 +84,7 @@ def export_work_orders(
         data.append([
             w.work_order_no,
             _status_cn(w.status.value if hasattr(w.status, "value") else w.status),
-            w.device_code or "",
+            w.device_code or (f"涉及：{w.fault_object}" if w.fault_object else ""),
             (w.fault_description or "").replace("\n", " ")[:200],
             w.fault_category or "",
             w.priority or "",

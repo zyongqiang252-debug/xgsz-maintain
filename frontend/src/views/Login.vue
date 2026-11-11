@@ -390,6 +390,14 @@
               {{ isRegister ? '立即登录' : '立即注册' }}
             </a>
           </div>
+
+          <!-- 客户入口：客户账号在独立门户，不在本页 -->
+          <div class="customer-entry">
+            <span class="customer-entry-tip">报修客户 / 甲方人员？</span>
+            <a class="customer-entry-btn" @click.prevent="goCustomerPortal">
+              进入客户报修中心 →
+            </a>
+          </div>
         </div>
       </div>
     </div>
@@ -560,7 +568,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Iphone, Lock, User, Loading, CircleCheckFilled, RefreshRight, Clock } from '@element-plus/icons-vue'
 import QrcodeVue from 'qrcode.vue'
 import request from '../api'
@@ -888,7 +896,16 @@ const handleCodeLogin = async () => {
     saveLoginUser(res)
     ElMessage.success(`欢迎回来，${res.real_name}`)
     router.push('/dashboard')
-  } catch {
+  } catch (e) {
+    // 客户手机号走内部验证码登录时，后端会拒绝并提示去客户门户
+    const detail = e?.response?.data?.detail
+    if (typeof detail === 'string' && detail.includes('客户报修入口')) {
+      ElMessageBox.confirm(detail, '账号类型提示', {
+        confirmButtonText: '去客户报修入口',
+        cancelButtonText: '留在本页',
+        type: 'warning',
+      }).then(() => goCustomerPortal()).catch(() => {})
+    }
     loggingIn.value = false
     return
   } finally {
@@ -910,12 +927,25 @@ const handlePwdLogin = async () => {
     saveLoginUser(res)
     ElMessage.success(`欢迎回来，${res.real_name}`)
     router.push('/dashboard')
-  } catch {
+  } catch (e) {
+    // 后端识别出「这是客户账号」时，直接给一个跳客户门户的入口，不再让人反复试密码
+    const detail = e?.response?.data?.detail
+    if (typeof detail === 'string' && detail.includes('客户报修入口')) {
+      ElMessageBox.confirm(detail, '账号类型提示', {
+        confirmButtonText: '去客户报修入口',
+        cancelButtonText: '留在本页',
+        type: 'warning',
+      }).then(() => goCustomerPortal()).catch(() => {})
+    }
     loggingIn.value = false
     return
   } finally {
     loggingIn.value = false
   }
+}
+
+const goCustomerPortal = () => {
+  window.location.href = '/c/login'
 }
 
 // ============ 找回密码 ============
@@ -1287,6 +1317,24 @@ onUnmounted(() => {
   color: #165DFF;
   border-color: #165DFF;
 }
+
+/* 客户报修入口（客户账号是独立门户，不在这里登录） */
+.customer-entry {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed #E5E6EB;
+  text-align: center;
+  font-size: 13px;
+}
+.customer-entry-tip { color: #86909C; margin-right: 4px; }
+.customer-entry-btn {
+  color: #0FC6C2;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  user-select: none;
+}
+.customer-entry-btn:hover { color: #0AA6A3; text-decoration: underline; }
 
 /* ===== 钉钉扫码 ===== */
 .dt-scan-area {

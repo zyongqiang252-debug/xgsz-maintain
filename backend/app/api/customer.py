@@ -33,8 +33,10 @@ class CustomerLoginIn(BaseModel):
 
 
 class CustomerReportIn(BaseModel):
-    device_id: int
+    device_id: Optional[int] = None
+    fault_object: Optional[str] = Field(None, max_length=200)
     site_id: Optional[int] = None
+    impact_level: Optional[str] = Field(None, description="影响程度 CRITICAL/HIGH/MEDIUM/LOW")
     fault_description: str = Field(..., min_length=2, max_length=500)
     fault_phenomenon: Optional[str] = Field(None, max_length=500)
     contact_name: Optional[str] = Field(None, max_length=100)
@@ -87,19 +89,44 @@ def _device_dict(d: Device) -> dict:
     return {
         "id": d.id, "device_code": d.device_code, "device_name": d.device_name,
         "device_type": d.device_type or "", "model": d.model or "",
+        "serial_no": d.serial_no or "", "room": d.room or "", "rack_no": d.rack_no or "",
         "location": d.location or "", "run_status": d.run_status or "",
     }
+
+
+def _device_location_text(d: Device):
+    """位置快照：location 优先，缺机房/机柜时补上，保证工单能定位到机柜"""
+    loc = (getattr(d, "location", None) or "").strip()
+    room, rack = getattr(d, "room", None), getattr(d, "rack_no", None)
+    if loc and room and rack and room in loc and rack in loc:
+        return loc
+    extra = " / ".join(x for x in [room, rack] if x)
+    if extra and extra not in loc:
+        return f"{loc}（{extra}）" if loc else extra
+    return loc or None
 
 
 @router.post("/login", summary="客户手机号+密码登录")
 def customer_login(data: CustomerLoginIn, db: Session = Depends(get_db)):
     from app.core.password import verify_password
     phone = (data.phone or "").strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="请输入手机号")
     customer = db.query(Customer).filter(Customer.phone == phone).first()
-    if not customer or not customer.is_active:
-        raise HTTPException(status_code=400, detail="手机号或密码错误")
-    if not customer.password_hash or not verify_password(data.password, customer.password_hash):
-        raise HTTPException(status_code=400, detail="手机号或密码错误")
+    # 失败原因分开提示：客户门户是对外 B 端入口，报错说清楚才能自助解决，
+    # 一直回「手机号或密码错误」是此前客户反馈「创建后登不上」的主要来源。
+    if not customer:
+        logger.info(f"[Customer] 登录失败：手机号未开通客户账号 phone={phone}")
+        raise HTTPException(status_code=400, detail="该手机号还没有开通客户账号，请联系服务方管理员")
+    if not customer.is_active:
+        logger.info(f"[Customer] 登录失败：账号已停用 id={customer.id} phone={phone}")
+        raise HTTPException(status_code=403, detail="客户账号已停用，请联系服务方管理员")
+    if not customer.password_hash:
+        logger.warning(f"[Customer] 登录失败：账号未设置密码 id={customer.id} phone={phone}")
+        raise HTTPException(status_code=400, detail="该客户账号还没有设置登录密码，请联系管理员重置密码")
+    if not verify_password(data.password, customer.password_hash):
+        logger.info(f"[Customer] 登录失败：密码错误 id={customer.id} phone={phone}")
+        raise HTTPException(status_code=400, detail="密码错误，请重试；忘记密码请联系服务方管理员重置")
     logger.info(f"[Customer] 登录成功: {customer.name} ({phone})")
     return {"token": create_customer_token(customer), "customer": _customer_dict(customer)}
 
@@ -128,28 +155,20 @@ def my_devices(customer: Customer = Depends(get_current_customer),
 def submit_report(data: CustomerReportIn,
                   customer: Customer = Depends(get_current_customer),
                   db: Session = Depends(get_db)):
-    device = db.query(Device).filter(Device.id == data.device_id).first()
-    if not device:
-        raise HTTPException(status_code=404, detail="设备不存在")
-    bound = db.query(CustomerDevice).filter(
-        CustomerDevice.customer_id == customer.id,
-        CustomerDevice.device_id == device.id,
-    ).first()
-    if not bound:
-        raise HTTPException(status_code=403, detail="该设备不属于你的账号")
+    device = None
+    if data.device_id:
+        device = db.query(Device).filter(Device.id == data.device_id).first()
+        if not device:
+            raise HTTPException(status_code=404, detail="设备不存在")
+        bound = db.query(CustomerDevice).filter(
+            CustomerDevice.customer_id == customer.id,
+            CustomerDevice.device_id == device.id,
+        ).first()
+        if not bound:
+            raise HTTPException(status_code=403, detail="该设备不属于你的账号")
 
-    today = datetime.now().strftime("%Y%m%d")
-    prefix = f"WO-{today}-"
-    latest = (db.query(WorkOrder)
-              .filter(WorkOrder.work_order_no.like(f"{prefix}%"))
-              .order_by(WorkOrder.work_order_no.desc()).first())
-    seq = 1
-    if latest and latest.work_order_no.startswith(prefix):
-        try:
-            seq = int(latest.work_order_no.split("-")[-1]) + 1
-        except ValueError:
-            seq = 1
-    work_order_no = f"{prefix}{seq:03d}"
+    from app.services.work_order_no import next_work_order_no
+    work_order_no = next_work_order_no(db)
 
     site = None
     if data.site_id:
@@ -160,17 +179,24 @@ def submit_report(data: CustomerReportIn,
         if not site:
             raise HTTPException(status_code=400, detail="所选机房不属于你的账号")
 
+    from app.services.priority import normalize_priority
+    from app.core import alert_level as AL
+    pri = normalize_priority(data.impact_level)
+
     wo = WorkOrder(
         work_order_no=work_order_no,
-        device_id=device.id,
-        device_code=device.device_code,
+        device_id=device.id if device else None,
+        device_code=device.device_code if device else None,
+        fault_device_sn=(device.serial_no if device else None),
+        fault_object=(data.fault_object or "").strip() or None,
         fault_description=data.fault_description.strip(),
         fault_phenomenon=(data.fault_phenomenon or "").strip() or None,
-        priority="MEDIUM",
-        location=device.location,
+        priority=pri,
+        alert_level=AL.from_priority(pri),
+        location=_device_location_text(device) if device else customer.address,
         status=WorkOrderStatus.SUBMITTED,
         order_type="REPAIR",
-        service_mode="REMOTE",
+        service_mode=None,
         tags=["客户报修"],
         customer_id=customer.id,
         customer_name=customer.name,
@@ -183,10 +209,12 @@ def submit_report(data: CustomerReportIn,
         customer_site_name=site.name if site else None,
         customer_address=(site.address if site else None) or customer.address,
     )
+    from app.services.fault_classify import classify_fault
+    wo.fault_category = classify_fault(wo.fault_description, wo.fault_object)
     # SLA：客户合同时限优先，未配置则按中优先级默认
     from app.services import sla as sla_service
     _now = datetime.now()
-    _resp, _resv = sla_service.compute_due("MEDIUM", _now)
+    _resp, _resv = sla_service.compute_due(pri, _now)
     if customer.sla_response_hours is not None:
         _resp = _now + timedelta(hours=customer.sla_response_hours)
     if customer.sla_resolve_hours is not None:
@@ -216,14 +244,14 @@ def submit_report(data: CustomerReportIn,
             create_notification(
                 db, user_id=u.id, type="WORK_ORDER", title="新客户报修待派工",
                 content=f"客户 {customer.name}（{customer.company or customer.phone}）报修 "
-                        f"{device.device_name or device.device_code}：{data.fault_description[:60]}",
+                        f"{(device.device_name or device.device_code) if device else (wo.fault_object or '集群/网络/其他')}：{data.fault_description[:60]}",
                 work_order_id=wo.id, level="P2",
             )
     except Exception as e:
         logger.warning(f"[Customer] 报修通知写入失败（忽略）: {e}")
     db.commit()
     db.refresh(wo)
-    logger.info(f"[Customer] 新报修 {work_order_no} 来自 {customer.name} 设备 {device.device_code}")
+    logger.info(f"[Customer] 新报修 {work_order_no} 来自 {customer.name} 设备 {(device.device_code if device else (wo.fault_object or '未指定设备'))}")
     return {
         "work_order_id": wo.id,
         "work_order_no": wo.work_order_no,
@@ -245,6 +273,7 @@ def my_reports(customer: Customer = Depends(get_current_customer),
             "id": w.id,
             "work_order_no": w.work_order_no,
             "device_code": w.device_code,
+            "fault_object": w.fault_object,
             "fault_description": w.fault_description,
             "status": w.status.value if hasattr(w.status, "value") else str(w.status),
             "status_label": SG.label_of(w.status),

@@ -92,6 +92,31 @@ def notification_count(work_order_id):
         s.close()
 
 
+def max_notification_id():
+    from sqlalchemy import func
+    from app.models.notification import Notification
+    s = db()
+    try:
+        return int(s.query(func.max(Notification.id)).scalar() or 0)
+    finally:
+        s.close()
+
+
+def notifications_after(user_id, after_id, ntype=None):
+    """某用户在 after_id 之后收到的通知（按 id 升序）"""
+    from app.models.notification import Notification
+    s = db()
+    try:
+        q = s.query(Notification).filter(Notification.user_id == user_id,
+                                         Notification.id > after_id)
+        if ntype:
+            q = q.filter(Notification.type == ntype)
+        return [{"id": n.id, "type": n.type, "title": n.title, "content": n.content}
+                for n in q.order_by(Notification.id.asc()).all()]
+    finally:
+        s.close()
+
+
 def workload_of(user_id):
     from app.models.user import User
     s = db()
@@ -127,6 +152,40 @@ def purge_orders(fault_prefix=PREFIX):
                 s.query(model).filter(model.work_order_id.in_(ids)).delete(synchronize_session=False)
             s.query(Notification).filter(Notification.work_order_id.in_(ids)).delete(synchronize_session=False)
             s.query(WorkOrder).filter(WorkOrder.id.in_(ids)).delete(synchronize_session=False)
+        # 测试备件及其从属数据
+        from app.models.part_instance import PartInstance as _PI
+        from app.models.spare_part import SparePart as _SP
+        from app.models.spare_part_requisition import SparePartRequisition as _RQ
+        from app.models.stock_movement import StockMovement as _MV
+        from app.models.stocktake import Stocktake as _ST, StocktakeItem as _STI
+        from app.models.warehouse import Warehouse as _WH, WarehouseLocation as _WL
+        from app.models.leave_request import LeaveRequest as _LR
+        from app.models.maintenance import (MaintenancePlan as _MP, MaintenanceRecord as _MR,
+                                            InspectionRecord as _IR, InspectionTemplate as _IT)
+
+        for tk in s.query(_ST).filter(_ST.remark.like(f"%{fault_prefix}%")).all():
+            s.query(_STI).filter(_STI.stocktake_id == tk.id).delete(synchronize_session=False)
+            s.delete(tk)
+        parts = s.query(_SP).filter(_SP.part_code.like(f"{fault_prefix}%")).all()
+        pids = [p.id for p in parts]
+        if pids:
+            s.query(_RQ).filter(_RQ.part_id.in_(pids)).delete(synchronize_session=False)
+            s.query(_PI).filter(_PI.part_id.in_(pids)).delete(synchronize_session=False)
+            s.query(_MV).filter(_MV.part_id.in_(pids)).delete(synchronize_session=False)
+            for p in parts:
+                s.delete(p)
+        for wh in s.query(_WH).filter(_WH.code.like(f"{fault_prefix}%")).all():
+            s.query(_WL).filter(_WL.warehouse_id == wh.id).delete(synchronize_session=False)
+            s.delete(wh)
+        for lr in s.query(_LR).filter(_LR.correlation_id.like(f"{fault_prefix}%")).all():
+            s.delete(lr)
+        for mp in s.query(_MP).filter(_MP.plan_name.like(f"{fault_prefix}%")).all():
+            s.query(_MR).filter(_MR.plan_id == mp.id).delete(synchronize_session=False)
+            s.delete(mp)
+        for itpl in s.query(_IT).filter(_IT.name.like(f"{fault_prefix}%")).all():
+            s.query(_IR).filter(_IR.template_id == itpl.id).delete(synchronize_session=False)
+            s.delete(itpl)
+
         # 并发用例造的客户/设备
         devs = s.query(Device).filter(Device.device_code.like(f"{fault_prefix}%")).all()
         for d in devs:
@@ -140,9 +199,14 @@ def purge_orders(fault_prefix=PREFIX):
 
 def purge_user(user_id):
     from app.models.customer import Customer
+    from app.models.leave_request import LeaveRequest
     from app.models.login_log import LoginLog
+    from app.models.maintenance import InspectionRecord, MaintenancePlan, MaintenanceRecord
     from app.models.notification import Notification
+    from app.models.progress_log import WorkOrderProgressLog
+    from app.models.spare_part_requisition import SparePartRequisition
     from app.models.stock_movement import StockMovement
+    from app.models.stocktake import Stocktake
     from app.models.user import User
     from app.models.work_order import WorkOrder
 
@@ -151,7 +215,27 @@ def purge_user(user_id):
         for col in (WorkOrder.technician_id, WorkOrder.assignee_id, WorkOrder.reporter_id,
                     WorkOrder.created_by, WorkOrder.dispatcher_id):
             s.query(WorkOrder).filter(col == user_id).update({col.key: None}, synchronize_session=False)
+        s.query(SparePartRequisition).filter(SparePartRequisition.applicant_id == user_id).update(
+            {"applicant_id": None}, synchronize_session=False)
+        s.query(SparePartRequisition).filter(SparePartRequisition.approver_id == user_id).update(
+            {"approver_id": None}, synchronize_session=False)
+        s.query(Stocktake).filter(Stocktake.created_by == user_id).update(
+            {"created_by": None}, synchronize_session=False)
+        s.query(Stocktake).filter(Stocktake.approved_by == user_id).update(
+            {"approved_by": None}, synchronize_session=False)
+        s.query(LeaveRequest).filter(LeaveRequest.approver_id == user_id).update(
+            {"approver_id": None}, synchronize_session=False)
+        s.query(LeaveRequest).filter(LeaveRequest.substitute_user_id == user_id).update(
+            {"substitute_user_id": None}, synchronize_session=False)
+        s.query(MaintenancePlan).filter(MaintenancePlan.responsible_id == user_id).update(
+            {"responsible_id": None}, synchronize_session=False)
+        s.query(MaintenanceRecord).filter(MaintenanceRecord.done_by_id == user_id).update(
+            {"done_by_id": None}, synchronize_session=False)
+        s.query(InspectionRecord).filter(InspectionRecord.inspector_id == user_id).update(
+            {"inspector_id": None}, synchronize_session=False)
         s.query(StockMovement).filter(StockMovement.operator_id == user_id).update(
+            {"operator_id": None}, synchronize_session=False)
+        s.query(WorkOrderProgressLog).filter(WorkOrderProgressLog.operator_id == user_id).update(
             {"operator_id": None}, synchronize_session=False)
         s.query(Customer).filter(Customer.owner_id == user_id).update(
             {"owner_id": None}, synchronize_session=False)
@@ -163,9 +247,6 @@ def purge_user(user_id):
         s.close()
 
 
-# ============================================================
-# 夹具
-# ============================================================
 @pytest.fixture(scope="session")
 def api():
     return Api()
@@ -206,6 +287,20 @@ def techs(api, admin):
         purge_user(t["id"])
 
 
+@pytest.fixture(scope="session")
+def supervisor(api, admin):
+    """临时主管账号：审批类通知的收件人"""
+    username = f"pytest_sup_{RUN}"
+    st, u = api.post("/users/", admin, json={
+        "username": username, "password": TECH_PASSWORD,
+        "real_name": f"Pytest主管{RUN}", "role": "SUPERVISOR"})
+    assert st in (200, 201), f"建测试主管失败：{u}"
+    token, _, lst = login(api, username, TECH_PASSWORD)
+    assert lst == 200, "测试主管登录失败"
+    yield {"id": u["id"], "username": username, "token": token}
+    purge_user(u["id"])
+
+
 @pytest.fixture(scope="session", autouse=True)
 def cleanup(api, admin, server):
     """会话结束清理测试工单（即使用例中途失败也会清）"""
@@ -214,6 +309,18 @@ def cleanup(api, admin, server):
         purge_orders()
     except Exception as e:
         print(f"[cleanup] 清理测试工单失败：{e}")
+    # 兜底：把本次/历史遗留的 pytest_ 账号也清掉（夹具 teardown 顺序异常时可能漏）
+    try:
+        from app.models.user import User
+        s = db()
+        try:
+            uids = [u.id for u in s.query(User).filter(User.username.like("pytest_%")).all()]
+        finally:
+            s.close()
+        for uid in uids:
+            purge_user(uid)
+    except Exception as e:
+        print(f"[cleanup] 清理测试账号失败：{e}")
 
 
 @pytest.fixture
@@ -257,8 +364,6 @@ class OrderBuilder:
             "ARCHIVED": ["SUBMITTED", "ASSIGNED", "ACCEPTED", "ARRIVED", "INSPECTING",
                          "IN_PROGRESS", "ARCHIVING"],
             "REJECTED": ["SUBMITTED", "REJECTED"],
-            "COMPLETED": ["SUBMITTED", "ASSIGNED", "ACCEPTED", "ARRIVED", "INSPECTING",
-                          "IN_PROGRESS"],
         }[status]
         for i, to in enumerate(path):
             extra_args = {}
@@ -270,11 +375,7 @@ class OrderBuilder:
             self.fill_fields(wid)
             st, body = self.api.post(f"/work-orders/{wid}/archive-complete", self.admin)
             assert st == 200, f"归档失败：{st} {body}"
-        elif status == "COMPLETED":
-            # /complete 是唯一把工单打到 COMPLETED 的入口
-            self.fill_fields(wid)
-            st, body = self.api.post(f"/work-orders/{wid}/complete", self.admin)
-            assert st == 200, f"提交完成失败：{st} {body}"
+
         return self.get(wid)
 
     def fill_fields(self, wid):

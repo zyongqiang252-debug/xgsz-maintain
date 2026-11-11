@@ -81,6 +81,26 @@ def ensure_oa_services_started(app) -> None:
             id="oa_leaves_daily_sync",
             replace_existing=True,
         )
+
+        # 库存预警巡检：每小时一次（站内 6 小时去重；出库瞬间的即时提醒不经过这里）
+        def _job_stock_alert():
+            from app.core.periodic_jobs import run_stock_alert_check
+            run_stock_alert_check()
+
+        # 保养到期扫描：每天 08:00，到期前 3 天提醒负责人
+        def _job_maintenance_due():
+            from app.core.periodic_jobs import run_maintenance_due_check
+            run_maintenance_due_check(days_ahead=3)
+
+        scheduler.add_job(
+            _job_stock_alert, "interval", hours=1,
+            id="stock_alert_hourly", replace_existing=True,
+            next_run_time=datetime.now() + timedelta(seconds=90),
+        )
+        scheduler.add_job(
+            _job_maintenance_due, "cron", hour=8, minute=0,
+            id="maintenance_due_daily", replace_existing=True,
+        )
         scheduler.start()
         logger.info("[OA-Sync] APScheduler 兜底同步任务已注册：每天 01:00 跑一次（近 3 天）")
 
@@ -303,6 +323,8 @@ class DingTalkLoginResponse(BaseModel):
 class MobileReportRequest(BaseModel):
     """移动端极简上报"""
     device_code: Optional[str] = None
+    device_id: Optional[int] = None
+    fault_device_sn: Optional[str] = None
     fault_description: str
     media: Optional[List[str]] = None
     location: Optional[str] = None
@@ -315,6 +337,8 @@ class CompletionReportRequest(BaseModel):
     work_hours: float = 0.0
     used_parts: Optional[List[dict]] = None
     solution_desc: str = ""
+    solution_steps: Optional[str] = None
+    repair_result: Optional[str] = None
     completion_photos: Optional[List[str]] = None
 
 
@@ -496,92 +520,165 @@ def list_contacts(dept_id: int = Query(0, description="部门ID，0为全部"),
 
 # ==================== 移动端极简上报 ====================
 
-@router.post("/report", summary="移动端极简上报")
+@router.post("/report", summary="移动端极简上报（内部复用 PC 建单 + 统一状态机）")
 def mobile_report(req: MobileReportRequest, db: Session = Depends(get_db),
                   current_user: User = Depends(get_current_user)):
     """
-    工作人员通过移动端扫码/拍照/语音上报故障
-    - 自动生成工单编号
-    - 触发 AI 分析和派工
-    - 返回工单状态
+    工作人员通过移动端上报故障：
+    - 复用 PC 的 create_work_order（自动编号 / created_by / 故障归类 / 告警级别 / SLA）
+    - 再通过 _do_transition 走 DRAFT → SUBMITTED（技术员自建单按 PC 规则落到 ACCEPTED）
     """
-    today = datetime.now().strftime("%Y%m%d")
-    count = db.query(WorkOrder).filter(
-        WorkOrder.work_order_no.like(f"WO-{today}-%")
-    ).count()
-    wo_no = f"WO-{today}-{count + 1:03d}"
+    from app.schemas import WorkOrderCreate, WorkOrderTransition
+    from app.api.work_orders import create_work_order, _do_transition
 
-    work_order = WorkOrder(
-        work_order_no=wo_no,
-        device_code=req.device_code,
+    # 扫设备码后没手填的位置/SN，用设备档案兜底（保证工单能定位到机柜、带上 SN）
+    device = None
+    if req.device_id:
+        device = db.query(Device).filter(Device.id == req.device_id).first()
+    device_code = req.device_code or (device.device_code if device else None)
+    serial_no = req.fault_device_sn or (device.serial_no if device else None)
+    location = (req.location or "").strip() or None
+    if not location and device:
+        rack = " / ".join(x for x in [getattr(device, "room", None), getattr(device, "rack_no", None)] if x)
+        location = device.location or rack or None
+
+    payload = WorkOrderCreate(
+        device_id=req.device_id or (device.id if device else None),
+        device_code=device_code,
+        fault_device_sn=serial_no,
         fault_description=req.fault_description,
-        fault_media=req.media,
-        location=req.location,
-        reporter_id=req.reporter_id,
-        priority=req.priority,
-        status=WorkOrderStatus.SUBMITTED,
+        fault_media=req.media or [],
+        location=location,
+        priority=req.priority or "MEDIUM",
+        reporter_id=req.reporter_id or current_user.id,
+        order_type="REPAIR",
     )
-    db.add(work_order)
-    db.commit()
-    db.refresh(work_order)
-
+    created = create_work_order(payload, db, current_user)
+    wid = created["id"] if isinstance(created, dict) else created.id
+    try:
+        _do_transition(
+            wid,
+            WorkOrderTransition(to_status="SUBMITTED", remark="移动端上报",
+                                source="H5"),
+            db, current_user,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"[Mobile] 提交流转失败（保留草稿）: {e}")
+    wo = db.query(WorkOrder).filter(WorkOrder.id == wid).first()
     return {
-        "work_order_id": work_order.id,
-        "work_order_no": wo_no,
-        "status": work_order.status.value,
+        "work_order_id": wo.id,
+        "work_order_no": wo.work_order_no,
+        "status": wo.status.value if hasattr(wo.status, "value") else str(wo.status),
         "message": "上报成功",
     }
 
 
 # ==================== 维修人员端 ====================
 
-@router.get("/tech/queue", summary="维修人员工单队列")
+@router.get("/tech/queue", summary="维修人员工单队列（分 tab + 工单池）")
 def tech_queue(
-    userid: Optional[str] = Query(None, description="仅主管/管理员可指定他人；普通维修员忽略此参数"),
-    current_user: User = Depends(get_current_user),
+    tab: Optional[str] = Query(None, description="pending/processing/archiving/completed/pool；不传=全部我的"),
+    userid: Optional[str] = Query(None, description="仅主管/管理员可指定他人；普通维修员忽略"),
     page: int = Query(1, ge=1),
-    page_size: int = Query(10),
+    page_size: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """获取维修人员的待处理工单列表（默认只看自己，避免越权查看他人工单）"""
+    """移动端队列：覆盖 ACCEPTED/ARRIVED/INSPECTING/IN_PROGRESS/ARCHIVING/ARCHIVED，并带工单池。"""
     user = current_user
     wanted = (userid or "").strip()
     mine = {current_user.username, current_user.dingtalk_userid or ""}
-    if wanted and wanted not in mine:
-        if current_user.role in (UserRole.ADMIN.value, UserRole.SUPERVISOR.value):
-            target = db.query(User).filter(
-                (User.username == wanted) | (User.dingtalk_userid == wanted)
-            ).first()
-            if target:
-                user = target
-        # 普通维修员传了别人的 id 一律忽略，只返回自己的队列
+    if wanted and wanted not in mine and current_user.role in (UserRole.ADMIN.value, UserRole.SUPERVISOR.value):
+        target = db.query(User).filter(
+            (User.username == wanted) | (User.dingtalk_userid == wanted)
+        ).first()
+        if target:
+            user = target
 
-    query = db.query(WorkOrder).filter(
-        WorkOrder.assignee_id == user.id,
-        WorkOrder.status.in_([
-            WorkOrderStatus.ASSIGNED,
-            WorkOrderStatus.IN_PROGRESS,
-        ]),
-    ).order_by(WorkOrder.priority.desc(), WorkOrder.created_at.desc())
+    now = datetime.now()
+    recent_cutoff = now - timedelta(days=30)
 
+    mine_q = db.query(WorkOrder).filter(
+        (WorkOrder.technician_id == user.id) | (WorkOrder.assignee_id == user.id)
+    )
+    pool_q = db.query(WorkOrder).filter(
+        WorkOrder.status == WorkOrderStatus.SUBMITTED,
+        WorkOrder.technician_id.is_(None),
+        WorkOrder.assignee_id.is_(None),
+    )
+
+    tab_status = {
+        "pending": [WorkOrderStatus.ASSIGNED],
+        "processing": [WorkOrderStatus.ACCEPTED, WorkOrderStatus.ARRIVED,
+                       WorkOrderStatus.INSPECTING, WorkOrderStatus.IN_PROGRESS],
+        "archiving": [WorkOrderStatus.ARCHIVING, WorkOrderStatus.COMPLETED],
+        "completed": [WorkOrderStatus.ARCHIVED],
+    }
+
+    def count_of(statuses, recent=False):
+        q = mine_q.filter(WorkOrder.status.in_(statuses))
+        if recent:
+            q = q.filter(WorkOrder.created_at >= recent_cutoff)
+        return q.count()
+
+    counts = {k: count_of(v) for k, v in tab_status.items()}
+    counts["completed"] = count_of(tab_status["completed"], recent=True)
+    counts["pool"] = pool_q.count()
+
+    if tab == "pool":
+        query = pool_q
+    elif tab in tab_status:
+        query = mine_q.filter(WorkOrder.status.in_(tab_status[tab]))
+        if tab == "completed":
+            query = query.filter(WorkOrder.created_at >= recent_cutoff)
+    else:
+        # 不传 tab：全部与我相关的（保持旧客户端可用）
+        all_statuses = []
+        for v in tab_status.values():
+            all_statuses.extend(v)
+        query = mine_q.filter(WorkOrder.status.in_(all_statuses))
+
+    query = query.order_by(WorkOrder.priority.desc(), WorkOrder.created_at.desc())
     total = query.count()
     items = query.offset((page - 1) * page_size).limit(page_size).all()
 
-    return {
-        "total": total,
-        "items": [{
+    out = []
+    for wo in items:
+        out.append({
             "id": wo.id,
             "work_order_no": wo.work_order_no,
             "device_code": wo.device_code,
-            "fault_description": wo.fault_description[:80],
+            "device_name": getattr(getattr(wo, "device", None), "device_name", None),
+            "fault_description": (wo.fault_description or "")[:80],
             "priority": wo.priority,
-            "location": wo.location,
             "status": wo.status.value if hasattr(wo.status, "value") else str(wo.status),
+            "service_mode": (wo.service_mode.value if hasattr(getattr(wo, "service_mode", None), "value")
+                             else getattr(wo, "service_mode", None)),
+            "location": wo.location or getattr(getattr(wo, "device", None), "location", None),
+            "technician_id": wo.technician_id,
             "created_at": wo.created_at.isoformat() if wo.created_at else None,
-        } for wo in items],
+        })
+    return {
+        "tab": tab,
+        "counts": counts,
+        "pool_count": counts["pool"],
+        "total": total,
+        "items": out,
         "page": page,
         "page_size": page_size,
     }
+
+
+def _tech_detail_reporter_name(db, wo):
+    """报修人：上报人 → 建单人 → 客户联系人（WorkOrder 没有 reporter 关系，按 id 查）"""
+    for uid in (getattr(wo, "reporter_id", None), getattr(wo, "created_by", None)):
+        if uid:
+            u = db.query(User).filter(User.id == uid).first()
+            if u and u.real_name:
+                return u.real_name
+    return getattr(wo, "customer_contact_name", None) or getattr(wo, "customer_name", None)
 
 
 @router.get("/tech/detail/{work_order_id}", summary="维修人员工单详情")
@@ -613,7 +710,7 @@ def tech_detail(work_order_id: int, db: Session = Depends(get_db),
         "root_cause": wo.root_cause,
         "solution_steps": wo.solution_steps,
         "priority": wo.priority,
-        "location": wo.location,
+        "location": wo.location or getattr(getattr(wo, "device", None), "location", None),
         "status": wo.status.value if hasattr(wo.status, "value") else str(wo.status),
         "confidence": wo.confidence,
         "analysis_result": wo.analysis_result,
@@ -621,77 +718,170 @@ def tech_detail(work_order_id: int, db: Session = Depends(get_db),
         "completion_report": wo.completion_report,
         "inventory": inventory,
         "created_at": wo.created_at.isoformat() if wo.created_at else None,
+        # 与 PC 端工单详情对齐的字段（技术员 H5 同步展示）
+        "device_type": (getattr(wo, "device_type", None)
+                        or getattr(getattr(wo, "device", None), "device_type", None)),
+        "fault_object": getattr(wo, "fault_object", None),
+        "fault_category": getattr(wo, "fault_category", None),
+        "service_mode": (wo.service_mode.value if hasattr(getattr(wo, "service_mode", None), "value")
+                         else getattr(wo, "service_mode", None)),
+        "reporter_name": _tech_detail_reporter_name(db, wo),
+        "technician_name": (wo.technician.real_name if getattr(wo, "technician", None) else None),
+        "customer_name": getattr(wo, "customer_name", None),
+        "customer_contact_name": getattr(wo, "customer_contact_name", None),
+        "attachments": getattr(wo, "attachments", None),
+        "repair_result": getattr(wo, "repair_result", None),
+        "work_hours": getattr(wo, "work_hours", None),
+        "first_response_at": (wo.first_response_at.isoformat() if getattr(wo, "first_response_at", None) else None),
+        "start_time": (wo.start_time.isoformat() if getattr(wo, "start_time", None) else None),
+        "resolved_at": (wo.resolved_at.isoformat() if getattr(wo, "resolved_at", None) else None),
+        "device_name": getattr(getattr(wo, "device", None), "device_name", None),
+        "response_due_at": (wo.response_due_at.isoformat() if getattr(wo, "response_due_at", None) else None),
+        "resolve_due_at": (wo.resolve_due_at.isoformat() if getattr(wo, "resolve_due_at", None) else None),
+        "sla_status": getattr(wo, "sla_status", None),
     }
 
 
-@router.post("/tech/start/{work_order_id}", summary="开始维修")
+@router.post("/tech/start/{work_order_id}", summary="接单（ASSIGNED → ACCEPTED，走统一状态机）")
 def tech_start_work(work_order_id: int, db: Session = Depends(get_db),
                     current_user: User = Depends(get_current_user)):
-    """维修人员接单，状态 → IN_PROGRESS"""
+    from app.schemas import WorkOrderTransition
+    from app.api.work_orders import _do_transition
+
     wo = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
     if not wo:
         raise HTTPException(status_code=404, detail="工单不存在")
     if wo.status != WorkOrderStatus.ASSIGNED:
         raise HTTPException(status_code=400, detail=f"工单状态为 {wo.status.value}，无法接单")
-    wo.status = WorkOrderStatus.IN_PROGRESS
-    wo.start_time = datetime.now()
-    db.commit()
-    return {"message": "已开始维修", "status": wo.status.value}
+    _do_transition(
+        work_order_id,
+        WorkOrderTransition(to_status="ACCEPTED", remark="移动端接单", source="H5"),
+        db, current_user,
+    )
+    return {"message": "已接单", "status": "ACCEPTED"}
 
 
-@router.post("/tech/complete/{work_order_id}", summary="提交完成报告")
+class MobileTransitionRequest(BaseModel):
+    to_status: str
+    service_mode: Optional[str] = None
+    location: Optional[str] = None
+    remark: Optional[str] = None
+
+
+@router.post("/tech/transition/{work_order_id}", summary="移动端状态推进（薄封装统一状态机）")
+def tech_transition(work_order_id: int, req: MobileTransitionRequest,
+                    db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
+    from app.schemas import WorkOrderTransition
+    from app.api.work_orders import _do_transition
+
+    allowed = {"ACCEPTED", "ARRIVED", "INSPECTING", "IN_PROGRESS", "ARCHIVING"}
+    target = (req.to_status or "").upper()
+    if target not in allowed:
+        raise HTTPException(status_code=400, detail=f"移动端不支持推进到 {req.to_status}")
+    _do_transition(
+        work_order_id,
+        WorkOrderTransition(
+            to_status=target,
+            service_mode=req.service_mode,
+            location=req.location,
+            remark=req.remark or "移动端推进",
+            source="H5",
+        ),
+        db, current_user,
+    )
+    return {"message": "已推进", "status": target}
+
+
+@router.post("/tech/claim/{work_order_id}", summary="工单池抢单（SUBMITTED → ASSIGNED 给自己）")
+def tech_claim(work_order_id: int, db: Session = Depends(get_db),
+               current_user: User = Depends(get_current_user)):
+    from app.schemas import WorkOrderTransition
+    from app.api.work_orders import _do_transition
+
+    wo = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
+    if not wo:
+        raise HTTPException(status_code=404, detail="工单不存在")
+    if wo.status != WorkOrderStatus.SUBMITTED:
+        raise HTTPException(status_code=400, detail="只有待派工工单可以领取")
+    _do_transition(
+        work_order_id,
+        WorkOrderTransition(to_status="ASSIGNED", technician_id=current_user.id,
+                            remark="移动端抢单", source="H5"),
+        db, current_user,
+    )
+    return {"message": "已领取", "status": "ASSIGNED"}
+
+
+@router.post("/tech/complete/{work_order_id}", summary="提交完成报告（→ ARCHIVING，走统一状态机）")
 def tech_complete_work(
     work_order_id: int,
     report: CompletionReportRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """维修完成，提交报告，状态 → COMPLETED"""
+    """提交完成报告：写报告字段/附件，再走统一流转 IN_PROGRESS → ARCHIVING。"""
+    from app.schemas import WorkOrderTransition
+    from app.api.work_orders import _do_transition
+
     wo = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
     if not wo:
         raise HTTPException(status_code=404, detail="工单不存在")
     if wo.status != WorkOrderStatus.IN_PROGRESS:
         raise HTTPException(status_code=400, detail=f"工单状态为 {wo.status.value}，无法完成")
 
-    wo.status = WorkOrderStatus.COMPLETED
-    wo.end_time = datetime.now()
+    now = datetime.now()
+    wo.end_time = now
+    if report.work_hours:
+        wo.work_hours = report.work_hours
+    if report.solution_desc and not (wo.solution_steps or "").strip():
+        wo.solution_steps = report.solution_desc
+    if report.repair_result:
+        wo.repair_result = report.repair_result
+    if report.completion_photos:
+        atts = list(wo.attachments or [])
+        existing = {a.get("url") for a in atts if isinstance(a, dict)}
+        for url in report.completion_photos:
+            if url and url not in existing:
+                atts.append({"url": url, "name": "完成报告照片", "type": "image", "source": "REPAIR"})
+        wo.attachments = atts
     wo.completion_report = {
         "work_hours": report.work_hours,
         "used_parts": report.used_parts,
         "solution_desc": report.solution_desc,
         "completion_photos": report.completion_photos,
-        "completed_at": wo.end_time.isoformat(),
+        "completed_at": now.isoformat(),
     }
-    if report.solution_desc:
-        wo.solution_steps = report.solution_desc
-
     db.commit()
+
+    _do_transition(
+        work_order_id,
+        WorkOrderTransition(to_status="ARCHIVING", remark="移动端提交完成报告", source="H5"),
+        db, current_user,
+    )
 
     try:
         assignee = db.query(User).filter(User.id == wo.assignee_id).first()
         if assignee:
             dt_userid = assignee.dingtalk_userid or str(assignee.id)
             notification_service.notify_completion(
-                userid=dt_userid,
-                work_order_no=wo.work_order_no,
-                device=wo.device_code or "未知设备",
-                summary=report.solution_desc,
-                db=db,
+                userid=dt_userid, work_order_no=wo.work_order_no,
+                device=wo.device_code or "未知设备", summary=report.solution_desc, db=db,
             )
     except Exception as e:
         logger.warning(f"[Mobile] 完成通知发送失败: {e}")
 
-    # 自动收录知识到向量库
-    knowledge_synced = False
+    # AI 分析与知识收录放后台，接口立即返回
     try:
-        from app.api.work_orders import _auto_publish_knowledge
-        knowledge_synced = _auto_publish_knowledge(wo, db)
-        db.commit()
+        import threading
+        from app.api.work_orders import _run_completion_ai_background
+        threading.Thread(target=_run_completion_ai_background, args=(wo.id,), daemon=True).start()
     except Exception as e:
-        logger.warning(f"[Mobile] 知识收录失败: {e}")
+        logger.warning(f"[Mobile] 后台 AI 分析启动失败（忽略）: {e}")
 
-    logger.info(f"[Mobile] 工单 {wo.work_order_no} 维修完成，knowledge_synced={knowledge_synced}")
-    return {"message": "维修完成", "status": "COMPLETED", "knowledge_synced": knowledge_synced}
+    logger.info(f"[Mobile] 工单 {wo.work_order_no} 提交完成报告，进入待归档")
+    return {"message": "维修完成，进入待归档", "status": "ARCHIVING",
+            "knowledge_synced": None, "ai_pending": True}
 
 
 # ====================================================================

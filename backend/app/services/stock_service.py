@@ -93,7 +93,7 @@ def apply_stock_change(
         f"[Stock] {movement_type} {part.part_code} x{quantity:g} "
         f"{before:g} -> {after:g}（流水 {mv.id}）"
     )
-    _maybe_alert_low_stock(part, before, after, operator)
+    _maybe_alert_low_stock(db, part, before, after, operator)
     return mv
 
 
@@ -106,24 +106,39 @@ def _invalidate_part_cache(part_id: int) -> None:
         logger.warning(f"[Stock] 清备件缓存失败（忽略）: {e}")
 
 
-def _maybe_alert_low_stock(part: SparePart, before: float, after: float,
+def _maybe_alert_low_stock(db, part: SparePart, before: float, after: float,
                            operator: Optional[User] = None) -> None:
-    """出库后库存"刚跌破"安全库存才推群，已经低于安全库存的再出库不重复提醒"""
+    """出库后库存"刚跌破"安全库存才提醒（群 + 站内），已经低于安全库存的再出库不重复提醒"""
     try:
         safety = float(getattr(part, "safety_stock", 0) or 0)
         if safety <= 0 or after >= safety or before < safety:
             return
-        from app.core.dingtalk_group import group_robot
-        if not group_robot.enabled:
-            return
-        group_robot.stock_alert_event(
-            part_code=part.part_code,
-            part_name=part.part_name,
-            stock=after,
-            safety_stock=safety,
-            unit=getattr(part, "unit", "") or "",
-            location=getattr(part, "location", "") or "",
-            operator=operator.real_name if operator else "",
-        )
+        # 1) 钉钉群
+        try:
+            from app.core.dingtalk_group import group_robot
+            if group_robot.enabled:
+                group_robot.stock_alert_event(
+                    part_code=part.part_code,
+                    part_name=part.part_name,
+                    stock=after,
+                    safety_stock=safety,
+                    unit=getattr(part, "unit", "") or "",
+                    location=getattr(part, "location", "") or "",
+                    operator=operator.real_name if operator else "",
+                )
+        except Exception as e:
+            logger.warning(f"[Stock] 库存预警群推送失败（忽略）: {e}")
+        # 2) 站内通知：出库瞬间就提醒管理员/主管，不用等定时检查
+        try:
+            from app.api.notifications import notify_roles
+            notify_roles(
+                db, ["ADMIN", "SUPERVISOR"], type="STOCK_ALERT", title="库存跌破安全库存",
+                content=f"{part.part_code} {part.part_name} 出库后库存 {after:g}"
+                        f"{getattr(part, 'unit', '') or ''}，已低于安全库存 {safety:g}"
+                        + (f"（操作人：{operator.real_name}）" if operator else ""),
+                level="P1", exclude_user_id=operator.id if operator else None,
+            )
+        except Exception as e:
+            logger.warning(f"[Stock] 库存预警站内通知失败（忽略）: {e}")
     except Exception as e:  # 推送失败绝不影响库存业务
-        logger.warning(f"[Stock] 库存预警推送失败（忽略）: {e}")
+        logger.warning(f"[Stock] 库存预警失败（忽略）: {e}")

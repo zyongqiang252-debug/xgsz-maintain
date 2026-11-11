@@ -17,6 +17,7 @@ from app.core.config import settings
 from app.core.security import create_access_token, get_current_user, get_optional_user
 from app.core.password import hash_password, verify_password
 from app.models.user import User
+from app.models.customer import Customer
 from datetime import datetime
 
 router = APIRouter()
@@ -141,6 +142,26 @@ def _log_login(db: Session, request, user, success: bool, reason: str = "",
     except Exception as e:
         logger.warning(f"[Auth] 写登录日志失败: {e}")
 
+
+# 客户账号走独立门户 /c/login，和内部 users 表是两套账号体系。
+# 客户把主站登录页当入口时，必须明确告诉他去哪个入口，而不是回「用户名或密码错误」。
+CUSTOMER_PORTAL_HINT = "该手机号是客户账号，请从「客户报修入口」（/c/login）登录"
+
+
+def _customer_portal_hint(db: Session, identifier: str) -> str:
+    """identifier 命中客户账号时返回引导文案（且仅在不是内部用户时）"""
+    phone = (identifier or "").strip()
+    if not phone:
+        return ""
+    if db.query(User.id).filter((User.username == phone) | (User.phone == phone)).first():
+        return ""
+    c = db.query(Customer).filter(Customer.phone == phone).first()
+    if not c:
+        return ""
+    if not c.is_active:
+        return "该客户账号已停用，请联系服务方管理员"
+    return CUSTOMER_PORTAL_HINT
+
 @router.post("/send-code", summary="发送短信验证码")
 def send_sms_code(req: SendCodeRequest, request: Request):
     """
@@ -232,7 +253,13 @@ def login_by_code(req: LoginByCodeRequest, request: Request, db: Session = Depen
     # 查找用户
     user = db.query(User).filter(User.phone == req.phone).first()
     if not user:
-        # 自动创建新用户
+        # 安全修复：客户账号不允许通过「内部验证码登录」自动注册成 TECHNICIAN，
+        # 否则客户（或任何知道手机号的人）在内部登录页输一次验证码就拿到内部工单权限。
+        hint = _customer_portal_hint(db, req.phone)
+        if hint:
+            logger.warning(f"[Auth] 拒绝客户手机号走内部验证码登录: {req.phone} 原因={hint}")
+            raise HTTPException(status_code=400, detail=hint)
+        # 内部员工首次手机号登录：自动创建技术员账号
         from app.models.user import UserRole
         user = User(
             username=req.phone,
@@ -278,8 +305,9 @@ def login_by_password(req: PasswordLoginRequest, request: Request, db: Session =
         (User.username == req.username) | (User.phone == req.username)
     ).first()
     if not user:
-        _log_login(db, request, None, False, "用户不存在", "password", req.username)
-        raise HTTPException(status_code=400, detail="用户名或密码错误")
+        hint = _customer_portal_hint(db, req.username)
+        _log_login(db, request, None, False, hint or "用户不存在", "password", req.username)
+        raise HTTPException(status_code=400, detail=hint or "用户名或密码错误")
     if not user.is_active:
         _log_login(db, request, user, False, "账号已禁用", "password", req.username)
         raise HTTPException(status_code=403, detail="账号已被禁用")

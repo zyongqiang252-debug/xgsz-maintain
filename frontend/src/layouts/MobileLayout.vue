@@ -46,7 +46,12 @@ const showBack = computed(() => !['/m/report', '/m/queue', '/m/leave'].includes(
 const showTabs = computed(() => ['/m/report', '/m/queue', '/m/leave'].includes(route.path))
 const title = computed(() => route.meta?.title || '维修助手')
 
-const user = { name: '张工' } // 后续从钉钉免登获取
+const user = (() => {
+  try {
+    const u = JSON.parse(localStorage.getItem('current_user') || '{}')
+    return { name: u.real_name || u.username || '维修员' }
+  } catch { return { name: '维修员' } }
+})()
 const showUserMenu = ref(false)
 </script>
 

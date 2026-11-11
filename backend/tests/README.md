@@ -20,12 +20,13 @@ cd backend
 | `test_state_machine.py` | 11 状态 × 11 目标的状态机矩阵、挂起阻断、终态不可逆、同状态改派、远程跳过到场；**非法流转断言「400 + 状态不变 + 不写日志/通知」** | 87 |
 | `test_workload.py` | 派工→拒收循环 3 次的工作量守恒、拒收不影响他人、接单/归档的扣减时点 | 4 |
 | `test_concurrency.py` | 客户门户 10 并发报修的单号唯一性、同内容重复报修 | 2 |
+| `test_notifications.py` | 领用/盘点/挂起/待归档/低库存/巡检/返厂报废/保养到期/请假撤销 的通知收件人与内容（11 项） | 11 |
 | `test_page_smoke.py` | 16 个 PC 页面：零 console error、零失败请求（`-m slow`） | 1 |
 | `conftest.py` | 管理员/临时技术员夹具、`OrderBuilder`（按状态机把工单推到任意状态）、DB 断言、数据清理 | — |
 
 ## 当前结果（2026-11-11）
 
-- 106 passed / 4 xfailed / 2 failed（非 slow）
+- 117 passed / 4 xfailed / 2 failed（非 slow）
 - **4 个 xfail 是已知缺陷**，`strict=True`：修好后会变成 XPASS 并**报错**，提醒回来删掉 xfail 标记：
   1. `test_hold_blocks_reassign` —— C-01 挂起中仍可改派
   2. `test_accept_keeps_workload` —— 接单就把工作量 -1，在办工作量被清零

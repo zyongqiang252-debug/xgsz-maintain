@@ -125,6 +125,7 @@ class WorkOrderCreate(BaseModel):
     order_type: Optional[str] = None
     device_id: Optional[int] = None
     device_code: Optional[str] = None
+    fault_object: Optional[str] = None
     fault_code: Optional[str] = None
     device_error_code: Optional[str] = None
     log_text: Optional[str] = None
@@ -186,6 +187,7 @@ class WorkOrderUpdate(BaseModel):
     device_id: Optional[int] = None
     order_type: Optional[str] = None
     device_code: Optional[str] = None
+    fault_object: Optional[str] = None
     fault_code: Optional[str] = None
     device_error_code: Optional[str] = None
     log_text: Optional[str] = None
@@ -246,6 +248,7 @@ class WorkOrderResponse(BaseModel):
     work_order_no: str
     device_id: Optional[int]
     device_code: Optional[str] = None
+    fault_object: Optional[str] = None
     device_type: Optional[str] = None
     device_name: Optional[str] = None
     fault_code: Optional[str]
@@ -309,6 +312,9 @@ class WorkOrderResponse(BaseModel):
     updated_at: datetime
     created_by: Optional[int] = None
     created_by_employee_id: Optional[str] = None
+    created_by_name: Optional[str] = None
+    created_by_department: Optional[str] = None
+    reporter_name: Optional[str] = None
     customer_id: Optional[int] = None
     customer_name: Optional[str] = None
     customer_company: Optional[str] = None
@@ -326,6 +332,7 @@ class WorkOrderResponse(BaseModel):
     response_due_at: Optional[datetime] = None
     resolve_due_at: Optional[datetime] = None
     first_response_at: Optional[datetime] = None
+    dispatcher_id: Optional[int] = None
     resolved_at: Optional[datetime] = None
     sla_status: Optional[str] = None
     alert_level: Optional[str] = None  # 由优先级/SLA 推导的 P0~P3
@@ -353,6 +360,8 @@ class WorkOrderTransition(BaseModel):
     to_status: str
     technician_id: Optional[int] = Field(None, description="派工/改派时指定的维修员 ID")
     collaborator_ids: Optional[List[int]] = Field(None, description="协作人（维修员）ID 列表，主责之外")
+    service_mode: Optional[str] = Field(None, description="接单时确认的服务方式 REMOTE/SITE/RMA")
+    to_pool: Optional[bool] = Field(None, description="技术员自建单提交时选择放入工单池")
     source: Optional[str] = "WEB"
     remark: Optional[str] = None
     location: Optional[str] = None
@@ -598,6 +607,10 @@ class UserResponse(BaseModel):
     phone: Optional[str]
     role: str
     is_active: bool
+    department: Optional[str] = None
+    title: Optional[str] = None
+    current_workload_count: Optional[int] = 0
+    last_login_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 

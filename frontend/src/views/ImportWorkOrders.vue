@@ -679,7 +679,24 @@ async function confirmItem(row) {
   }
   confirmingId.value = row.id
   try {
-    const res = await request.post(`/work-order-imports/items/${row.id}/confirm`)
+    let res
+    try {
+      res = await request.post(`/work-order-imports/items/${row.id}/confirm`)
+    } catch (e) {
+      // 后端内容指纹查重命中：给一次「强制入库」的机会
+      const detail = e?.response?.data?.detail || ''
+      if (e?.response?.status === 409 || String(detail).includes('疑似重复')) {
+        await ElMessageBox.confirm(
+          `${detail}\n\n如果确认这是另一张独立工单，可以强制入库。`,
+          '疑似重复工单',
+          { confirmButtonText: '强制入库', cancelButtonText: '先核对', type: 'warning' }
+        )
+        res = await request.post(`/work-order-imports/items/${row.id}/confirm`, null,
+                                 { params: { force: true } })
+      } else {
+        throw e
+      }
+    }
     ElMessage.success(res.message)
     loadItems()
   } finally {
