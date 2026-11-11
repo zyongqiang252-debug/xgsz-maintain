@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from loguru import logger
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
 from typing import Optional, List
@@ -154,8 +155,40 @@ def delete_device(
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="设备不存在")
+
+    # 引用检查：库外键没有级联，直接删会撞约束报 500；这里提前拦下并说清原因
+    from app.models.part_instance import PartInstance, PartInstanceStatus
+    from app.models.maintenance import MaintenancePlan, MaintenanceRecord
+
+    wo_cnt = db.query(func.count(WorkOrder.id)).filter(WorkOrder.device_id == device_id).scalar() or 0
+    inst_cnt = (db.query(func.count(PartInstance.id))
+                .filter(PartInstance.device_id == device_id,
+                        PartInstance.status == PartInstanceStatus.INSTALLED)
+                .scalar() or 0)
+    plan_cnt = (db.query(func.count(MaintenancePlan.id))
+                .filter(MaintenancePlan.device_id == device_id).scalar() or 0)
+    rec_cnt = (db.query(func.count(MaintenanceRecord.id))
+               .filter(MaintenanceRecord.device_id == device_id).scalar() or 0)
+    if wo_cnt or inst_cnt or plan_cnt or rec_cnt:
+        parts = []
+        if wo_cnt:
+            parts.append(f"工单 {wo_cnt} 张")
+        if inst_cnt:
+            parts.append(f"装机中的实物备件 {inst_cnt} 个")
+        if plan_cnt:
+            parts.append(f"保养计划 {plan_cnt} 个")
+        if rec_cnt:
+            parts.append(f"保养记录 {rec_cnt} 条")
+        raise HTTPException(
+            status_code=400,
+            detail=f"设备已被引用（{'、'.join(parts)}），不能直接删除；"
+                   f"请先归档/解绑相关记录，或把设备改为停用状态",
+        )
+
+    # 客户绑定关系随设备一起删（customer_devices 有 ON DELETE CASCADE）
     db.delete(device)
     db.commit()
+    logger.info(f"[Device] {current_user.real_name} 删除设备 {device.device_code}")
     return {"message": "设备已删除"}
 
 

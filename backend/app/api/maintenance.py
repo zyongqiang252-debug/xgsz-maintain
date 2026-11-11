@@ -147,6 +147,9 @@ def delete_plan(plan_id: int, db: Session = Depends(get_db),
     plan = db.query(MaintenancePlan).filter(MaintenancePlan.id == plan_id).first()
     if not plan:
         raise HTTPException(status_code=404, detail="保养计划不存在")
+    # 保养记录的 plan_id 外键没有级联：先解引用保留历史记录，再删计划，否则 500
+    db.query(MaintenanceRecord).filter(MaintenanceRecord.plan_id == plan_id).update(
+        {"plan_id": None}, synchronize_session=False)
     db.delete(plan)
     db.commit()
     return {"message": "已删除"}

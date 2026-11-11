@@ -880,6 +880,10 @@ def db_cleanup(broad=False):
         uids = [u.id for u in users]
         if uids:
             from sqlalchemy import or_
+            # 别的流程（如冒烟）可能把测试账号派成处理人，先解引用再删
+            for col in (WorkOrder.technician_id, WorkOrder.assignee_id,
+                        WorkOrder.reporter_id, WorkOrder.created_by, WorkOrder.dispatcher_id):
+                db.query(WorkOrder).filter(col.in_(uids)).update({col.key: None}, synchronize_session=False)
             db.query(LoginLog).filter(LoginLog.user_id.in_(uids)).delete(synchronize_session=False)
             db.query(Notification).filter(Notification.user_id.in_(uids)).delete(synchronize_session=False)
             db.query(SparePartRequisition).filter(

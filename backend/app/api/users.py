@@ -180,9 +180,66 @@ def delete_user(user_id: int, db: Session = Depends(get_db), current_user: User 
         raise HTTPException(status_code=404, detail="用户不存在")
     if user.id == current_user.id:
         raise HTTPException(status_code=400, detail="不能删除当前登录账号")
+
+    # 有业务数据的人不能物理删除（工单/领用/盘点都记着他的 id，删了会撞外键报 500）
+    from sqlalchemy import func, or_
+    from app.models.work_order import WorkOrder
+    from app.models.spare_part_requisition import SparePartRequisition
+    from app.models.stocktake import Stocktake
+
+    wo_cnt = (db.query(func.count(WorkOrder.id))
+              .filter(or_(WorkOrder.technician_id == user_id,
+                          WorkOrder.assignee_id == user_id,
+                          WorkOrder.reporter_id == user_id,
+                          WorkOrder.created_by == user_id,
+                          WorkOrder.dispatcher_id == user_id))
+              .scalar() or 0)
+    req_cnt = (db.query(func.count(SparePartRequisition.id))
+               .filter(or_(SparePartRequisition.applicant_id == user_id,
+                           SparePartRequisition.approver_id == user_id))
+               .scalar() or 0)
+    st_cnt = (db.query(func.count(Stocktake.id))
+              .filter(or_(Stocktake.created_by == user_id,
+                          Stocktake.approved_by == user_id))
+              .scalar() or 0)
+    if wo_cnt or req_cnt or st_cnt:
+        parts = []
+        if wo_cnt:
+            parts.append(f"工单 {wo_cnt} 张")
+        if req_cnt:
+            parts.append(f"领用单 {req_cnt} 张")
+        if st_cnt:
+            parts.append(f"盘点单 {st_cnt} 张")
+        raise HTTPException(
+            status_code=400,
+            detail=f"该用户已有业务数据（{'、'.join(parts)}），不能直接删除；请改用「停用账号」（停用后无法登录，历史记录保留）",
+        )
+
+    # 没有业务数据：清理从属记录 + 把可空引用置空，再删账号
+    from app.models.notification import Notification
+    from app.models.login_log import LoginLog
+    from app.models.stock_movement import StockMovement
+    from app.models.customer import Customer
+    from app.models.maintenance import MaintenancePlan, MaintenanceRecord
+    from app.models.progress_log import WorkOrderProgressLog
+
+    db.query(Notification).filter(Notification.user_id == user_id).delete(synchronize_session=False)
+    db.query(LoginLog).filter(LoginLog.user_id == user_id).delete(synchronize_session=False)
+    db.query(StockMovement).filter(StockMovement.operator_id == user_id).update(
+        {"operator_id": None}, synchronize_session=False)
+    db.query(Customer).filter(Customer.owner_id == user_id).update(
+        {"owner_id": None}, synchronize_session=False)
+    db.query(MaintenancePlan).filter(MaintenancePlan.responsible_id == user_id).update(
+        {"responsible_id": None}, synchronize_session=False)
+    db.query(MaintenanceRecord).filter(MaintenanceRecord.done_by_id == user_id).update(
+        {"done_by_id": None}, synchronize_session=False)
+    db.query(WorkOrderProgressLog).filter(WorkOrderProgressLog.operator_id == user_id).update(
+        {"operator_id": None}, synchronize_session=False)
+
     db.delete(user)
     db.commit()
     cache_service.delete(f"user:{user_id}")
+    logger.info(f"[User] {current_user.real_name} 删除账号 {user.username}")
     return {"message": "用户已删除"}
 
 

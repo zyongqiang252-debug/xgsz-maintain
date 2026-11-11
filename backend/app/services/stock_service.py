@@ -88,12 +88,22 @@ def apply_stock_change(
     )
     db.add(mv)
     db.flush()
+    _invalidate_part_cache(part.id)
     logger.info(
         f"[Stock] {movement_type} {part.part_code} x{quantity:g} "
         f"{before:g} -> {after:g}（流水 {mv.id}）"
     )
     _maybe_alert_low_stock(part, before, after, operator)
     return mv
+
+
+def _invalidate_part_cache(part_id: int) -> None:
+    """库存变了就把详情缓存清掉：原来只清 stock_alerts，详情页会显示旧库存 5 分钟"""
+    try:
+        from app.core.cache_service import cache_service
+        cache_service.delete(f"spare_part:{part_id}")
+    except Exception as e:  # 缓存不可用不影响库存业务
+        logger.warning(f"[Stock] 清备件缓存失败（忽略）: {e}")
 
 
 def _maybe_alert_low_stock(part: SparePart, before: float, after: float,

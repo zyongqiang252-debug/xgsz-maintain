@@ -176,16 +176,19 @@ def list_work_orders(
         query = query.filter(cast(WorkOrder.created_at, Date) <= date_to)
     total = query.count()
     items = query.order_by(WorkOrder.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    # 批量查询创建者/维修员信息（工号+姓名，用于前端权限判断和名字显示）
+    # 批量查询创建者/上报人/维修员信息（工号+姓名+部门，用于前端权限判断和名字显示）
     user_ids = ({w.created_by for w in items if w.created_by}
+                | {w.reporter_id for w in items if w.reporter_id}
                 | {w.technician_id for w in items if w.technician_id}
                 | {getattr(w, 'dispatcher_id', None) for w in items if getattr(w, 'dispatcher_id', None)})
     user_emp_map = {}
     user_name_map = {}
+    user_dept_map = {}
     if user_ids:
         users_q = db.query(User).filter(User.id.in_(user_ids)).all()
         user_emp_map = {u.id: u.employee_id for u in users_q}
         user_name_map = {u.id: u.real_name for u in users_q}
+        user_dept_map = {u.id: u.department for u in users_q}
     # 是否为“别人转派给我”的单：批量取每人最近一条「改派：A → B」日志
     transfer_map = {}
     collab_map = {}
@@ -213,6 +216,9 @@ def list_work_orders(
         d = _wo_to_dict(w)
         d['transfer_from_name'] = transfer_map.get(w.id)
         d['created_by_employee_id'] = user_emp_map.get(w.created_by) if w.created_by else None
+        d['created_by_name'] = user_name_map.get(w.created_by) if w.created_by else None
+        d['created_by_department'] = user_dept_map.get(w.created_by) if w.created_by else None
+        d['reporter_name'] = user_name_map.get(w.reporter_id) if w.reporter_id else None
         d['technician_name'] = user_name_map.get(w.technician_id) if w.technician_id else None
         d['device_type'] = w.device.device_type if w.device else None
         d['device_name'] = w.device.device_name if w.device else None
@@ -494,6 +500,11 @@ def get_work_order(work_order_id: int, db: Session = Depends(get_db)):
     if work_order.created_by:
         creator = db.query(User).filter(User.id == work_order.created_by).first()
         resp.created_by_employee_id = creator.employee_id if creator else None
+        resp.created_by_name = creator.real_name if creator else None
+        resp.created_by_department = creator.department if creator else None
+    if work_order.reporter_id:
+        reporter = db.query(User).filter(User.id == work_order.reporter_id).first()
+        resp.reporter_name = reporter.real_name if reporter else None
     # 维修员姓名（维修员=创建者，改名字后工单自动同步新名字）
     if work_order.technician_id:
         tech = db.query(User).filter(User.id == work_order.technician_id).first()
@@ -840,6 +851,31 @@ def delete_work_order(work_order_id: int, db: Session = Depends(get_db), current
         ).delete(synchronize_session=False)
     except Exception as e:
         logger.warning(f"[WorkOrder] 清理关联通知失败（忽略）: {e}")
+
+    # 备件流水 / 实物实例 / 领用单 / 保养 / 导入明细 都记着 work_order_id 且外键无级联，
+    # 不先解引用直接删会撞约束报 500（领用过的工单必现）
+    wid = work_order.id
+    try:
+        from app.models.stock_movement import StockMovement
+        from app.models.part_instance import PartInstance
+        from app.models.spare_part_requisition import SparePartRequisition
+        from app.models.maintenance import MaintenancePlan, MaintenanceRecord
+        from app.models.work_order_import import WorkOrderImportItem
+        from app.models.progress_log import WorkOrderProgressLog
+        from app.models.work_order_edit_log import WorkOrderEditLog
+        from app.models.work_order_collaborator import WorkOrderCollaborator
+        for model in (StockMovement, PartInstance, SparePartRequisition,
+                      MaintenancePlan, MaintenanceRecord, WorkOrderImportItem):
+            if hasattr(model, "work_order_id"):
+                db.query(model).filter(model.work_order_id == wid).update(
+                    {"work_order_id": None}, synchronize_session=False)
+        for model in (WorkOrderProgressLog, WorkOrderEditLog, WorkOrderCollaborator):
+            db.query(model).filter(model.work_order_id == wid).delete(synchronize_session=False)
+    except Exception as e:
+        logger.warning(f"[WorkOrder] 解引用关联数据失败: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"删除工单失败：关联数据清理异常（{e}）")
+
     db.delete(work_order)
     db.commit()
     return {"message": "工单已删除"}

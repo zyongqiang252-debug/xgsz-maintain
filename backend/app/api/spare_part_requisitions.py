@@ -159,6 +159,7 @@ def approve_requisition(rid: int, db: Session = Depends(get_db),
     db.commit()
     db.refresh(r)
     cache_service.invalidate_pattern("stock_alerts:*")
+    cache_service.delete(f"spare_part:{part.id}")
     logger.info(f"[Requisition] {rid} 审批通过，预占 {part.part_code} {qty:g}（预占合计 {part.reserved_quantity}）")
     return _req_dict(r, part)
 
@@ -184,6 +185,8 @@ def reject_requisition(rid: int, data: RejectIn, db: Session = Depends(get_db),
     db.commit()
     db.refresh(r)
     cache_service.invalidate_pattern("stock_alerts:*")
+    if part is not None:
+        cache_service.delete(f"spare_part:{part.id}")
     return _req_dict(r, part)
 
 
@@ -283,6 +286,7 @@ def issue_requisition(rid: int, data: IssueIn, db: Session = Depends(get_db),
     db.commit()
     db.refresh(r)
     cache_service.invalidate_pattern("stock_alerts:*")
+    cache_service.delete(f"spare_part:{part.id}")
     logger.info(f"[Requisition] {rid} 出库 {part.part_code} x{qty:g}，库存 {stock:g} -> {part.stock_quantity}")
     return _req_dict(r, part)
 
@@ -307,4 +311,6 @@ def cancel_requisition(rid: int, db: Session = Depends(get_db),
     db.commit()
     db.refresh(r)
     cache_service.invalidate_pattern("stock_alerts:*")
+    if part is not None:
+        cache_service.delete(f"spare_part:{part.id}")
     return _req_dict(r, part)
