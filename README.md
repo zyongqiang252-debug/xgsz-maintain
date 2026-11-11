@@ -276,8 +276,7 @@ Smart-Repair-System/
 ├── requirements.txt           # Python 依赖
 ├── setup.ps1                  # 一键初始化
 ├── start_all.ps1              # 一键启动
-├── start_embedding_server.ps1 # 单独启动推理服务
-└── 项目说明/                  # 操作指南、检索链路、审计报告、周报
+└── start_embedding_server.ps1 # 单独启动推理服务
 ```
 
 ### 后端核心目录
@@ -385,7 +384,7 @@ npm run dev
 - **追踪维修**：严格过滤为空时自动降级为宽松模式（仅错误码置顶，不做设备/关键词约束），继续给出引导
 - **专家模式**：管道优先 → 阀门判定（≥3 条且高分≥2 条，或最高分≥0.7 才达标）→ 不达标再触发 ReAct 循环检索救援
 
-详见[检索全链路详解](<项目说明/检索全链路详解.md>)。
+完整实现见 `backend/app/agents/`（检索编排）与 `backend/app/core/`（embeddings / reranker / vector_store）。
 
 ### 降级策略
 

@@ -1,4 +1,4 @@
-# ===== 环境变量与密钥（绝不提交）=====
+﻿# ===== 环境变量与密钥（绝不提交）=====
 .env
 .env.local
 .env.*
@@ -78,9 +78,6 @@ _debug/
 backend/final_out*.txt
 package.json
 package-lock.json
-
-# ===== 含个人隐私的简历材料（绝不提交）=====
-项目说明/_简历提取.md
 
 # ===== 独立调研报告（非系统代码）=====
 factory-equipment-research/
