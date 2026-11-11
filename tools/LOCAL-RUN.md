@@ -92,17 +92,8 @@ cd backend
 # 先确认代理在跑（Clash 默认 7897）
 Test-NetConnection 127.0.0.1 -Port 7897
 
-# git 手动推（把 <TOKEN> 换成自己的 PAT）
+# 用带 PAT 的地址推一次（把 <TOKEN> 换成自己的 PAT）
 git -c http.proxy=http://127.0.0.1:7897 push https://<TOKEN>@github.com/zyongqiang252-debug/xgsz-maintain.git master
-```
-
-推荐用脚本（自动判断有无写权限，没有就 fork 到自己账号再推）：
-
-```powershell
-# token 存到 C:\Users\<你>\gh_token.txt（文件里只放一行 ghp_xxx）
-cd backend
-.venv\Scripts\python.exe ..\tools\push_to_github.py --dry-run     # 只看要推什么
-.venv\Scripts\python.exe ..\tools\push_to_github.py --delete-token-file
 ```
 
 PAT 权限：

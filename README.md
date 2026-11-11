@@ -277,7 +277,7 @@ Smart-Repair-System/
 ├── setup.ps1                  # 一键初始化
 ├── start_all.ps1              # 一键启动
 ├── start_embedding_server.ps1 # 单独启动推理服务
-└── 项目说明/                  # 操作指南、检索链路、面试学习指南
+└── 项目说明/                  # 操作指南、检索链路、审计报告、周报
 ```
 
 ### 后端核心目录
